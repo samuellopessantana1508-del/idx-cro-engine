@@ -1,0 +1,28 @@
+project_id = "tykeycwworjtfpssjevw"
+
+[functions.go]
+verify_jwt = false
+
+[functions.convert]
+verify_jwt = true
+
+[functions.capi-health]
+verify_jwt = true
+
+[functions.tenant-admin]
+verify_jwt = true
+
+[functions.meta-oauth]
+verify_jwt = false
+
+[functions.meta-assets]
+verify_jwt = true
+
+[functions.supabase-health]
+verify_jwt = true
+
+[functions.meta-insights]
+verify_jwt = true
+
+[functions.crm]
+verify_jwt = true
