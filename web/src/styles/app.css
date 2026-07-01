@@ -505,6 +505,18 @@ td small {
   font-weight: 750;
 }
 
+.crm-contact-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.crm-contact-grid input {
+  min-height: 36px;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+}
+
 .crm-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -727,6 +739,56 @@ td small {
   gap: 12px;
   align-items: center;
   margin-bottom: 14px;
+}
+
+.audience-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.audience-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--paper);
+}
+
+.audience-row strong,
+.audience-row small {
+  display: block;
+}
+
+.audience-row small {
+  color: var(--muted);
+  margin-top: 4px;
+  font-size: 0.78rem;
+}
+
+.audience-stats {
+  min-width: 104px;
+  text-align: right;
+}
+
+.audience-stats span {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.audience-stats strong {
+  font-size: 1.05rem;
+}
+
+.audience-stats.muted {
+  color: var(--muted);
 }
 
 .ghost-dark-button {
@@ -1035,9 +1097,14 @@ td small {
   }
 
   .crm-actions,
+  .audience-row,
   .history-row,
   .user-row {
     grid-template-columns: 1fr;
+  }
+
+  .audience-stats {
+    text-align: left;
   }
 
   .search-box {

@@ -93,6 +93,18 @@ Arquivos úteis:
 - `supabase/.env.secrets.example`: secrets das Edge Functions.
 - `docs/meta-app-internal-setup.md`: passo a passo da Meta App para uso interno.
 
+## Publicos Meta automaticos
+
+O CRM cria e sincroniza publicos Meta automaticamente por empresa:
+
+- `qualified`: audiencia `IDX - Leads qualificados`.
+- `purchased`: audiencia `IDX - Compradores`.
+
+Quando o lead vira qualificado ou vendido, o sistema tenta enviar telefone
+e/ou email hashados para a Custom Audience correta. Se o lead nao tiver
+telefone/email, a tentativa fica registrada como `skipped` para o atendente
+completar o contato no CRM.
+
 ## Email de confirmacao
 
 O cadastro inicial usa o email de confirmacao nativo do Supabase Auth. Em
@@ -132,6 +144,7 @@ supabase functions deploy tenant-admin
 supabase functions deploy meta-oauth --no-verify-jwt
 supabase functions deploy meta-assets
 supabase functions deploy meta-insights
+supabase functions deploy meta-audiences
 supabase functions deploy supabase-health
 ```
 

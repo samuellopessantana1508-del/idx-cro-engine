@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { syncSessionToMetaAudience, type AudienceKey } from "../_shared/meta-audiences.ts";
 
 const supa = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -330,11 +331,31 @@ Deno.serve(async (req: Request) => {
     }
   }
 
+  const audienceKey: AudienceKey | null = status === "qualified" ? "qualified" : status === "sold" ? "purchased" : null;
+  let audienceSync = null;
+
+  if (audienceKey) {
+    const updatedSession = { ...session, ...updates };
+    audienceSync = await syncSessionToMetaAudience(supa, updatedSession, audienceKey, body);
+
+    await supa.from("crm_activities").insert({
+      tenant_id: session.tenant_id,
+      tracking_session_id: session.id,
+      user_id: user.id,
+      activity_type: "system",
+      body: audienceKey === "qualified" ? "meta_audience_qualified" : "meta_audience_purchased",
+      from_status: session.lead_status,
+      to_status: status,
+      metadata: audienceSync,
+    });
+  }
+
   return json({
     ok: true,
     status,
     tags,
     event_name: eventName ?? null,
     capi_ok: capi?.ok ?? null,
+    audience_sync: audienceSync,
   });
 });

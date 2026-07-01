@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
 import { demoCapiEvents, demoCrmActivities, demoHealth, demoLeads, demoLinks, demoMetaCampaigns, demoOffers, demoTenants } from "./lib/demoData";
-import type { CapiEvent, CapiHealth, CrmActivity, Lead, LeadStatus, MetaCampaignRoi, Offer, SmartLink, Tenant, TenantUser } from "./lib/types";
+import type { CapiEvent, CapiHealth, CrmActivity, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, Offer, SmartLink, Tenant, TenantUser } from "./lib/types";
 import { envConfigured, formatDate, formatMoney, linkCode, slugify, smartLinkUrl, timeAgo } from "./lib/utils";
 
 type Section = "dashboard" | "links" | "leads" | "crm" | "integrations" | "clients" | "users" | "reports" | "capi" | "settings";
@@ -52,6 +52,12 @@ type MetaDraft = {
   pixelId: string;
   accessToken: string;
   testEventCode: string;
+};
+
+type ContactDraft = {
+  phone: string;
+  email: string;
+  name: string;
 };
 
 type SupabaseHealthState = {
@@ -129,6 +135,7 @@ export function App() {
   const [tenantUsers, setTenantUsers] = useState<TenantUser[]>([]);
   const [health, setHealth] = useState<CapiHealth>(demoHealth);
   const [metaCampaigns, setMetaCampaigns] = useState<MetaCampaignRoi[]>(demoMetaCampaigns);
+  const [metaAudiences, setMetaAudiences] = useState<MetaAudienceStatus[]>([]);
   const [draft, setDraft] = useState<DraftLink>(emptyDraft);
   const [toast, setToast] = useState("");
   const [leadSearch, setLeadSearch] = useState("");
@@ -140,6 +147,7 @@ export function App() {
   const [metaDraft, setMetaDraft] = useState<MetaDraft>(emptyMetaDraft);
   const [adAccountId, setAdAccountId] = useState("");
   const [crmNotes, setCrmNotes] = useState<Record<string, string>>({});
+  const [crmContacts, setCrmContacts] = useState<Record<string, ContactDraft>>({});
   const [crmBusyRef, setCrmBusyRef] = useState("");
   const [integrationBusy, setIntegrationBusy] = useState(false);
   const [supabaseStatus, setSupabaseStatus] = useState<"unknown" | "ok" | "error">(isConfigured ? "unknown" : "ok");
@@ -344,7 +352,7 @@ export function App() {
 
   async function loadTenantData(nextTenantId = tenantId) {
     if (!supabase || !nextTenantId) return;
-    const [offerRes, linkRes, leadRes, eventRes, activityRes, userRes, healthRes, metaRoiRes] = await Promise.all([
+    const [offerRes, linkRes, leadRes, eventRes, activityRes, userRes, healthRes, metaRoiRes, audienceRes] = await Promise.all([
       supabase.from("offers").select("*").eq("tenant_id", nextTenantId).order("created_at", { ascending: false }),
       supabase.from("vw_smart_link_performance").select("*").eq("tenant_id", nextTenantId),
       supabase.from("vw_lead_queue").select("*").eq("tenant_id", nextTenantId).order("clicked_at", { ascending: false }).limit(100),
@@ -353,6 +361,7 @@ export function App() {
       supabase.from("tenant_users").select("id, tenant_id, email, role, status, created_at").eq("tenant_id", nextTenantId).order("created_at", { ascending: true }),
       supabase.from("vw_capi_health").select("*").eq("tenant_id", nextTenantId).maybeSingle(),
       supabase.from("vw_meta_campaign_roi").select("*").eq("tenant_id", nextTenantId).order("spend", { ascending: false }).limit(100),
+      supabase.from("vw_meta_audience_status").select("*").eq("tenant_id", nextTenantId).order("audience_key", { ascending: true }),
     ]);
 
     if (offerRes.data) setOffers(offerRes.data as Offer[]);
@@ -363,6 +372,7 @@ export function App() {
     if (userRes.data) setTenantUsers(userRes.data as TenantUser[]);
     if (healthRes.data) setHealth(healthRes.data as CapiHealth);
     if (metaRoiRes.data) setMetaCampaigns(metaRoiRes.data as MetaCampaignRoi[]);
+    if (audienceRes.data) setMetaAudiences(audienceRes.data as MetaAudienceStatus[]);
   }
 
   async function createSmartLink() {
@@ -522,6 +532,7 @@ export function App() {
 
   async function updateCrmStage(lead: Lead, status: LeadStatus) {
     const note = (crmNotes[lead.id] ?? "").trim();
+    const contact = crmContacts[lead.id] ?? { phone: "", email: "", name: "" };
     const eventName = stageEventName(status);
 
     if (!isConfigured || !supabase) {
@@ -533,6 +544,9 @@ export function App() {
             ? {
                 ...item,
                 lead_status: status,
+                customer_phone: contact.phone || item.customer_phone,
+                customer_email: contact.email || item.customer_email,
+                customer_name: contact.name || item.customer_name,
                 tags: nextTags,
                 lead_score: localLeadScore(status),
                 qualified_at: status === "qualified" ? item.qualified_at ?? now : item.qualified_at,
@@ -564,6 +578,7 @@ export function App() {
         ]);
       }
       setCrmNotes((items) => ({ ...items, [lead.id]: "" }));
+      setCrmContacts((items) => ({ ...items, [lead.id]: { phone: "", email: "", name: "" } }));
       setToast(status === "qualified" ? "Lead qualificado e enviado para remarketing." : `Lead movido para ${statusLabel(status)}.`);
       return;
     }
@@ -576,13 +591,17 @@ export function App() {
         ref: lead.ref,
         status,
         note: note || undefined,
+        customer_phone: contact.phone || undefined,
+        customer_email: contact.email || undefined,
+        customer_name: contact.name || undefined,
       }),
     });
     const data = await res.json();
     setCrmBusyRef("");
     if (!res.ok) return setToast(data.error || "Erro ao atualizar CRM.");
     setCrmNotes((items) => ({ ...items, [lead.id]: "" }));
-    setToast(data.capi_ok === false ? "CRM atualizado. CAPI sem credencial ou com erro." : "CRM atualizado e sinal enviado ao Meta.");
+    setCrmContacts((items) => ({ ...items, [lead.id]: { phone: "", email: "", name: "" } }));
+    setToast(crmUpdateToast(data, status));
     await loadTenantData();
   }
 
@@ -747,6 +766,39 @@ export function App() {
     if (!res.ok) return setToast(data.error || "Erro ao sincronizar gastos Meta.");
     setMetaCampaigns(data.campaigns ?? []);
     setToast(`${data.synced ?? 0} linhas de campanhas sincronizadas.`);
+  }
+
+  async function syncMetaAudiences() {
+    if (!tenant) return;
+
+    if (!isConfigured || !supabase) {
+      setToast("Publicos Meta sincronizados em modo demo.");
+      return;
+    }
+
+    setIntegrationBusy(true);
+    const res = await authFetch("meta-audiences", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "sync",
+        tenant_id: tenant.id,
+        audience_key: "all",
+        ad_account_id: adAccountId || undefined,
+      }),
+    });
+    const data = await res.json();
+    setIntegrationBusy(false);
+    if (!res.ok) return setToast(data.error || "Erro ao sincronizar publicos Meta.");
+    setMetaAudiences(data.audiences ?? []);
+    const totals = (data.results ?? []).reduce(
+      (acc: { synced: number; skipped: number; failed: number }, item: { synced?: number; skipped?: number; failed?: number }) => ({
+        synced: acc.synced + Number(item.synced ?? 0),
+        skipped: acc.skipped + Number(item.skipped ?? 0),
+        failed: acc.failed + Number(item.failed ?? 0),
+      }),
+      { synced: 0, skipped: 0, failed: 0 },
+    );
+    setToast(`${totals.synced} pessoas sincronizadas. ${totals.skipped} sem telefone/email. ${totals.failed} falhas.`);
   }
 
   async function checkSupabaseHealth() {
@@ -1059,13 +1111,32 @@ export function App() {
                 </div>
                 <LayoutList size={18} />
               </div>
-              <CrmPipeline
-                leads={tenantLeads}
-                notes={crmNotes}
-                busyRef={crmBusyRef}
-                onNoteChange={(leadId, value) => setCrmNotes((items) => ({ ...items, [leadId]: value }))}
-                onStageChange={updateCrmStage}
-              />
+                <CrmPipeline
+                  leads={tenantLeads}
+                  notes={crmNotes}
+                  contacts={crmContacts}
+                  busyRef={crmBusyRef}
+                  onNoteChange={(leadId, value) => setCrmNotes((items) => ({ ...items, [leadId]: value }))}
+                  onContactChange={(leadId, value) => setCrmContacts((items) => ({ ...items, [leadId]: { ...(items[leadId] ?? { phone: "", email: "", name: "" }), ...value } }))}
+                  onStageChange={updateCrmStage}
+                />
+            </section>
+
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <h2>Publicos automaticos</h2>
+                  <p>Qualificados e compradores viram Custom Audiences no Meta Ads.</p>
+                </div>
+                <Users size={18} />
+              </div>
+              <div className="ad-sync-row">
+                <input placeholder="ID da conta de anuncios, ex: act_123456789" value={adAccountId} onChange={(event) => setAdAccountId(event.target.value)} />
+                <button className="primary-button" onClick={syncMetaAudiences} disabled={integrationBusy}>
+                  Sincronizar publicos
+                </button>
+              </div>
+              <MetaAudiencesTable audiences={metaAudiences} />
             </section>
 
             <section className="panel">
@@ -1487,14 +1558,18 @@ const crmColumns: { status: LeadStatus; title: string }[] = [
 function CrmPipeline({
   leads,
   notes,
+  contacts,
   busyRef,
   onNoteChange,
+  onContactChange,
   onStageChange,
 }: {
   leads: Lead[];
   notes: Record<string, string>;
+  contacts: Record<string, ContactDraft>;
   busyRef: string;
   onNoteChange: (leadId: string, value: string) => void;
+  onContactChange: (leadId: string, value: Partial<ContactDraft>) => void;
   onStageChange: (lead: Lead, status: LeadStatus) => void;
 }) {
   if (!leads.length) return <EmptyState text="Nenhum lead no CRM ainda." />;
@@ -1523,6 +1598,19 @@ function CrmPipeline({
                       <Status status={lead.lead_status} />
                     </div>
                     <TagRow tags={lead.tags} fallback={lead.utm_source ?? "whatsapp"} />
+                    <div className="crm-contact-grid">
+                      <input
+                        value={contacts[lead.id]?.phone ?? lead.customer_phone ?? ""}
+                        onChange={(event) => onContactChange(lead.id, { phone: event.target.value })}
+                        placeholder="Telefone para publico"
+                      />
+                      <input
+                        value={contacts[lead.id]?.email ?? lead.customer_email ?? ""}
+                        onChange={(event) => onContactChange(lead.id, { email: event.target.value })}
+                        placeholder="Email opcional"
+                        type="email"
+                      />
+                    </div>
                     <textarea
                       value={notes[lead.id] ?? ""}
                       onChange={(event) => onNoteChange(lead.id, event.target.value)}
@@ -1673,6 +1761,54 @@ function MetaRoiTable({ campaigns }: { campaigns: MetaCampaignRoi[] }) {
   );
 }
 
+function MetaAudiencesTable({ audiences }: { audiences: MetaAudienceStatus[] }) {
+  const defaults: MetaAudienceStatus[] = [
+    {
+      tenant_id: "",
+      audience_key: "qualified",
+      name: "IDX - Leads qualificados",
+      sync_status: "not_created",
+      synced_members: 0,
+      failed_members: 0,
+      skipped_members: 0,
+      total_attempts: 0,
+    },
+    {
+      tenant_id: "",
+      audience_key: "purchased",
+      name: "IDX - Compradores",
+      sync_status: "not_created",
+      synced_members: 0,
+      failed_members: 0,
+      skipped_members: 0,
+      total_attempts: 0,
+    },
+  ];
+  const expected = defaults.map((item) => audiences.find((audience) => audience.audience_key === item.audience_key) ?? item);
+
+  return (
+    <div className="audience-grid">
+      {expected.map((audience) => (
+        <article className="audience-row" key={audience.audience_key}>
+          <div>
+            <strong>{audience.name}</strong>
+            <small>{audience.meta_audience_id ? `Meta ID ${audience.meta_audience_id}` : "Ainda nao criado no Meta"}</small>
+          </div>
+          <div className="audience-stats">
+            <span>{audienceStatusLabel(audience.sync_status)}</span>
+            <strong>{audience.synced_members}</strong>
+            <small>sincronizados</small>
+          </div>
+          <div className="audience-stats muted">
+            <strong>{audience.skipped_members}</strong>
+            <small>sem telefone/email</small>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 function LeadQualityTable({ rows }: { rows: QualityRow[] }) {
   if (!rows.length) return <EmptyState text="Sem leads suficientes para relatório de qualidade." />;
   return (
@@ -1781,6 +1917,26 @@ function statusLabel(status: LeadStatus | string): string {
     sold: "Vendido",
     lost: "Perdido",
   }[status] ?? String(status);
+}
+
+function audienceStatusLabel(status: MetaAudienceStatus["sync_status"]): string {
+  return {
+    not_created: "Nao criado",
+    created: "Criado",
+    syncing: "Sincronizando",
+    synced: "Sincronizado",
+    failed: "Falha",
+  }[status];
+}
+
+function crmUpdateToast(data: { capi_ok?: boolean | null; audience_sync?: { status?: string; error?: string } | null }, status: LeadStatus): string {
+  if (status === "qualified" || status === "sold") {
+    if (data.audience_sync?.status === "synced") return "CRM atualizado e lead enviado ao publico Meta.";
+    if (data.audience_sync?.status === "skipped") return "CRM atualizado. Informe telefone/email para entrar no publico Meta.";
+    if (data.audience_sync?.status === "failed") return `CRM atualizado. Publico Meta com erro: ${data.audience_sync.error ?? "verifique a integracao"}.`;
+  }
+
+  return data.capi_ok === false ? "CRM atualizado. CAPI sem credencial ou com erro." : "CRM atualizado e sinal enviado ao Meta.";
 }
 
 function userRoleLabel(role: TenantUser["role"]): string {

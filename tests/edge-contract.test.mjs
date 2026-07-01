@@ -22,6 +22,8 @@ function mustExist(path) {
   "supabase/functions/meta-assets/index.ts",
   "supabase/functions/supabase-health/index.ts",
   "supabase/functions/meta-insights/index.ts",
+  "supabase/functions/meta-audiences/index.ts",
+  "supabase/functions/_shared/meta-audiences.ts",
   "supabase/functions/crm/index.ts",
 ].forEach(mustExist);
 
@@ -31,6 +33,7 @@ const migration3 = read("supabase/migrations/202606300003_meta_ads_insights.sql"
 const migration4 = read("supabase/migrations/202606300004_crm.sql");
 const migration5 = read("supabase/migrations/202607010001_platform_control.sql");
 const migration7 = read("supabase/migrations/20260701112934_tenant_user_profiles.sql");
+const migration8 = read("supabase/migrations/20260701143000_meta_custom_audiences.sql");
 const config = read("supabase/config.toml");
 const go = read("supabase/functions/go/index.ts");
 const convert = read("supabase/functions/convert/index.ts");
@@ -39,6 +42,8 @@ const tenantAdmin = read("supabase/functions/tenant-admin/index.ts");
 const metaOauth = read("supabase/functions/meta-oauth/index.ts");
 const metaAssets = read("supabase/functions/meta-assets/index.ts");
 const metaInsights = read("supabase/functions/meta-insights/index.ts");
+const metaAudiences = read("supabase/functions/meta-audiences/index.ts");
+const sharedMetaAudiences = read("supabase/functions/_shared/meta-audiences.ts");
 const crm = read("supabase/functions/crm/index.ts");
 const supabaseHealth = read("supabase/functions/supabase-health/index.ts");
 
@@ -64,12 +69,17 @@ assert.match(migration5, /idx_private\.has_tenant_role/);
 assert.match(migration5, /vw_tenant_isolation_audit/);
 assert.match(migration7, /add column if not exists email text/);
 assert.match(migration7, /idx_tenant_users_tenant_email/);
+assert.match(migration8, /meta_custom_audiences/);
+assert.match(migration8, /meta_audience_syncs/);
+assert.match(migration8, /vw_meta_audience_status/);
+assert.match(migration8, /USER_PROVIDED_ONLY/);
 
 assert.match(config, /\[functions\.go\][\s\S]*verify_jwt = false/);
 assert.match(config, /\[functions\.convert\][\s\S]*verify_jwt = true/);
 assert.match(config, /\[functions\.meta-oauth\]/);
 assert.match(config, /\[functions\.meta-insights\][\s\S]*verify_jwt = true/);
 assert.match(config, /\[functions\.crm\][\s\S]*verify_jwt = true/);
+assert.match(config, /\[functions\.meta-audiences\][\s\S]*verify_jwt = true/);
 
 assert.match(go, /Response\.redirect\(targetUrl/);
 assert.match(go, /event_name: "Lead"/);
@@ -105,11 +115,21 @@ assert.match(metaInsights, /\/insights/);
 assert.match(metaInsights, /vw_meta_campaign_roi/);
 assert.match(metaInsights, /meta_campaign_insights/);
 
+assert.match(metaAudiences, /ensureMetaAudience/);
+assert.match(metaAudiences, /syncTenantAudience/);
+assert.match(metaAudiences, /vw_meta_audience_status/);
+
+assert.match(sharedMetaAudiences, /customaudiences/);
+assert.match(sharedMetaAudiences, /PHONE_SHA256/);
+assert.match(sharedMetaAudiences, /EMAIL_SHA256/);
+assert.match(sharedMetaAudiences, /meta_audience_syncs/);
+
 assert.match(crm, /QualifiedLead/);
 assert.match(crm, /DisqualifiedLead/);
 assert.match(crm, /crm_activities/);
 assert.match(crm, /remarketing/);
 assert.match(crm, /tenant_meta_credentials/);
+assert.match(crm, /syncSessionToMetaAudience/);
 
 assert.match(supabaseHealth, /single_owned_multi_tenant/);
 assert.match(supabaseHealth, /tenant_id \+ rls \+ edge_functions/);

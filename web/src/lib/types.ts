@@ -65,6 +65,8 @@ export type Lead = {
   last_crm_activity_at?: string | null;
   revenue?: number | null;
   customer_phone?: string | null;
+  customer_email?: string | null;
+  customer_name?: string | null;
   utm_source?: string | null;
   utm_medium?: string | null;
   utm_campaign?: string | null;
@@ -124,4 +126,21 @@ export type MetaCampaignRoi = {
   roas?: number | null;
   date_start?: string | null;
   date_stop?: string | null;
+};
+
+export type MetaAudienceStatus = {
+  tenant_id: string;
+  audience_key: "qualified" | "purchased";
+  name: string;
+  description?: string | null;
+  meta_audience_id?: string | null;
+  ad_account_id?: string | null;
+  customer_file_source?: string | null;
+  sync_status: "not_created" | "created" | "syncing" | "synced" | "failed";
+  last_synced_at?: string | null;
+  last_error?: string | null;
+  synced_members: number;
+  failed_members: number;
+  skipped_members: number;
+  total_attempts: number;
 };

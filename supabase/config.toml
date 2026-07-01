@@ -26,3 +26,6 @@ verify_jwt = true
 
 [functions.crm]
 verify_jwt = true
+
+[functions.meta-audiences]
+verify_jwt = true
