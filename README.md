@@ -106,6 +106,19 @@ O painel tambem permite reenviar a confirmacao de cadastro sem abrir o Supabase.
 Convites de novos usuarios por empresa sao enviados por email pela Edge Function
 `tenant-admin`.
 
+Para envio real a qualquer pessoa, configure SMTP proprio no Supabase Auth. O
+provedor padrao do Supabase e limitado; para piloto interno pode funcionar, mas
+produto profissional precisa SMTP da Hostinger, Resend, Postmark, Brevo ou AWS
+SES. Veja `scripts/configure-supabase-auth-smtp.ps1`.
+
+## Deploy Hostinger
+
+O frontend pode ser hospedado na Hostinger como site estatico dentro de
+`public_html`. O backend continua no Supabase. O build inclui `.htaccess` para
+SPA/cache.
+
+Leia: `docs/hostinger-deploy.md`.
+
 ## Deploy Supabase
 
 ```bash
