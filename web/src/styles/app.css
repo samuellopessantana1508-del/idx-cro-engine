@@ -872,6 +872,21 @@ td small {
   color: #bdbdbd;
 }
 
+.login-panel .auth-hint {
+  margin: 0;
+  border-top: 1px solid var(--line-dark);
+  padding-top: 12px;
+  color: #d8d8d8;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.auth-hint strong {
+  color: var(--paper);
+  font-weight: 800;
+  word-break: break-word;
+}
+
 .login-panel input {
   background: var(--black);
   color: var(--paper);

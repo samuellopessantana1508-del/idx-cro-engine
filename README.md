@@ -93,6 +93,19 @@ Arquivos úteis:
 - `supabase/.env.secrets.example`: secrets das Edge Functions.
 - `docs/meta-app-internal-setup.md`: passo a passo da Meta App para uso interno.
 
+## Email de confirmacao
+
+O cadastro inicial usa o email de confirmacao nativo do Supabase Auth. Em
+producao, mantenha a confirmacao de email ativa em `Authentication > Providers`
+e cadastre as URLs do painel em `Authentication > URL Configuration`:
+
+- Local: `http://127.0.0.1:5177`
+- Producao: URL final do GitHub Pages ou dominio do painel IDX
+
+O painel tambem permite reenviar a confirmacao de cadastro sem abrir o Supabase.
+Convites de novos usuarios por empresa sao enviados por email pela Edge Function
+`tenant-admin`.
+
 ## Deploy Supabase
 
 ```bash

@@ -105,6 +105,10 @@ const emptyMetaDraft: MetaDraft = {
   testEventCode: "",
 };
 
+function authRedirectTo() {
+  return `${window.location.origin}${window.location.pathname}`;
+}
+
 export function App() {
   const isConfigured = envConfigured() && Boolean(supabase);
   const [sessionReady, setSessionReady] = useState(!isConfigured);
@@ -113,6 +117,7 @@ export function App() {
   const [tenantSetupRequired, setTenantSetupRequired] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmationEmail, setConfirmationEmail] = useState("");
   const [active, setActive] = useState<Section>("dashboard");
   const [tenants, setTenants] = useState<Tenant[]>(demoTenants);
   const [tenantId, setTenantId] = useState(demoTenants[0].id);
@@ -194,8 +199,9 @@ export function App() {
 
   async function login() {
     if (!supabase) return;
+    const normalizedEmail = email.trim().toLowerCase();
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
     setLoading(false);
     if (error) {
       setToast(error.message);
@@ -207,17 +213,18 @@ export function App() {
 
   async function signup() {
     if (!supabase) return;
-    if (!email.trim() || password.length < 6) {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || password.length < 6) {
       setToast("Informe email e senha com pelo menos 6 caracteres.");
       return;
     }
 
     setLoading(true);
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: normalizedEmail,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}${window.location.pathname}`,
+        emailRedirectTo: authRedirectTo(),
       },
     });
     setLoading(false);
@@ -229,12 +236,42 @@ export function App() {
 
     if (data.session) {
       setSignedIn(true);
+      setConfirmationEmail("");
       await loadInitialData();
       return;
     }
 
+    setConfirmationEmail(normalizedEmail);
+    setPassword("");
     setAuthMode("login");
-    setToast("Conta criada. Confirme o email e entre no painel.");
+    setToast("Enviamos o email de confirmacao. Abra o link para ativar o acesso.");
+  }
+
+  async function resendConfirmationEmail() {
+    if (!supabase) return;
+    const targetEmail = (confirmationEmail || email).trim().toLowerCase();
+    if (!targetEmail) {
+      setToast("Informe o email para reenviar a confirmacao.");
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: targetEmail,
+      options: {
+        emailRedirectTo: authRedirectTo(),
+      },
+    });
+    setLoading(false);
+
+    if (error) {
+      setToast(error.message);
+      return;
+    }
+
+    setConfirmationEmail(targetEmail);
+    setToast("Email de confirmacao reenviado.");
   }
 
   async function logout() {
@@ -614,7 +651,7 @@ export function App() {
     const data = await res.json();
     if (!res.ok) return setToast(data.error || "Erro ao convidar usuário.");
     setInviteDraft(emptyInviteDraft);
-    setToast("Convite enviado.");
+    setToast("Convite enviado por email.");
     await loadTenantData();
   }
 
@@ -767,7 +804,17 @@ export function App() {
             <button className="login-link-button" onClick={() => setAuthMode(authMode === "login" ? "signup" : "login")} disabled={loading}>
               {authMode === "login" ? "Criar primeiro acesso" : "Voltar para login"}
             </button>
+            {(authMode === "signup" || confirmationEmail) && (
+              <button className="login-link-button" onClick={resendConfirmationEmail} disabled={loading}>
+                Reenviar confirmacao por email
+              </button>
+            )}
           </div>
+          {confirmationEmail && (
+            <p className="auth-hint">
+              Email de confirmacao enviado para <strong>{confirmationEmail}</strong>.
+            </p>
+          )}
         </section>
         {toast && <div className="toast">{toast}</div>}
       </main>
