@@ -165,7 +165,7 @@ O repositório já inclui `.github/workflows/deploy-pages.yml`.
 No GitHub, configure Pages como `GitHub Actions` e cadastre:
 
 - Repository variable `VITE_SUPABASE_URL`: URL do projeto Supabase.
-- Repository secret `VITE_SUPABASE_ANON_KEY`: chave pública/publishable do Supabase.
+- Repository variable `VITE_SUPABASE_ANON_KEY`: chave pública/publishable do Supabase.
 - Repository variable `VITE_PUBLIC_REDIRECT_BASE`: URL pública usada nos Smart Links.
 - Repository variable `VITE_REDIRECT_PATH_PREFIX`: normalmente `/functions/v1/go`.
 
