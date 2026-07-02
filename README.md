@@ -51,7 +51,7 @@ npm install
 npm run dev
 ```
 
-O painel abre em modo demo se as variáveis Supabase não forem configuradas.
+Sem as variáveis Supabase, o painel bloqueia o acesso e exibe uma tela de configuração necessária. O produto não carrega dados fictícios.
 
 ## Variáveis do painel
 

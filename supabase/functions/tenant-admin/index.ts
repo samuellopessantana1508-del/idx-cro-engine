@@ -32,6 +32,15 @@ function cleanPhone(value: string): string {
   return value.replace(/\D/g, "");
 }
 
+function cleanText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function numericOrNull(value: unknown): number | null {
+  const parsed = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 async function currentUser(req: Request) {
   const token = req.headers.get("Authorization")?.replace("Bearer ", "");
   if (!token) return null;
@@ -128,10 +137,17 @@ Deno.serve(async (req: Request) => {
       return json({ error: "platform_admin_required" }, 403);
     }
 
-    const name = String(body.name ?? "").trim();
+    const name = cleanText(body.name);
     const whatsapp = cleanPhone(String(body.whatsapp_number ?? ""));
     const slug = slugify(String(body.slug ?? name));
-    if (!name || !slug || whatsapp.length < 12) {
+    const businessSegment = cleanText(body.business_segment);
+    const city = cleanText(body.city);
+    const state = cleanText(body.state).toUpperCase().slice(0, 2);
+    const primaryChannel = cleanText(body.primary_channel);
+    const responsibleName = cleanText(body.responsible_name);
+    const monthlyGoal = numericOrNull(body.monthly_goal);
+    const averageTicket = numericOrNull(body.average_ticket);
+    if (!name || !slug || !businessSegment || whatsapp.length < 12) {
       return json({ error: "invalid_tenant_payload" }, 400);
     }
 
@@ -168,9 +184,24 @@ Deno.serve(async (req: Request) => {
       tenant_id: tenant.id,
       tenant_created: true,
       whatsapp_checked: true,
+      business_segment: businessSegment,
+      city: city || null,
+      state: state || null,
+      monthly_goal: monthlyGoal,
+      average_ticket: averageTicket,
+      primary_channel: primaryChannel || null,
+      responsible_name: responsibleName || null,
+      updated_at: new Date().toISOString(),
     });
 
-    await audit(user.id, "tenant.created", tenant.id, "tenant", tenant.id, { slug, role: firstSetup ? "first_setup_owner" : role });
+    await audit(user.id, "tenant.created", tenant.id, "tenant", tenant.id, {
+      slug,
+      role: firstSetup ? "first_setup_owner" : role,
+      business_segment: businessSegment,
+      city: city || null,
+      state: state || null,
+      primary_channel: primaryChannel || null,
+    });
 
     return json({ ok: true, tenant });
   }

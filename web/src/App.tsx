@@ -20,7 +20,6 @@ import {
   Users,
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
-import { demoCapiEvents, demoCrmActivities, demoHealth, demoLeads, demoLinks, demoMetaCampaigns, demoOffers, demoTenants } from "./lib/demoData";
 import type { CapiEvent, CapiHealth, CrmActivity, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, Offer, SmartLink, Tenant, TenantUser } from "./lib/types";
 import { envConfigured, formatDate, formatMoney, linkCode, slugify, smartLinkUrl, timeAgo } from "./lib/utils";
 
@@ -41,6 +40,13 @@ type ClientDraft = {
   name: string;
   slug: string;
   whatsapp: string;
+  businessSegment: string;
+  city: string;
+  state: string;
+  monthlyGoal: string;
+  averageTicket: string;
+  primaryChannel: string;
+  responsibleName: string;
 };
 
 type InviteDraft = {
@@ -98,6 +104,13 @@ const emptyClientDraft: ClientDraft = {
   name: "",
   slug: "",
   whatsapp: "",
+  businessSegment: "",
+  city: "",
+  state: "",
+  monthlyGoal: "",
+  averageTicket: "",
+  primaryChannel: "",
+  responsibleName: "",
 };
 
 const emptyInviteDraft: InviteDraft = {
@@ -111,6 +124,16 @@ const emptyMetaDraft: MetaDraft = {
   testEventCode: "",
 };
 
+const emptyHealth: CapiHealth = {
+  total_events: 0,
+  successful_events: 0,
+  failed_events: 0,
+  lead_events: 0,
+  purchase_events: 0,
+  success_rate: 0,
+  last_event_at: null,
+};
+
 function authRedirectTo() {
   return `${window.location.origin}${window.location.pathname}`;
 }
@@ -118,23 +141,23 @@ function authRedirectTo() {
 export function App() {
   const isConfigured = envConfigured() && Boolean(supabase);
   const [sessionReady, setSessionReady] = useState(!isConfigured);
-  const [signedIn, setSignedIn] = useState(!isConfigured);
+  const [signedIn, setSignedIn] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [tenantSetupRequired, setTenantSetupRequired] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmationEmail, setConfirmationEmail] = useState("");
   const [active, setActive] = useState<Section>("dashboard");
-  const [tenants, setTenants] = useState<Tenant[]>(demoTenants);
-  const [tenantId, setTenantId] = useState(demoTenants[0].id);
-  const [offers, setOffers] = useState<Offer[]>(demoOffers);
-  const [links, setLinks] = useState<SmartLink[]>(demoLinks);
-  const [leads, setLeads] = useState<Lead[]>(demoLeads);
-  const [events, setEvents] = useState<CapiEvent[]>(demoCapiEvents);
-  const [crmActivities, setCrmActivities] = useState<CrmActivity[]>(demoCrmActivities);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [tenantId, setTenantId] = useState("");
+  const [offers, setOffers] = useState<Offer[]>([]);
+  const [links, setLinks] = useState<SmartLink[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [events, setEvents] = useState<CapiEvent[]>([]);
+  const [crmActivities, setCrmActivities] = useState<CrmActivity[]>([]);
   const [tenantUsers, setTenantUsers] = useState<TenantUser[]>([]);
-  const [health, setHealth] = useState<CapiHealth>(demoHealth);
-  const [metaCampaigns, setMetaCampaigns] = useState<MetaCampaignRoi[]>(demoMetaCampaigns);
+  const [health, setHealth] = useState<CapiHealth>(emptyHealth);
+  const [metaCampaigns, setMetaCampaigns] = useState<MetaCampaignRoi[]>([]);
   const [metaAudiences, setMetaAudiences] = useState<MetaAudienceStatus[]>([]);
   const [draft, setDraft] = useState<DraftLink>(emptyDraft);
   const [toast, setToast] = useState("");
@@ -152,10 +175,10 @@ export function App() {
   const [integrationBusy, setIntegrationBusy] = useState(false);
   const [supabaseStatus, setSupabaseStatus] = useState<"unknown" | "ok" | "error">(isConfigured ? "unknown" : "ok");
   const [supabaseHealth, setSupabaseHealth] = useState<SupabaseHealthState>({
-    database_model: "single_owned_multi_tenant",
-    database_owner: "idx",
-    tenant_isolation: "tenant_id + rls + edge_functions",
-    tenant_scope: "demo",
+    database_model: undefined,
+    database_owner: undefined,
+    tenant_isolation: undefined,
+    tenant_scope: undefined,
   });
   const [loading, setLoading] = useState(false);
 
@@ -252,14 +275,14 @@ export function App() {
     setConfirmationEmail(normalizedEmail);
     setPassword("");
     setAuthMode("login");
-    setToast("Enviamos o email de confirmacao. Abra o link para ativar o acesso.");
+    setToast("Enviamos o email de confirmação. Abra o link para ativar o acesso.");
   }
 
   async function resendConfirmationEmail() {
     if (!supabase) return;
     const targetEmail = (confirmationEmail || email).trim().toLowerCase();
     if (!targetEmail) {
-      setToast("Informe o email para reenviar a confirmacao.");
+      setToast("Informe o email para reenviar a confirmação.");
       return;
     }
 
@@ -279,7 +302,7 @@ export function App() {
     }
 
     setConfirmationEmail(targetEmail);
-    setToast("Email de confirmacao reenviado.");
+    setToast("Email de confirmação reenviado.");
   }
 
   async function logout() {
@@ -289,7 +312,7 @@ export function App() {
   }
 
   async function authFetch(path: string, options: RequestInit = {}) {
-    if (!supabase) throw new Error("Supabase nao configurado");
+    if (!supabase) throw new Error("Supabase não configurado");
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -387,38 +410,7 @@ export function App() {
     const linkName = draft.linkName || `${draft.offerName} - ${draft.campaign || "Direto"}`;
 
     if (!isConfigured || !supabase) {
-      const offer: Offer = {
-        id: crypto.randomUUID(),
-        tenant_id: tenant.id,
-        name: draft.offerName,
-        slug: offerSlug,
-        category: draft.category || null,
-        price,
-        default_message: draft.message,
-        status: "active",
-      };
-      const link: SmartLink = {
-        id: crypto.randomUUID(),
-        tenant_id: tenant.id,
-        offer_id: offer.id,
-        code,
-        name: linkName,
-        message_template: draft.message,
-        default_utm_source: draft.source,
-        default_utm_medium: draft.medium,
-        default_utm_campaign: draft.campaign,
-        status: "active",
-        offer_name: offer.name,
-        category: offer.category,
-        clicks: 0,
-        sales: 0,
-        revenue: 0,
-        conversion_rate: 0,
-      };
-      setOffers((items) => [offer, ...items]);
-      setLinks((items) => [link, ...items]);
-      setDraft(emptyDraft);
-      setToast("Smart Link criado em modo demo.");
+      setToast("Configure o Supabase para criar Smart Links reais.");
       return;
     }
 
@@ -478,23 +470,7 @@ export function App() {
     }
 
     if (!isConfigured || !supabase) {
-      setLeads((items) =>
-        items.map((lead) =>
-          lead.ref === ref
-            ? {
-                ...lead,
-                lead_status: "sold",
-                customer_phone: salePhone,
-                revenue,
-                sold_at: new Date().toISOString(),
-              }
-            : lead,
-        ),
-      );
-      setToast("Venda confirmada em modo demo.");
-      setSaleRef("");
-      setSalePhone("");
-      setSaleRevenue("");
+      setToast("Configure o Supabase para confirmar vendas reais.");
       return;
     }
 
@@ -533,53 +509,8 @@ export function App() {
   async function updateCrmStage(lead: Lead, status: LeadStatus) {
     const note = (crmNotes[lead.id] ?? "").trim();
     const contact = crmContacts[lead.id] ?? { phone: "", email: "", name: "" };
-    const eventName = stageEventName(status);
-
     if (!isConfigured || !supabase) {
-      const now = new Date().toISOString();
-      const nextTags = mergeLocalTags(lead.tags, status);
-      setLeads((items) =>
-        items.map((item) =>
-          item.id === lead.id
-            ? {
-                ...item,
-                lead_status: status,
-                customer_phone: contact.phone || item.customer_phone,
-                customer_email: contact.email || item.customer_email,
-                customer_name: contact.name || item.customer_name,
-                tags: nextTags,
-                lead_score: localLeadScore(status),
-                qualified_at: status === "qualified" ? item.qualified_at ?? now : item.qualified_at,
-                bad_at: status === "bad" ? item.bad_at ?? now : item.bad_at,
-                lost_at: status === "lost" ? item.lost_at ?? now : item.lost_at,
-                last_crm_activity_at: now,
-              }
-            : item,
-        ),
-      );
-      setCrmActivities((items) => [
-        {
-          id: crypto.randomUUID(),
-          tenant_id: lead.tenant_id,
-          tracking_session_id: lead.id,
-          activity_type: "stage_change",
-          body: note || null,
-          from_status: lead.lead_status,
-          to_status: status,
-          metadata: { tags: nextTags },
-          created_at: now,
-        },
-        ...items,
-      ]);
-      if (eventName) {
-        setEvents((items) => [
-          { event_name: eventName, ok: true, status_code: 200, created_at: now },
-          ...items,
-        ]);
-      }
-      setCrmNotes((items) => ({ ...items, [lead.id]: "" }));
-      setCrmContacts((items) => ({ ...items, [lead.id]: { phone: "", email: "", name: "" } }));
-      setToast(status === "qualified" ? "Lead qualificado e enviado para remarketing." : `Lead movido para ${statusLabel(status)}.`);
+      setToast("Configure o Supabase para atualizar o CRM real.");
       return;
     }
 
@@ -606,24 +537,13 @@ export function App() {
   }
 
   async function createClient() {
-    if (!clientDraft.name.trim() || !clientDraft.whatsapp.trim()) {
-      setToast("Informe nome e WhatsApp.");
+    if (!clientDraft.name.trim() || !clientDraft.businessSegment.trim() || !clientDraft.whatsapp.trim()) {
+      setToast("Informe nome, segmento e WhatsApp.");
       return;
     }
 
     if (!isConfigured || !supabase) {
-      const nextTenant: Tenant = {
-        id: crypto.randomUUID(),
-        slug: slugify(clientDraft.slug || clientDraft.name),
-        name: clientDraft.name,
-        whatsapp_number: clientDraft.whatsapp.replace(/\D/g, ""),
-        status: "active",
-        default_message_template: "Ola! Tenho interesse em {{oferta}}. Ref: {{ref}}",
-      };
-      setTenants((items) => [nextTenant, ...items]);
-      setTenantId(nextTenant.id);
-      setClientDraft(emptyClientDraft);
-      setToast("Cliente criado em modo demo.");
+      setToast("Configure o Supabase para criar empresas reais.");
       return;
     }
 
@@ -634,6 +554,13 @@ export function App() {
         name: clientDraft.name,
         slug: clientDraft.slug,
         whatsapp_number: clientDraft.whatsapp,
+        business_segment: clientDraft.businessSegment,
+        city: clientDraft.city,
+        state: clientDraft.state,
+        monthly_goal: clientDraft.monthlyGoal,
+        average_ticket: clientDraft.averageTicket,
+        primary_channel: clientDraft.primaryChannel,
+        responsible_name: clientDraft.responsibleName,
       }),
     });
     const data = await res.json();
@@ -654,7 +581,7 @@ export function App() {
 
     if (!isConfigured || !supabase) {
       setInviteDraft(emptyInviteDraft);
-      setToast("Convite simulado em modo demo.");
+      setToast("Configure o Supabase para enviar convites reais.");
       return;
     }
 
@@ -677,7 +604,7 @@ export function App() {
   async function startMetaLogin() {
     if (!tenant) return;
     if (!isConfigured || !supabase) {
-      setToast("Demo: em produção abriria o login do Facebook.");
+      setToast("Configure o Supabase para conectar o Facebook.");
       return;
     }
 
@@ -703,7 +630,7 @@ export function App() {
 
     if (!isConfigured || !supabase) {
       setMetaDraft(emptyMetaDraft);
-      setToast("Integração Meta salva em modo demo.");
+      setToast("Configure o Supabase para salvar integrações reais.");
       return;
     }
 
@@ -728,7 +655,7 @@ export function App() {
   async function testCapi() {
     if (!tenant) return;
     if (!isConfigured || !supabase) {
-      setToast("Teste CAPI simulado: OK.");
+      setToast("Configure o Supabase para testar CAPI real.");
       return;
     }
 
@@ -748,7 +675,7 @@ export function App() {
     if (!tenant) return;
 
     if (!isConfigured || !supabase) {
-      setToast("Gastos Meta sincronizados em modo demo.");
+      setToast("Configure o Supabase para sincronizar gastos reais.");
       return;
     }
 
@@ -772,7 +699,7 @@ export function App() {
     if (!tenant) return;
 
     if (!isConfigured || !supabase) {
-      setToast("Publicos Meta sincronizados em modo demo.");
+      setToast("Configure o Supabase para sincronizar públicos reais.");
       return;
     }
 
@@ -788,7 +715,7 @@ export function App() {
     });
     const data = await res.json();
     setIntegrationBusy(false);
-    if (!res.ok) return setToast(data.error || "Erro ao sincronizar publicos Meta.");
+    if (!res.ok) return setToast(data.error || "Erro ao sincronizar públicos Meta.");
     setMetaAudiences(data.audiences ?? []);
     const totals = (data.results ?? []).reduce(
       (acc: { synced: number; skipped: number; failed: number }, item: { synced?: number; skipped?: number; failed?: number }) => ({
@@ -803,14 +730,8 @@ export function App() {
 
   async function checkSupabaseHealth() {
     if (!isConfigured || !supabase) {
-      setSupabaseStatus("ok");
-      setSupabaseHealth({
-        database_model: "single_owned_multi_tenant",
-        database_owner: "idx",
-        tenant_isolation: "tenant_id + rls + edge_functions",
-        tenant_scope: "demo",
-      });
-      setToast("Demo: Supabase pronto.");
+      setSupabaseStatus("error");
+      setToast("Supabase não configurado neste build.");
       return;
     }
     setIntegrationBusy(true);
@@ -832,6 +753,23 @@ export function App() {
 
   if (!sessionReady) {
     return <div className="center-screen">Carregando</div>;
+  }
+
+  if (!isConfigured) {
+    return (
+      <main className="login-screen">
+        <section className="login-panel setup-panel">
+          <div className="brand-mark">IDX.</div>
+          <h1>Configuração necessária</h1>
+          <p>Este painel só mostra dados reais. Configure o Supabase do projeto para liberar login, onboarding e métricas reais.</p>
+          <div className="config-list">
+            <ReadOnly label="VITE_SUPABASE_URL" value="Obrigatório no build" />
+            <ReadOnly label="VITE_SUPABASE_ANON_KEY" value="Obrigatório no build" />
+            <ReadOnly label="Dados exibidos" value="Somente dados reais do banco IDX" />
+          </div>
+        </section>
+      </main>
+    );
   }
 
   if (!signedIn) {
@@ -858,13 +796,13 @@ export function App() {
             </button>
             {(authMode === "signup" || confirmationEmail) && (
               <button className="login-link-button" onClick={resendConfirmationEmail} disabled={loading}>
-                Reenviar confirmacao por email
+                Reenviar confirmação por email
               </button>
             )}
           </div>
           {confirmationEmail && (
             <p className="auth-hint">
-              Email de confirmacao enviado para <strong>{confirmationEmail}</strong>.
+              Email de confirmação enviado para <strong>{confirmationEmail}</strong>.
             </p>
           )}
         </section>
@@ -878,25 +816,53 @@ export function App() {
       <main className="login-screen">
         <section className="login-panel setup-panel">
           <div className="brand-mark">IDX.</div>
-          <h1>Primeira empresa</h1>
-          <p>Cadastre a empresa que vai usar o tracker. Voce vira o dono da plataforma neste primeiro setup.</p>
+          <h1>Onboarding da empresa</h1>
+          <p>Preencha os dados reais da empresa. O painel só será criado com informações salvas no banco da IDX.</p>
           <div className="setup-form">
             <label>
-              Nome da empresa
-              <input placeholder="Autoescola Vivo Rio Verde" value={clientDraft.name} onChange={(event) => setClientDraft({ ...clientDraft, name: event.target.value, slug: slugify(event.target.value) })} />
+              Nome real da empresa
+              <input placeholder="Nome cadastrado da empresa" value={clientDraft.name} onChange={(event) => setClientDraft({ ...clientDraft, name: event.target.value, slug: slugify(event.target.value) })} />
             </label>
             <label>
-              Slug
-              <input placeholder="autoescola-vivo" value={clientDraft.slug} onChange={(event) => setClientDraft({ ...clientDraft, slug: slugify(event.target.value) })} />
+              Segmento
+              <input placeholder="Segmento de atuação" value={clientDraft.businessSegment} onChange={(event) => setClientDraft({ ...clientDraft, businessSegment: event.target.value })} />
             </label>
             <label>
               WhatsApp com DDI e DDD
               <input placeholder="5564999999999" value={clientDraft.whatsapp} onChange={(event) => setClientDraft({ ...clientDraft, whatsapp: event.target.value })} />
             </label>
-            <button className="primary-button" onClick={createClient} disabled={loading}>
-              Criar primeira empresa
+            <label>
+              Cidade
+              <input placeholder="Cidade" value={clientDraft.city} onChange={(event) => setClientDraft({ ...clientDraft, city: event.target.value })} />
+            </label>
+            <label>
+              UF
+              <input placeholder="GO" maxLength={2} value={clientDraft.state} onChange={(event) => setClientDraft({ ...clientDraft, state: event.target.value.toUpperCase() })} />
+            </label>
+            <label>
+              Slug do painel
+              <input placeholder="nome-da-empresa" value={clientDraft.slug} onChange={(event) => setClientDraft({ ...clientDraft, slug: slugify(event.target.value) })} />
+            </label>
+            <label>
+              Meta mensal em R$
+              <input inputMode="decimal" placeholder="0,00" value={clientDraft.monthlyGoal} onChange={(event) => setClientDraft({ ...clientDraft, monthlyGoal: event.target.value })} />
+            </label>
+            <label>
+              Ticket médio em R$
+              <input inputMode="decimal" placeholder="0,00" value={clientDraft.averageTicket} onChange={(event) => setClientDraft({ ...clientDraft, averageTicket: event.target.value })} />
+            </label>
+            <label>
+              Canal principal
+              <input placeholder="Origem principal dos leads" value={clientDraft.primaryChannel} onChange={(event) => setClientDraft({ ...clientDraft, primaryChannel: event.target.value })} />
+            </label>
+            <label>
+              Responsável interno
+              <input placeholder="Nome do responsável" value={clientDraft.responsibleName} onChange={(event) => setClientDraft({ ...clientDraft, responsibleName: event.target.value })} />
+            </label>
+            <button className="primary-button span-2" onClick={createClient} disabled={loading}>
+              Criar painel real
             </button>
-            <button className="login-link-button" onClick={logout} disabled={loading}>
+            <button className="login-link-button span-2" onClick={logout} disabled={loading}>
               Sair
             </button>
           </div>
@@ -952,7 +918,7 @@ export function App() {
       <main className="main">
         <header className="topbar">
           <div>
-            <p className="eyeline">{isConfigured ? "Produção" : "Modo demo"}</p>
+            <p className="eyeline">Dados reais</p>
             <h1>{sectionTitle(active)}</h1>
           </div>
           <div className="tenant-chip">
@@ -1125,7 +1091,7 @@ export function App() {
             <section className="panel">
               <div className="panel-head">
                 <div>
-                  <h2>Publicos automaticos</h2>
+                  <h2>Públicos automáticos</h2>
                   <p>Qualificados e compradores viram Custom Audiences no Meta Ads.</p>
                 </div>
                 <Users size={18} />
@@ -1133,7 +1099,7 @@ export function App() {
               <div className="ad-sync-row">
                 <input placeholder="ID da conta de anuncios, ex: act_123456789" value={adAccountId} onChange={(event) => setAdAccountId(event.target.value)} />
                 <button className="primary-button" onClick={syncMetaAudiences} disabled={integrationBusy}>
-                  Sincronizar publicos
+                  Sincronizar públicos
                 </button>
               </div>
               <MetaAudiencesTable audiences={metaAudiences} />
@@ -1234,11 +1200,11 @@ export function App() {
               </div>
               <div className="supabase-box">
                 <ReadOnly label="Status" value={supabaseStatus === "ok" ? "Conectado" : supabaseStatus === "error" ? "Atenção" : "Não testado"} />
-                <ReadOnly label="Modo" value={isConfigured ? "Produção" : "Demo local"} />
+                <ReadOnly label="Modo" value="Produção" />
                 <ReadOnly label="Banco" value={supabaseHealth.database_model === "single_owned_multi_tenant" ? "Único IDX / multiempresa" : "IDX multiempresa"} />
                 <ReadOnly label="Isolamento" value={supabaseHealth.tenant_isolation ?? "tenant_id + RLS"} />
-                <ReadOnly label="Escopo" value={supabaseHealth.tenant_scope === "platform" ? "Gestor IDX" : supabaseHealth.tenant_scope === "member" ? "Empresa atual" : "Demo"} />
-                <ReadOnly label="Projeto" value={String(import.meta.env.VITE_SUPABASE_URL || "demo")} />
+                <ReadOnly label="Escopo" value={supabaseHealth.tenant_scope === "platform" ? "Gestor IDX" : "Empresa atual"} />
+                <ReadOnly label="Projeto" value={String(import.meta.env.VITE_SUPABASE_URL || "Configurado no build")} />
                 <button className="primary-button" onClick={checkSupabaseHealth} disabled={integrationBusy}>Verificar Supabase</button>
               </div>
             </section>
@@ -1468,23 +1434,23 @@ function SmartLinkForm({
     <div className="link-form">
       <label>
         Oferta
-        <input value={draft.offerName} onChange={(event) => set("offerName", event.target.value)} placeholder="CNH Categoria B, Banho e Tosa, Consulta..." />
+        <input value={draft.offerName} onChange={(event) => set("offerName", event.target.value)} placeholder="Nome real da oferta" />
       </label>
       <label>
         Categoria
-        <input value={draft.category} onChange={(event) => set("category", event.target.value)} placeholder="Autoescola, pet shop, estética" />
+        <input value={draft.category} onChange={(event) => set("category", event.target.value)} placeholder="Segmento ou categoria" />
       </label>
       <label>
         Preço
-        <input value={draft.price} onChange={(event) => set("price", event.target.value)} placeholder="2290" inputMode="decimal" />
+        <input value={draft.price} onChange={(event) => set("price", event.target.value)} placeholder="Valor real da oferta" inputMode="decimal" />
       </label>
       <label>
         Nome do link
-        <input value={draft.linkName} onChange={(event) => set("linkName", event.target.value)} placeholder="Instagram Stories - Julho" />
+        <input value={draft.linkName} onChange={(event) => set("linkName", event.target.value)} placeholder="Origem ou campanha do link" />
       </label>
       <label>
         Campanha
-        <input value={draft.campaign} onChange={(event) => set("campaign", event.target.value)} placeholder="cnh-b-julho" />
+        <input value={draft.campaign} onChange={(event) => set("campaign", event.target.value)} placeholder="campanha-real" />
       </label>
       <label>
         Fonte
@@ -1602,7 +1568,7 @@ function CrmPipeline({
                       <input
                         value={contacts[lead.id]?.phone ?? lead.customer_phone ?? ""}
                         onChange={(event) => onContactChange(lead.id, { phone: event.target.value })}
-                        placeholder="Telefone para publico"
+                        placeholder="Telefone para público"
                       />
                       <input
                         value={contacts[lead.id]?.email ?? lead.customer_email ?? ""}
@@ -1709,7 +1675,7 @@ function TenantUsersList({ users }: { users: TenantUser[] }) {
       {users.map((user) => (
         <article className="user-row" key={user.id}>
           <div>
-            <strong>{user.email || "Usuario sem email"}</strong>
+            <strong>{user.email || "Usuário sem email"}</strong>
             <small>{user.created_at ? `Criado em ${formatDate(user.created_at)}` : "Acesso vinculado"}</small>
           </div>
           <span>{userRoleLabel(user.role)}</span>
@@ -1792,7 +1758,7 @@ function MetaAudiencesTable({ audiences }: { audiences: MetaAudienceStatus[] }) 
         <article className="audience-row" key={audience.audience_key}>
           <div>
             <strong>{audience.name}</strong>
-            <small>{audience.meta_audience_id ? `Meta ID ${audience.meta_audience_id}` : "Ainda nao criado no Meta"}</small>
+            <small>{audience.meta_audience_id ? `Meta ID ${audience.meta_audience_id}` : "Ainda não criado no Meta"}</small>
           </div>
           <div className="audience-stats">
             <span>{audienceStatusLabel(audience.sync_status)}</span>
@@ -1931,9 +1897,9 @@ function audienceStatusLabel(status: MetaAudienceStatus["sync_status"]): string 
 
 function crmUpdateToast(data: { capi_ok?: boolean | null; audience_sync?: { status?: string; error?: string } | null }, status: LeadStatus): string {
   if (status === "qualified" || status === "sold") {
-    if (data.audience_sync?.status === "synced") return "CRM atualizado e lead enviado ao publico Meta.";
-    if (data.audience_sync?.status === "skipped") return "CRM atualizado. Informe telefone/email para entrar no publico Meta.";
-    if (data.audience_sync?.status === "failed") return `CRM atualizado. Publico Meta com erro: ${data.audience_sync.error ?? "verifique a integracao"}.`;
+    if (data.audience_sync?.status === "synced") return "CRM atualizado e lead enviado ao público Meta.";
+    if (data.audience_sync?.status === "skipped") return "CRM atualizado. Informe telefone/email para entrar no público Meta.";
+    if (data.audience_sync?.status === "failed") return `CRM atualizado. Público Meta com erro: ${data.audience_sync.error ?? "verifique a integração"}.`;
   }
 
   return data.capi_ok === false ? "CRM atualizado. CAPI sem credencial ou com erro." : "CRM atualizado e sinal enviado ao Meta.";
@@ -1954,40 +1920,6 @@ function userStatusLabel(status: TenantUser["status"]): string {
     invited: "Convidado",
     disabled: "Desativado",
   }[status];
-}
-
-function stageEventName(status: LeadStatus): string | null {
-  return {
-    new: null,
-    contacted: "ContactedLead",
-    qualified: "QualifiedLead",
-    bad: "DisqualifiedLead",
-    sold: "Purchase",
-    lost: "LeadLost",
-  }[status];
-}
-
-function localLeadScore(status: LeadStatus): number {
-  return {
-    new: 0,
-    contacted: 20,
-    qualified: 80,
-    bad: -20,
-    sold: 100,
-    lost: 0,
-  }[status];
-}
-
-function mergeLocalTags(tags: string[] | null | undefined, status: LeadStatus): string[] {
-  const stageTags = {
-    new: [],
-    contacted: ["contato"],
-    qualified: ["bom lead", "remarketing"],
-    bad: ["ruim"],
-    sold: ["venda"],
-    lost: ["perdido"],
-  }[status];
-  return Array.from(new Set([...(tags ?? []), ...stageTags])).slice(0, 12);
 }
 
 function buildQualityRows(leads: Lead[], campaigns: MetaCampaignRoi[]): QualityRow[] {

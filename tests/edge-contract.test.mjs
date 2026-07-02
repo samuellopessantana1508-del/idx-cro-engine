@@ -34,6 +34,7 @@ const migration4 = read("supabase/migrations/202606300004_crm.sql");
 const migration5 = read("supabase/migrations/202607010001_platform_control.sql");
 const migration7 = read("supabase/migrations/20260701112934_tenant_user_profiles.sql");
 const migration8 = read("supabase/migrations/20260701143000_meta_custom_audiences.sql");
+const migration9 = read("supabase/migrations/20260702125744_tenant_onboarding_company_profile.sql");
 const config = read("supabase/config.toml");
 const go = read("supabase/functions/go/index.ts");
 const convert = read("supabase/functions/convert/index.ts");
@@ -73,6 +74,9 @@ assert.match(migration8, /meta_custom_audiences/);
 assert.match(migration8, /meta_audience_syncs/);
 assert.match(migration8, /vw_meta_audience_status/);
 assert.match(migration8, /USER_PROVIDED_ONLY/);
+assert.match(migration9, /business_segment/);
+assert.match(migration9, /monthly_goal/);
+assert.match(migration9, /average_ticket/);
 
 assert.match(config, /\[functions\.go\][\s\S]*verify_jwt = false/);
 assert.match(config, /\[functions\.convert\][\s\S]*verify_jwt = true/);
@@ -102,6 +106,9 @@ assert.match(tenantAdmin, /onConflict: "tenant_id,user_id"/);
 assert.match(tenantAdmin, /PLATFORM_OWNER_EMAILS/);
 assert.match(tenantAdmin, /REQUIRE_PLATFORM_ADMIN_FOR_TENANT_CREATE/);
 assert.match(tenantAdmin, /platform_audit_log/);
+assert.match(tenantAdmin, /business_segment/);
+assert.match(tenantAdmin, /monthly_goal/);
+assert.match(tenantAdmin, /average_ticket/);
 
 assert.match(metaOauth, /dialog\/oauth/);
 assert.match(metaOauth, /oauth\/access_token/);
