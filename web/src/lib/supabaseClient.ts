@@ -3,6 +3,15 @@ import { createClient } from "@supabase/supabase-js";
 const url = import.meta.env.VITE_SUPABASE_URL;
 const anon = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-export const supabase =
-  url && anon ? createClient(url, anon, { auth: { persistSession: true } }) : null;
+function createSupabaseClient() {
+  if (!url || !anon) return null;
 
+  try {
+    return createClient(url, anon, { auth: { persistSession: true } });
+  } catch (error) {
+    console.error("Configuracao Supabase invalida.", error);
+    return null;
+  }
+}
+
+export const supabase = createSupabaseClient();
