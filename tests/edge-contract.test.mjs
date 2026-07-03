@@ -88,6 +88,9 @@ assert.match(config, /\[functions\.meta-audiences\][\s\S]*verify_jwt = true/);
 assert.match(go, /Response\.redirect\(targetUrl/);
 assert.match(go, /event_name: "Lead"/);
 assert.match(go, /tenant_meta_credentials/);
+assert.match(go, /invalidLinkResponse/);
+assert.match(go, /ALLOW_INVALID_LINK_FALLBACK/);
+assert.doesNotMatch(go, /go\.idx\.app/);
 
 assert.match(convert, /event_name: "Purchase"/);
 assert.match(convert, /lead_status: "sold"/);
@@ -114,6 +117,8 @@ assert.match(metaOauth, /dialog\/oauth/);
 assert.match(metaOauth, /oauth\/access_token/);
 assert.match(metaOauth, /integration_oauth_states/);
 assert.match(metaOauth, /tenant_meta_credentials/);
+assert.match(metaOauth, /https:\/\/cro\.idxparasuaempresa\.com\.br/);
+assert.doesNotMatch(metaOauth, /localhost:5177/);
 
 assert.match(metaAssets, /me\/adaccounts/);
 assert.match(metaAssets, /adspixels/);

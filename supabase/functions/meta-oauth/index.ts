@@ -50,7 +50,7 @@ Deno.serve(async (req: Request) => {
   const appId = Deno.env.get("META_APP_ID");
   const appSecret = Deno.env.get("META_APP_SECRET");
   const redirectUri = Deno.env.get("META_REDIRECT_URI");
-  const appUrl = Deno.env.get("APP_URL") ?? "http://localhost:5177";
+  const appUrl = Deno.env.get("APP_URL") ?? "https://cro.idxparasuaempresa.com.br";
   const version = Deno.env.get("META_GRAPH_VERSION") ?? "v25.0";
 
   if (req.method === "POST") {
@@ -156,4 +156,3 @@ Deno.serve(async (req: Request) => {
 
   return Response.redirect(`${stateRow.redirect_to ?? appUrl}?meta=connected`, 302);
 });
-

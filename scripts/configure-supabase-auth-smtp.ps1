@@ -1,6 +1,7 @@
 param(
   [string]$ProjectRef = "tykeycwworjtfpssjevw",
-  [string]$AppUrl = "http://127.0.0.1:5177",
+  [string]$AppUrl = "https://cro.idxparasuaempresa.com.br",
+  [switch]$IncludeLocalDevRedirects,
   [string]$SmtpHost = $env:SMTP_HOST,
   [int]$SmtpPort = 587,
   [string]$SmtpUser = $env:SMTP_USER,
@@ -34,7 +35,12 @@ if ($missing.Count -gt 0) {
   throw "Variaveis SMTP faltando: $($missing -join ', ')"
 }
 
-$uriAllowList = "$AppUrl/**,http://127.0.0.1:5177/**,http://localhost:5177/**"
+$uriAllowListItems = @("$AppUrl/**")
+if ($IncludeLocalDevRedirects) {
+  $uriAllowListItems += "http://127.0.0.1:5177/**"
+  $uriAllowListItems += "http://localhost:5177/**"
+}
+$uriAllowList = $uriAllowListItems -join ","
 
 $body = @{
   site_url = $AppUrl

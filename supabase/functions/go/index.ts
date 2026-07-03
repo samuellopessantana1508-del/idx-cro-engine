@@ -5,7 +5,8 @@ const supa = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-const fallbackUrl = Deno.env.get("FALLBACK_URL") ?? "https://wa.me";
+const invalidLinkFallbackUrl = Deno.env.get("FALLBACK_URL") ?? "";
+const allowInvalidLinkFallback = Deno.env.get("ALLOW_INVALID_LINK_FALLBACK") === "true";
 
 type CapiResult = {
   ok: boolean;
@@ -42,6 +43,46 @@ function money(value: unknown): string {
 
 function applyTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? "");
+}
+
+function invalidLinkResponse(): Response {
+  return new Response(
+    `<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Link indisponível - IDX</title>
+    <style>
+      :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0a0a0a; color: #fff; }
+      main { width: min(420px, calc(100vw - 32px)); border: 1px solid #2a2a2a; border-radius: 8px; padding: 24px; background: #171717; }
+      h1 { margin: 0 0 10px; font-size: 1.35rem; }
+      p { margin: 0; color: #cfcfcf; line-height: 1.5; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Link indisponível</h1>
+      <p>Este Smart Link não está ativo. Gere um novo link no painel IDX ou fale com a empresa responsável pelo atendimento.</p>
+    </main>
+  </body>
+</html>`,
+    {
+      status: 404,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+    },
+  );
+}
+
+function invalidLinkRedirect(): Response {
+  if (allowInvalidLinkFallback && invalidLinkFallbackUrl.startsWith("https://")) {
+    return Response.redirect(invalidLinkFallbackUrl, 302);
+  }
+  return invalidLinkResponse();
 }
 
 async function sendCapi(
@@ -85,7 +126,7 @@ Deno.serve(async (req: Request) => {
 
   const url = new URL(req.url);
   const code = url.pathname.split("/").filter(Boolean).pop();
-  if (!code) return Response.redirect(fallbackUrl, 302);
+  if (!code) return invalidLinkRedirect();
 
   const { data: link, error } = await supa
     .from("smart_links")
@@ -95,7 +136,7 @@ Deno.serve(async (req: Request) => {
     .maybeSingle();
 
   if (error || !link || link.tenant?.status !== "active") {
-    return Response.redirect(fallbackUrl, 302);
+    return invalidLinkRedirect();
   }
 
   const tenant = link.tenant;
