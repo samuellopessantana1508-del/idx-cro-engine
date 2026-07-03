@@ -74,6 +74,10 @@ function canCreateTenants(role: string | null): boolean {
   return ["owner", "admin", "support"].includes(String(role ?? ""));
 }
 
+function isPlatformRole(role: string | null): boolean {
+  return ["owner", "admin", "support", "viewer"].includes(String(role ?? ""));
+}
+
 async function isFirstPlatformSetup(): Promise<boolean> {
   const [tenants, platformUsers] = await Promise.all([
     supa.from("tenants").select("id", { count: "exact", head: true }),
@@ -128,6 +132,46 @@ Deno.serve(async (req: Request) => {
 
   const body = await req.json().catch(() => ({}));
   const action = String(body.action ?? "");
+
+  if (action === "bootstrap") {
+    const role = await platformRole(user.id, user.email);
+    let tenants: unknown[] = [];
+
+    if (isPlatformRole(role)) {
+      const { data, error } = await supa
+        .from("tenants")
+        .select("*")
+        .order("name", { ascending: true });
+      if (error) return json({ error: error.message }, 400);
+      tenants = data ?? [];
+    } else {
+      const { data, error } = await supa
+        .from("tenant_users")
+        .select("tenant:tenants(*)")
+        .eq("user_id", user.id)
+        .eq("status", "active");
+      if (error) return json({ error: error.message }, 400);
+      tenants = (data ?? []).map((row: any) => row.tenant).filter(Boolean);
+    }
+
+    const tenantIds = (tenants as Array<{ id?: string }>).map((tenant) => tenant.id).filter(Boolean);
+    const { data: summaries, error: summaryError } = tenantIds.length
+      ? await supa
+        .from("vw_tenant_isolation_audit")
+        .select("*")
+        .in("tenant_id", tenantIds)
+        .order("tenant_name", { ascending: true })
+      : { data: [], error: null };
+
+    if (summaryError) return json({ error: summaryError.message }, 400);
+
+    return json({
+      ok: true,
+      platform_role: role,
+      tenants,
+      tenant_summaries: summaries ?? [],
+    });
+  }
 
   if (action === "create_tenant") {
     const role = await platformRole(user.id, user.email);
@@ -203,7 +247,7 @@ Deno.serve(async (req: Request) => {
       primary_channel: primaryChannel || null,
     });
 
-    return json({ ok: true, tenant });
+    return json({ ok: true, tenant, platform_role: firstSetup ? "owner" : role });
   }
 
   const tenantId = String(body.tenant_id ?? "");

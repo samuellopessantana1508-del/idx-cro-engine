@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { canOperateTenantOrPlatform } from "../_shared/access.ts";
 import { syncSessionToMetaAudience } from "../_shared/meta-audiences.ts";
 
 const supa = createClient(
@@ -99,15 +100,9 @@ Deno.serve(async (req: Request) => {
 
   if (sessionError || !session) return json({ error: "session_not_found" }, 404);
 
-  const { data: membership } = await supa
-    .from("tenant_users")
-    .select("id, role")
-    .eq("tenant_id", session.tenant_id)
-    .eq("user_id", user.id)
-    .eq("status", "active")
-    .maybeSingle();
-
-  if (!membership) return json({ error: "forbidden" }, 403);
+  if (!(await canOperateTenantOrPlatform(supa, session.tenant_id, user.id, user.email))) {
+    return json({ error: "forbidden" }, 403);
+  }
 
   if (action === "lost") {
     await supa

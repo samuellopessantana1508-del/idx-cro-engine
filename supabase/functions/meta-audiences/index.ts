@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { canOperateTenantOrPlatform, canReadTenantOrPlatform } from "../_shared/access.ts";
 import { ensureMetaAudience, syncTenantAudience, type AudienceKey } from "../_shared/meta-audiences.ts";
 
 const supa = createClient(
@@ -29,18 +30,6 @@ async function currentUser(req: Request) {
   return data.user ?? null;
 }
 
-async function canManageTenant(tenantId: string, userId: string): Promise<boolean> {
-  const { data } = await supa
-    .from("tenant_users")
-    .select("id")
-    .eq("tenant_id", tenantId)
-    .eq("user_id", userId)
-    .eq("status", "active")
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
-  return Boolean(data);
-}
-
 async function audienceStatus(tenantId: string) {
   const { data, error } = await supa
     .from("vw_meta_audience_status")
@@ -63,7 +52,7 @@ Deno.serve(async (req: Request) => {
     const url = new URL(req.url);
     const tenantId = url.searchParams.get("tenant_id");
     if (!tenantId) return json({ error: "missing_tenant_id" }, 400);
-    if (!(await canManageTenant(tenantId, user.id))) return json({ error: "forbidden" }, 403);
+    if (!(await canReadTenantOrPlatform(supa, tenantId, user.id, user.email))) return json({ error: "forbidden" }, 403);
 
     try {
       return json({ ok: true, audiences: await audienceStatus(tenantId) });
@@ -79,7 +68,9 @@ Deno.serve(async (req: Request) => {
   const keys = requestedKey === "all" ? audienceKeys : [requestedKey as AudienceKey];
 
   if (!tenantId) return json({ error: "missing_tenant_id" }, 400);
-  if (!(await canManageTenant(tenantId, user.id))) return json({ error: "forbidden" }, 403);
+  if (!(await canOperateTenantOrPlatform(supa, tenantId, user.id, user.email, ["owner", "admin"]))) {
+    return json({ error: "forbidden" }, 403);
+  }
   if (keys.some((key) => !audienceKeys.includes(key))) return json({ error: "invalid_audience_key" }, 400);
 
   if (body.ad_account_id) {

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { canOperateTenantOrPlatform } from "../_shared/access.ts";
 import { syncSessionToMetaAudience, type AudienceKey } from "../_shared/meta-audiences.ts";
 
 const supa = createClient(
@@ -85,18 +86,6 @@ async function currentUser(req: Request) {
   const { data, error } = await supa.auth.getUser(token);
   if (error) return null;
   return data.user ?? null;
-}
-
-async function canOperateTenant(tenantId: string, userId: string): Promise<boolean> {
-  const { data } = await supa
-    .from("tenant_users")
-    .select("id")
-    .eq("tenant_id", tenantId)
-    .eq("user_id", userId)
-    .eq("status", "active")
-    .in("role", ["owner", "admin", "operator"])
-    .maybeSingle();
-  return Boolean(data);
 }
 
 async function sendCapi(tenantId: string, event: Record<string, unknown>): Promise<CapiResult> {
@@ -210,7 +199,9 @@ Deno.serve(async (req: Request) => {
 
   const { data: session, error: sessionError } = await query.maybeSingle();
   if (sessionError || !session) return json({ error: "session_not_found" }, 404);
-  if (!(await canOperateTenant(session.tenant_id, user.id))) return json({ error: "forbidden" }, 403);
+  if (!(await canOperateTenantOrPlatform(supa, session.tenant_id, user.id, user.email))) {
+    return json({ error: "forbidden" }, 403);
+  }
 
   const note = cleanText(body.note);
 

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { canOperateTenantOrPlatform } from "../_shared/access.ts";
 
 const supa = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -26,18 +27,6 @@ async function currentUser(req: Request) {
   return data.user ?? null;
 }
 
-async function canManageTenant(tenantId: string, userId: string): Promise<boolean> {
-  const { data } = await supa
-    .from("tenant_users")
-    .select("id")
-    .eq("tenant_id", tenantId)
-    .eq("user_id", userId)
-    .in("role", ["owner", "admin"])
-    .eq("status", "active")
-    .maybeSingle();
-  return Boolean(data);
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
@@ -50,7 +39,9 @@ Deno.serve(async (req: Request) => {
     const url = new URL(req.url);
     const tenantId = url.searchParams.get("tenant_id");
     if (!tenantId) return json({ error: "missing_tenant_id" }, 400);
-    if (!(await canManageTenant(tenantId, user.id))) return json({ error: "forbidden" }, 403);
+    if (!(await canOperateTenantOrPlatform(supa, tenantId, user.id, user.email, ["owner", "admin"]))) {
+      return json({ error: "forbidden" }, 403);
+    }
 
     const { data: creds } = await supa
       .from("tenant_meta_credentials")
@@ -76,7 +67,9 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const tenantId = String(body.tenant_id ?? "");
     if (!tenantId) return json({ error: "missing_tenant_id" }, 400);
-    if (!(await canManageTenant(tenantId, user.id))) return json({ error: "forbidden" }, 403);
+    if (!(await canOperateTenantOrPlatform(supa, tenantId, user.id, user.email, ["owner", "admin"]))) {
+      return json({ error: "forbidden" }, 403);
+    }
 
     const { error } = await supa.from("tenant_meta_credentials").upsert({
       tenant_id: tenantId,
@@ -97,4 +90,3 @@ Deno.serve(async (req: Request) => {
 
   return json({ error: "method_not_allowed" }, 405);
 });
-

@@ -25,6 +25,8 @@ import { envConfigured, formatDate, formatMoney, linkCode, slugify, smartLinkUrl
 
 type Section = "dashboard" | "links" | "leads" | "crm" | "integrations" | "clients" | "users" | "reports" | "capi" | "settings";
 
+type PlatformRole = "owner" | "admin" | "support" | "viewer";
+
 type DraftLink = {
   offerName: string;
   category: string;
@@ -53,7 +55,7 @@ type ClientDraft = {
 
 type InviteDraft = {
   email: string;
-  role: "admin" | "operator" | "viewer";
+  role: "owner" | "admin" | "operator" | "viewer";
 };
 
 type MetaDraft = {
@@ -88,6 +90,21 @@ type TenantOnboarding = {
   average_ticket?: number | null;
   primary_channel?: string | null;
   responsible_name?: string | null;
+};
+
+type TenantSummary = {
+  tenant_id: string;
+  tenant_name: string;
+  tenant_slug: string;
+  tenant_status: string;
+  tenant_users: number;
+  offers: number;
+  smart_links: number;
+  tracking_sessions: number;
+  crm_activities: number;
+  capi_events: number;
+  meta_insight_rows: number;
+  last_activity_at?: string | null;
 };
 
 type QualityRow = {
@@ -177,7 +194,9 @@ export function App() {
   const [password, setPassword] = useState("");
   const [confirmationEmail, setConfirmationEmail] = useState("");
   const [active, setActive] = useState<Section>("dashboard");
+  const [platformRole, setPlatformRole] = useState<PlatformRole | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [tenantSummaries, setTenantSummaries] = useState<TenantSummary[]>([]);
   const [tenantId, setTenantId] = useState("");
   const [offers, setOffers] = useState<Offer[]>([]);
   const [links, setLinks] = useState<SmartLink[]>([]);
@@ -214,6 +233,8 @@ export function App() {
   const [loading, setLoading] = useState(false);
 
   const tenant = tenants.find((item) => item.id === tenantId) ?? tenants[0];
+  const isPlatformUser = Boolean(platformRole);
+  const canCreateClients = ["owner", "admin", "support"].includes(String(platformRole)) || tenantSetupRequired;
   const tenantLinks = links.filter((item) => item.tenant_id === tenant?.id);
   const tenantLeads = leads.filter((item) => item.tenant_id === tenant?.id);
   const tenantOffers = offers.filter((item) => item.tenant_id === tenant?.id);
@@ -223,6 +244,7 @@ export function App() {
   const hasOperationalData = tenantLinks.length > 0 || tenantLeads.length > 0;
   const needsOperationalOnboarding = Boolean(tenant && !loading && !hasOperationalData);
   const qualityRows = useMemo(() => buildQualityRows(tenantLeads, tenantMetaCampaigns), [tenantLeads, tenantMetaCampaigns]);
+  const tenantSummary = tenantSummaries.find((item) => item.tenant_id === tenant?.id);
 
   const metrics = useMemo(() => {
     const clicks = tenantLinks.reduce((sum, link) => sum + Number(link.clicks ?? 0), 0);
@@ -359,6 +381,8 @@ export function App() {
     setSignedIn(false);
     setTenantSetupRequired(false);
     setOnboarding(null);
+    setPlatformRole(null);
+    setTenantSummaries([]);
   }
 
   async function authFetch(path: string, options: RequestInit = {}) {
@@ -380,30 +404,31 @@ export function App() {
   async function loadInitialData() {
     if (!supabase) return;
     setLoading(true);
+
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
 
-    if (!user) {
+    if (!session) {
       setLoading(false);
       return;
     }
 
-    const { data: tenantRows, error: tenantError } = await supabase
-      .from("tenant_users")
-      .select("tenant:tenants(*)")
-      .eq("user_id", user.id)
-      .eq("status", "active");
+    const res = await authFetch("tenant-admin", {
+      method: "POST",
+      body: JSON.stringify({ action: "bootstrap" }),
+    });
+    const data = await res.json();
 
-    if (tenantError) {
-      setToast(tenantError.message);
+    if (!res.ok) {
+      setToast(data.error || "Erro ao carregar acesso.");
       setLoading(false);
       return;
     }
 
-    const loadedTenants = (tenantRows ?? [])
-      .map((row: any) => row.tenant)
-      .filter(Boolean) as Tenant[];
+    const loadedTenants = (data.tenants ?? []) as Tenant[];
+    setPlatformRole((data.platform_role ?? null) as PlatformRole | null);
+    setTenantSummaries((data.tenant_summaries ?? []) as TenantSummary[]);
 
     if (!loadedTenants.length) {
       setTenants([]);
@@ -418,7 +443,7 @@ export function App() {
 
     setTenantSetupRequired(false);
     setTenants(loadedTenants);
-    const currentTenant = loadedTenants[0];
+    const currentTenant = loadedTenants.find((item) => item.id === tenantId) ?? loadedTenants[0];
     setTenantId(currentTenant.id);
     await loadTenantData(currentTenant.id);
     setLoading(false);
@@ -633,9 +658,11 @@ export function App() {
     if (!res.ok) return setToast(data.error || "Erro ao criar cliente.");
     setTenants((items) => [data.tenant, ...items]);
     setTenantId(data.tenant.id);
+    setPlatformRole((data.platform_role ?? platformRole) as PlatformRole | null);
     setTenantSetupRequired(false);
     setClientDraft(emptyClientDraft);
     setToast("Cliente criado.");
+    await loadInitialData();
     await loadTenantData(data.tenant.id);
   }
 
@@ -1029,7 +1056,7 @@ export function App() {
       <main className="main">
         <header className="topbar">
           <div>
-            <p className="eyeline">Dados reais</p>
+            <p className="eyeline">{isPlatformUser ? `Gestor IDX · ${platformRoleLabel(platformRole)}` : "Dados reais da empresa"}</p>
             <h1>{sectionTitle(active)}</h1>
           </div>
           <div className="tenant-chip">
@@ -1408,38 +1435,66 @@ export function App() {
             <section className="panel">
               <div className="panel-head">
                 <div>
-                  <h2>Novo cliente local</h2>
-                  <p>Crie pet shop, autoescola, clínica ou qualquer negócio em menos de um minuto.</p>
+                  <h2>{isPlatformUser ? "Central do gestor IDX" : "Empresa vinculada"}</h2>
+                  <p>{isPlatformUser ? "Cadastre, selecione e audite todos os clientes locais em uma conta de gestão." : "Seu acesso fica limitado às empresas nas quais você foi adicionado."}</p>
                 </div>
-                <Plus size={18} />
+                <ShieldCheck size={18} />
               </div>
-              <div className="client-form">
-                <input placeholder="Nome da empresa" value={clientDraft.name} onChange={(event) => setClientDraft({ ...clientDraft, name: event.target.value, slug: slugify(event.target.value) })} />
-                <input placeholder="Segmento" value={clientDraft.businessSegment} onChange={(event) => setClientDraft({ ...clientDraft, businessSegment: event.target.value })} />
-                <input placeholder="Slug" value={clientDraft.slug} onChange={(event) => setClientDraft({ ...clientDraft, slug: slugify(event.target.value) })} />
-                <input placeholder="WhatsApp com DDI e DDD" value={clientDraft.whatsapp} onChange={(event) => setClientDraft({ ...clientDraft, whatsapp: event.target.value })} />
-                <input placeholder="Cidade" value={clientDraft.city} onChange={(event) => setClientDraft({ ...clientDraft, city: event.target.value })} />
-                <input placeholder="UF" maxLength={2} value={clientDraft.state} onChange={(event) => setClientDraft({ ...clientDraft, state: event.target.value.toUpperCase() })} />
-                <input placeholder="Responsável" value={clientDraft.responsibleName} onChange={(event) => setClientDraft({ ...clientDraft, responsibleName: event.target.value })} />
-                <button className="primary-button" onClick={createClient}>Criar cliente</button>
+              <div className="permission-grid">
+                <ReadOnly label="Seu acesso" value={isPlatformUser ? `Gestor IDX - ${platformRoleLabel(platformRole)}` : "Cliente ou colaborador"} />
+                <ReadOnly label="Empresas visíveis" value={String(tenants.length)} />
+                <ReadOnly label="Empresa atual" value={tenant?.name ?? "-"} />
+                <ReadOnly label="Stakeholders" value={String(tenantSummary?.tenant_users ?? tenantUsers.length)} />
               </div>
             </section>
+
+            {canCreateClients && (
+              <section className="panel">
+                <div className="panel-head">
+                  <div>
+                    <h2>Novo cliente local</h2>
+                    <p>Crie pet shop, autoescola, clínica ou qualquer negócio local com dados reais.</p>
+                  </div>
+                  <Plus size={18} />
+                </div>
+                <div className="client-form">
+                  <input placeholder="Nome da empresa" value={clientDraft.name} onChange={(event) => setClientDraft({ ...clientDraft, name: event.target.value, slug: slugify(event.target.value) })} />
+                  <input placeholder="Segmento" value={clientDraft.businessSegment} onChange={(event) => setClientDraft({ ...clientDraft, businessSegment: event.target.value })} />
+                  <input placeholder="Slug" value={clientDraft.slug} onChange={(event) => setClientDraft({ ...clientDraft, slug: slugify(event.target.value) })} />
+                  <input placeholder="WhatsApp com DDI e DDD" value={clientDraft.whatsapp} onChange={(event) => setClientDraft({ ...clientDraft, whatsapp: event.target.value })} />
+                  <input placeholder="Cidade" value={clientDraft.city} onChange={(event) => setClientDraft({ ...clientDraft, city: event.target.value })} />
+                  <input placeholder="UF" maxLength={2} value={clientDraft.state} onChange={(event) => setClientDraft({ ...clientDraft, state: event.target.value.toUpperCase() })} />
+                  <input placeholder="Responsável" value={clientDraft.responsibleName} onChange={(event) => setClientDraft({ ...clientDraft, responsibleName: event.target.value })} />
+                  <button className="primary-button" onClick={createClient}>Criar cliente</button>
+                </div>
+              </section>
+            )}
 
             <section className="panel">
               <div className="panel-head">
                 <div>
-                  <h2>Clientes</h2>
-                  <p>Empresas conectadas à sua operação de CRO local.</p>
+                  <h2>{isPlatformUser ? "Clientes" : "Minhas empresas"}</h2>
+                  <p>{isPlatformUser ? "Empresas conectadas à sua operação de CRO local." : "Empresas liberadas para o seu login."}</p>
                 </div>
               </div>
               <div className="client-grid">
-                {tenants.map((item) => (
-                  <button className={`client-card ${item.id === tenant?.id ? "selected" : ""}`} key={item.id} onClick={() => setTenantId(item.id)}>
-                    <strong>{item.name}</strong>
-                    <span>{item.slug}</span>
-                    <small>{item.whatsapp_number}</small>
-                  </button>
-                ))}
+                {tenants.map((item) => {
+                  const summary = tenantSummaries.find((summary) => summary.tenant_id === item.id);
+                  return (
+                    <button
+                      className={`client-card ${item.id === tenant?.id ? "selected" : ""}`}
+                      key={item.id}
+                      onClick={async () => {
+                        setTenantId(item.id);
+                        if (isConfigured) await loadTenantData(item.id);
+                      }}
+                    >
+                      <strong>{item.name}</strong>
+                      <span>{item.slug}</span>
+                      <small>{summary ? `${summary.tenant_users} stakeholders · ${summary.smart_links} links · ${summary.tracking_sessions} cliques` : item.whatsapp_number}</small>
+                    </button>
+                  );
+                })}
               </div>
             </section>
           </section>
@@ -1450,16 +1505,17 @@ export function App() {
             <section className="panel">
               <div className="panel-head">
                 <div>
-                  <h2>Convidar usuário</h2>
-                  <p>Adicione atendentes, gestores e visualizadores sem mexer no banco.</p>
+                  <h2>Convidar stakeholder</h2>
+                  <p>Adicione donos, gestores, atendentes e visualizadores vinculados apenas à empresa atual.</p>
                 </div>
                 <UserPlus size={18} />
               </div>
               <div className="user-form">
                 <input placeholder="email@empresa.com" value={inviteDraft.email} onChange={(event) => setInviteDraft({ ...inviteDraft, email: event.target.value })} />
                 <select value={inviteDraft.role} onChange={(event) => setInviteDraft({ ...inviteDraft, role: event.target.value as InviteDraft["role"] })}>
+                  <option value="owner">Owner</option>
                   <option value="admin">Admin</option>
-                  <option value="operator">Atendente</option>
+                  <option value="operator">CRM / Atendimento</option>
                   <option value="viewer">Visualizador</option>
                 </select>
                 <button className="primary-button" onClick={inviteUser}>Enviar convite</button>
@@ -1469,15 +1525,27 @@ export function App() {
             <section className="panel">
               <div className="panel-head">
                 <div>
+                  <h2>Stakeholders cadastrados</h2>
+                  <p>Acessos liberados para verificar dados e operar o CRM desta empresa.</p>
+                </div>
+                <Users size={18} />
+              </div>
+              <TenantUsersList users={tenantUsers} />
+            </section>
+
+            <section className="panel">
+              <div className="panel-head">
+                <div>
                   <h2>Permissões</h2>
-                  <p>Modelo simples para negócios locais.</p>
+                  <p>Modelo de papéis para clientes locais e operação IDX.</p>
                 </div>
               </div>
               <div className="permission-grid">
-                <ReadOnly label="Owner" value="Tudo, incluindo Meta e usuários" />
-                <ReadOnly label="Admin" value="Links, integrações e relatórios" />
-                <ReadOnly label="Atendente" value="Confirmar venda e perda" />
-                <ReadOnly label="Visualizador" value="Apenas relatórios" />
+                <ReadOnly label="Gestor IDX" value="Acesso multiempresa via platform_users" />
+                <ReadOnly label="Owner" value="Dono da empresa, integrações e stakeholders" />
+                <ReadOnly label="Admin" value="Links, integrações, CRM e relatórios" />
+                <ReadOnly label="CRM / Atendimento" value="Acompanha leads e atualiza pipeline" />
+                <ReadOnly label="Visualizador" value="Verifica dados e relatórios da empresa" />
               </div>
             </section>
           </section>
@@ -2179,8 +2247,18 @@ function userRoleLabel(role: TenantUser["role"]): string {
   return {
     owner: "Owner",
     admin: "Admin",
-    operator: "Atendente",
+    operator: "CRM / Atendimento",
     viewer: "Visualizador",
+  }[role];
+}
+
+function platformRoleLabel(role: PlatformRole | null): string {
+  if (!role) return "Empresa";
+  return {
+    owner: "Owner",
+    admin: "Admin",
+    support: "Gestor de tráfego",
+    viewer: "Leitura",
   }[role];
 }
 

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { canOperateTenantOrPlatform, canReadTenantOrPlatform } from "../_shared/access.ts";
 
 const supa = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -38,15 +39,11 @@ Deno.serve(async (req: Request) => {
   const tenantId = req.method === "POST" ? postBody.tenant_id : url.searchParams.get("tenant_id");
   if (!tenantId) return json({ error: "missing_tenant_id" }, 400);
 
-  const { data: membership } = await supa
-    .from("tenant_users")
-    .select("id")
-    .eq("tenant_id", tenantId)
-    .eq("user_id", user.id)
-    .eq("status", "active")
-    .maybeSingle();
+  const hasAccess = req.method === "POST"
+    ? await canOperateTenantOrPlatform(supa, tenantId, user.id, user.email, ["owner", "admin"])
+    : await canReadTenantOrPlatform(supa, tenantId, user.id, user.email);
 
-  if (!membership) return json({ error: "forbidden" }, 403);
+  if (!hasAccess) return json({ error: "forbidden" }, 403);
 
   if (req.method === "POST") {
     const { data: creds } = await supa

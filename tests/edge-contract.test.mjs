@@ -23,6 +23,7 @@ function mustExist(path) {
   "supabase/functions/supabase-health/index.ts",
   "supabase/functions/meta-insights/index.ts",
   "supabase/functions/meta-audiences/index.ts",
+  "supabase/functions/_shared/access.ts",
   "supabase/functions/_shared/meta-audiences.ts",
   "supabase/functions/crm/index.ts",
 ].forEach(mustExist);
@@ -44,6 +45,7 @@ const metaOauth = read("supabase/functions/meta-oauth/index.ts");
 const metaAssets = read("supabase/functions/meta-assets/index.ts");
 const metaInsights = read("supabase/functions/meta-insights/index.ts");
 const metaAudiences = read("supabase/functions/meta-audiences/index.ts");
+const sharedAccess = read("supabase/functions/_shared/access.ts");
 const sharedMetaAudiences = read("supabase/functions/_shared/meta-audiences.ts");
 const crm = read("supabase/functions/crm/index.ts");
 const supabaseHealth = read("supabase/functions/supabase-health/index.ts");
@@ -95,12 +97,18 @@ assert.doesNotMatch(go, /go\.idx\.app/);
 assert.match(convert, /event_name: "Purchase"/);
 assert.match(convert, /lead_status: "sold"/);
 assert.match(convert, /tenant_meta_credentials/);
+assert.match(convert, /canOperateTenantOrPlatform/);
 
 assert.match(capi, /req\.method === "POST"/);
 assert.match(capi, /test_event_code/);
 assert.match(capi, /tenant_meta_credentials/);
+assert.match(capi, /canReadTenantOrPlatform/);
+assert.match(capi, /canOperateTenantOrPlatform/);
 
 assert.match(tenantAdmin, /create_tenant/);
+assert.match(tenantAdmin, /action === "bootstrap"/);
+assert.match(tenantAdmin, /platform_role/);
+assert.match(tenantAdmin, /vw_tenant_isolation_audit/);
 assert.match(tenantAdmin, /save_meta_manual/);
 assert.match(tenantAdmin, /invite_user/);
 assert.match(tenantAdmin, /inviteUserByEmail/);
@@ -118,18 +126,30 @@ assert.match(metaOauth, /oauth\/access_token/);
 assert.match(metaOauth, /integration_oauth_states/);
 assert.match(metaOauth, /tenant_meta_credentials/);
 assert.match(metaOauth, /https:\/\/cro\.idxparasuaempresa\.com\.br/);
+assert.match(metaOauth, /canOperateTenantOrPlatform/);
 assert.doesNotMatch(metaOauth, /localhost:5177/);
 
 assert.match(metaAssets, /me\/adaccounts/);
 assert.match(metaAssets, /adspixels/);
+assert.match(metaAssets, /canOperateTenantOrPlatform/);
 
 assert.match(metaInsights, /\/insights/);
 assert.match(metaInsights, /vw_meta_campaign_roi/);
 assert.match(metaInsights, /meta_campaign_insights/);
+assert.match(metaInsights, /canReadTenantOrPlatform/);
+assert.match(metaInsights, /canOperateTenantOrPlatform/);
 
 assert.match(metaAudiences, /ensureMetaAudience/);
 assert.match(metaAudiences, /syncTenantAudience/);
 assert.match(metaAudiences, /vw_meta_audience_status/);
+assert.match(metaAudiences, /canReadTenantOrPlatform/);
+assert.match(metaAudiences, /canOperateTenantOrPlatform/);
+
+assert.match(sharedAccess, /platform_users/);
+assert.match(sharedAccess, /PLATFORM_OWNER_EMAILS/);
+assert.match(sharedAccess, /canPlatformRead/);
+assert.match(sharedAccess, /canPlatformManage/);
+assert.match(sharedAccess, /tenant_users/);
 
 assert.match(sharedMetaAudiences, /customaudiences/);
 assert.match(sharedMetaAudiences, /PHONE_SHA256/);
@@ -142,6 +162,7 @@ assert.match(crm, /crm_activities/);
 assert.match(crm, /remarketing/);
 assert.match(crm, /tenant_meta_credentials/);
 assert.match(crm, /syncSessionToMetaAudience/);
+assert.match(crm, /canOperateTenantOrPlatform/);
 
 assert.match(supabaseHealth, /single_owned_multi_tenant/);
 assert.match(supabaseHealth, /tenant_id \+ rls \+ edge_functions/);
