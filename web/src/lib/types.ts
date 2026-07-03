@@ -38,6 +38,7 @@ export type SmartLink = {
   default_utm_medium?: string | null;
   default_utm_campaign?: string | null;
   default_utm_content?: string | null;
+  default_utm_term?: string | null;
   status: "active" | "paused" | "archived";
   offer_name?: string | null;
   category?: string | null;

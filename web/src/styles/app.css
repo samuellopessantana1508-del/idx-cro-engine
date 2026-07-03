@@ -239,6 +239,52 @@ label {
   font-weight: 600;
 }
 
+.onboarding-panel {
+  box-shadow: none;
+}
+
+.onboarding-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.onboarding-step {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 16px;
+  min-height: 142px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--paper);
+}
+
+.onboarding-step.done {
+  background: var(--soft);
+}
+
+.onboarding-step strong,
+.onboarding-step small {
+  display: block;
+}
+
+.onboarding-step strong {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.onboarding-step small {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.compact-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .panel {
   padding: 18px;
   box-shadow: 0 10px 30px var(--shadow);
@@ -1042,6 +1088,7 @@ td small {
 
   .link-form,
   .sale-form,
+  .onboarding-grid,
   .settings-grid,
   .integration-grid,
   .mini-form,
@@ -1068,6 +1115,7 @@ td small {
 
   .link-form,
   .sale-form,
+  .onboarding-grid,
   .settings-grid,
   .integration-grid,
   .mini-form,

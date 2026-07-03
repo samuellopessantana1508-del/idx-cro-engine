@@ -115,7 +115,7 @@ e cadastre as URLs do painel em `Authentication > URL Configuration`:
 - Producao: URL final do GitHub Pages ou dominio do painel IDX
 
 O painel tambem permite reenviar a confirmacao de cadastro sem abrir o Supabase.
-Convites de novos usuarios por empresa sao enviados por email pela Edge Function
+Convites de novos usuários por empresa são enviados por email pela Edge Function
 `tenant-admin`.
 
 Para envio real a qualquer pessoa, configure SMTP proprio no Supabase Auth. O

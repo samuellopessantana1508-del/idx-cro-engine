@@ -210,6 +210,61 @@ Deno.serve(async (req: Request) => {
   if (!tenantId) return json({ error: "missing_tenant_id" }, 400);
   if (!(await canManageTenantOrPlatform(tenantId, user.id, user.email))) return json({ error: "forbidden" }, 403);
 
+  if (action === "update_tenant_profile") {
+    const name = cleanText(body.name);
+    const whatsapp = cleanPhone(String(body.whatsapp_number ?? ""));
+    const slug = slugify(String(body.slug ?? name));
+    const businessSegment = cleanText(body.business_segment);
+    const city = cleanText(body.city);
+    const state = cleanText(body.state).toUpperCase().slice(0, 2);
+    const primaryChannel = cleanText(body.primary_channel);
+    const responsibleName = cleanText(body.responsible_name);
+    const monthlyGoal = numericOrNull(body.monthly_goal);
+    const averageTicket = numericOrNull(body.average_ticket);
+
+    if (!name || !slug || !businessSegment || whatsapp.length < 12) {
+      return json({ error: "invalid_tenant_payload" }, 400);
+    }
+
+    const { data: tenant, error } = await supa
+      .from("tenants")
+      .update({
+        name,
+        slug,
+        whatsapp_number: whatsapp,
+      })
+      .eq("id", tenantId)
+      .select("*")
+      .single();
+
+    if (error || !tenant) return json({ error: error?.message ?? "tenant_update_failed" }, 400);
+
+    const { error: onboardingError } = await supa.from("tenant_onboarding").upsert({
+      tenant_id: tenantId,
+      tenant_created: true,
+      whatsapp_checked: true,
+      business_segment: businessSegment,
+      city: city || null,
+      state: state || null,
+      monthly_goal: monthlyGoal,
+      average_ticket: averageTicket,
+      primary_channel: primaryChannel || null,
+      responsible_name: responsibleName || null,
+      updated_at: new Date().toISOString(),
+    });
+
+    if (onboardingError) return json({ error: onboardingError.message }, 400);
+    await audit(user.id, "tenant.updated", tenantId, "tenant", tenantId, {
+      slug,
+      business_segment: businessSegment,
+      city: city || null,
+      state: state || null,
+      primary_channel: primaryChannel || null,
+    });
+
+    return json({ ok: true, tenant });
+  }
+
   if (action === "save_meta_manual") {
     const pixelId = String(body.pixel_id ?? "").trim();
     const accessToken = String(body.access_token ?? "").trim();

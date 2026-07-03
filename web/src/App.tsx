@@ -33,6 +33,8 @@ type DraftLink = {
   campaign: string;
   source: string;
   medium: string;
+  content: string;
+  term: string;
   message: string;
 };
 
@@ -74,6 +76,20 @@ type SupabaseHealthState = {
   tables?: Record<string, number>;
 };
 
+type TenantOnboarding = {
+  tenant_id: string;
+  tenant_created?: boolean | null;
+  whatsapp_checked?: boolean | null;
+  meta_connected?: boolean | null;
+  business_segment?: string | null;
+  city?: string | null;
+  state?: string | null;
+  monthly_goal?: number | null;
+  average_ticket?: number | null;
+  primary_channel?: string | null;
+  responsible_name?: string | null;
+};
+
 type QualityRow = {
   campaign: string;
   spend: number;
@@ -97,7 +113,9 @@ const emptyDraft: DraftLink = {
   campaign: "",
   source: "meta",
   medium: "paid",
-  message: "Ola! Tenho interesse em {{oferta}}. Ref: {{ref}}",
+  content: "",
+  term: "",
+  message: "Olá! Tenho interesse em {{oferta}}. Ref: {{ref}}",
 };
 
 const emptyClientDraft: ClientDraft = {
@@ -138,6 +156,17 @@ function authRedirectTo() {
   return `${window.location.origin}${window.location.pathname}`;
 }
 
+function smartLinkWithUtms(link: SmartLink): string {
+  const params = new URLSearchParams();
+  if (link.default_utm_source) params.set("utm_source", link.default_utm_source);
+  if (link.default_utm_medium) params.set("utm_medium", link.default_utm_medium);
+  if (link.default_utm_campaign) params.set("utm_campaign", link.default_utm_campaign);
+  if (link.default_utm_content) params.set("utm_content", link.default_utm_content);
+  if (link.default_utm_term) params.set("utm_term", link.default_utm_term);
+  const query = params.toString();
+  return `${smartLinkUrl(link.code)}${query ? `?${query}` : ""}`;
+}
+
 export function App() {
   const isConfigured = envConfigured() && Boolean(supabase);
   const [sessionReady, setSessionReady] = useState(!isConfigured);
@@ -159,6 +188,7 @@ export function App() {
   const [health, setHealth] = useState<CapiHealth>(emptyHealth);
   const [metaCampaigns, setMetaCampaigns] = useState<MetaCampaignRoi[]>([]);
   const [metaAudiences, setMetaAudiences] = useState<MetaAudienceStatus[]>([]);
+  const [onboarding, setOnboarding] = useState<TenantOnboarding | null>(null);
   const [draft, setDraft] = useState<DraftLink>(emptyDraft);
   const [toast, setToast] = useState("");
   const [leadSearch, setLeadSearch] = useState("");
@@ -166,6 +196,7 @@ export function App() {
   const [salePhone, setSalePhone] = useState("");
   const [saleRevenue, setSaleRevenue] = useState("");
   const [clientDraft, setClientDraft] = useState<ClientDraft>(emptyClientDraft);
+  const [profileDraft, setProfileDraft] = useState<ClientDraft>(emptyClientDraft);
   const [inviteDraft, setInviteDraft] = useState<InviteDraft>(emptyInviteDraft);
   const [metaDraft, setMetaDraft] = useState<MetaDraft>(emptyMetaDraft);
   const [adAccountId, setAdAccountId] = useState("");
@@ -189,6 +220,8 @@ export function App() {
   const tenantMetaCampaigns = metaCampaigns.filter((item) => item.tenant_id === tenant?.id);
   const tenantCrmActivities = crmActivities.filter((item) => item.tenant_id === tenant?.id);
   const remarketingLeads = tenantLeads.filter((lead) => lead.lead_status === "qualified");
+  const hasOperationalData = tenantLinks.length > 0 || tenantLeads.length > 0;
+  const needsOperationalOnboarding = Boolean(tenant && !loading && !hasOperationalData);
   const qualityRows = useMemo(() => buildQualityRows(tenantLeads, tenantMetaCampaigns), [tenantLeads, tenantMetaCampaigns]);
 
   const metrics = useMemo(() => {
@@ -227,6 +260,22 @@ export function App() {
     const timer = window.setTimeout(() => setToast(""), 2600);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (!tenant) return;
+    setProfileDraft({
+      name: tenant.name ?? "",
+      slug: tenant.slug ?? "",
+      whatsapp: tenant.whatsapp_number ?? "",
+      businessSegment: onboarding?.business_segment ?? "",
+      city: onboarding?.city ?? "",
+      state: onboarding?.state ?? "",
+      monthlyGoal: onboarding?.monthly_goal ? String(onboarding.monthly_goal) : "",
+      averageTicket: onboarding?.average_ticket ? String(onboarding.average_ticket) : "",
+      primaryChannel: onboarding?.primary_channel ?? "",
+      responsibleName: onboarding?.responsible_name ?? "",
+    });
+  }, [tenant?.id, onboarding]);
 
   async function login() {
     if (!supabase) return;
@@ -309,6 +358,7 @@ export function App() {
     if (supabase) await supabase.auth.signOut();
     setSignedIn(false);
     setTenantSetupRequired(false);
+    setOnboarding(null);
   }
 
   async function authFetch(path: string, options: RequestInit = {}) {
@@ -358,6 +408,7 @@ export function App() {
     if (!loadedTenants.length) {
       setTenants([]);
       setTenantId("");
+      setOnboarding(null);
       setTenantSetupRequired(true);
       setActive("clients");
       setToast("Crie a primeira empresa para iniciar o painel.");
@@ -375,7 +426,7 @@ export function App() {
 
   async function loadTenantData(nextTenantId = tenantId) {
     if (!supabase || !nextTenantId) return;
-    const [offerRes, linkRes, leadRes, eventRes, activityRes, userRes, healthRes, metaRoiRes, audienceRes] = await Promise.all([
+    const [offerRes, linkRes, leadRes, eventRes, activityRes, userRes, healthRes, metaRoiRes, audienceRes, onboardingRes] = await Promise.all([
       supabase.from("offers").select("*").eq("tenant_id", nextTenantId).order("created_at", { ascending: false }),
       supabase.from("vw_smart_link_performance").select("*").eq("tenant_id", nextTenantId),
       supabase.from("vw_lead_queue").select("*").eq("tenant_id", nextTenantId).order("clicked_at", { ascending: false }).limit(100),
@@ -385,6 +436,7 @@ export function App() {
       supabase.from("vw_capi_health").select("*").eq("tenant_id", nextTenantId).maybeSingle(),
       supabase.from("vw_meta_campaign_roi").select("*").eq("tenant_id", nextTenantId).order("spend", { ascending: false }).limit(100),
       supabase.from("vw_meta_audience_status").select("*").eq("tenant_id", nextTenantId).order("audience_key", { ascending: true }),
+      supabase.from("tenant_onboarding").select("*").eq("tenant_id", nextTenantId).maybeSingle(),
     ]);
 
     if (offerRes.data) setOffers(offerRes.data as Offer[]);
@@ -396,6 +448,7 @@ export function App() {
     if (healthRes.data) setHealth(healthRes.data as CapiHealth);
     if (metaRoiRes.data) setMetaCampaigns(metaRoiRes.data as MetaCampaignRoi[]);
     if (audienceRes.data) setMetaAudiences(audienceRes.data as MetaAudienceStatus[]);
+    setOnboarding((onboardingRes.data as TenantOnboarding | null) ?? null);
   }
 
   async function createSmartLink() {
@@ -404,10 +457,21 @@ export function App() {
       return;
     }
 
+    const source = draft.source.trim();
+    const medium = draft.medium.trim();
+    const campaign = draft.campaign.trim();
+    const content = draft.content.trim();
+    const term = draft.term.trim();
+    if (!source || !medium || !campaign) {
+      setToast("Informe as UTMs obrigatórias: fonte, mídia e campanha.");
+      return;
+    }
+
     const offerSlug = slugify(draft.offerName);
-    const code = linkCode(`${tenant.slug}-${offerSlug}-${draft.campaign || "direct"}`);
+    const campaignSlug = slugify(campaign) || "campanha";
+    const code = linkCode(`${tenant.slug}-${offerSlug}-${campaignSlug}`);
     const price = draft.price ? Number(draft.price.replace(",", ".")) : null;
-    const linkName = draft.linkName || `${draft.offerName} - ${draft.campaign || "Direto"}`;
+    const linkName = draft.linkName.trim() || `${draft.offerName} - ${campaign}`;
 
     if (!isConfigured || !supabase) {
       setToast("Configure o Supabase para criar Smart Links reais.");
@@ -440,9 +504,11 @@ export function App() {
       code,
       name: linkName,
       message_template: draft.message,
-      default_utm_source: draft.source,
-      default_utm_medium: draft.medium,
-      default_utm_campaign: draft.campaign,
+      default_utm_source: source,
+      default_utm_medium: medium,
+      default_utm_campaign: campaign,
+      default_utm_content: content || null,
+      default_utm_term: term || null,
     });
 
     setLoading(false);
@@ -456,8 +522,8 @@ export function App() {
     await loadTenantData();
   }
 
-  async function copyLink(code: string) {
-    await navigator.clipboard.writeText(smartLinkUrl(code));
+  async function copyLink(link: SmartLink) {
+    await navigator.clipboard.writeText(smartLinkWithUtms(link));
     setToast("Link copiado.");
   }
 
@@ -573,6 +639,43 @@ export function App() {
     await loadTenantData(data.tenant.id);
   }
 
+  async function saveTenantProfile() {
+    if (!tenant || !profileDraft.name.trim() || !profileDraft.businessSegment.trim() || !profileDraft.whatsapp.trim()) {
+      setToast("Informe nome, segmento e WhatsApp.");
+      return;
+    }
+
+    if (!isConfigured || !supabase) {
+      setToast("Configure o Supabase para atualizar empresas reais.");
+      return;
+    }
+
+    setLoading(true);
+    const res = await authFetch("tenant-admin", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "update_tenant_profile",
+        tenant_id: tenant.id,
+        name: profileDraft.name,
+        slug: profileDraft.slug,
+        whatsapp_number: profileDraft.whatsapp,
+        business_segment: profileDraft.businessSegment,
+        city: profileDraft.city,
+        state: profileDraft.state,
+        monthly_goal: profileDraft.monthlyGoal,
+        average_ticket: profileDraft.averageTicket,
+        primary_channel: profileDraft.primaryChannel,
+        responsible_name: profileDraft.responsibleName,
+      }),
+    });
+    const data = await res.json();
+    setLoading(false);
+    if (!res.ok) return setToast(data.error || "Erro ao atualizar empresa.");
+    setTenants((items) => items.map((item) => (item.id === data.tenant.id ? data.tenant : item)));
+    setToast("Empresa atualizada.");
+    await loadTenantData(data.tenant.id);
+  }
+
   async function inviteUser() {
     if (!tenant || !inviteDraft.email.trim()) {
       setToast("Informe o email do usuário.");
@@ -650,6 +753,7 @@ export function App() {
     if (!res.ok) return setToast(data.error || "Erro ao salvar Meta.");
     setMetaDraft(emptyMetaDraft);
     setToast("Meta conectado.");
+    await loadTenantData();
   }
 
   async function testCapi() {
@@ -775,7 +879,14 @@ export function App() {
   if (!signedIn) {
     return (
       <main className="login-screen">
-        <section className="login-panel">
+        <form
+          className="login-panel"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (loading) return;
+            void (authMode === "login" ? login() : signup());
+          }}
+        >
           <div className="brand-mark">IDX.</div>
           <h1>{authMode === "login" ? "CRO Engine" : "Criar acesso"}</h1>
           <p>{authMode === "login" ? "Entre para gerenciar Smart Links, WhatsApp Leads e CAPI." : "Crie seu acesso inicial e configure a primeira empresa."}</p>
@@ -788,14 +899,14 @@ export function App() {
             <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={authMode === "login" ? "current-password" : "new-password"} />
           </label>
           <div className="auth-actions">
-            <button className="primary-button" onClick={authMode === "login" ? login : signup} disabled={loading}>
+            <button className="primary-button" type="submit" disabled={loading}>
               {authMode === "login" ? "Entrar" : "Criar conta"}
             </button>
-            <button className="login-link-button" onClick={() => setAuthMode(authMode === "login" ? "signup" : "login")} disabled={loading}>
+            <button className="login-link-button" type="button" onClick={() => setAuthMode(authMode === "login" ? "signup" : "login")} disabled={loading}>
               {authMode === "login" ? "Criar primeiro acesso" : "Voltar para login"}
             </button>
             {(authMode === "signup" || confirmationEmail) && (
-              <button className="login-link-button" onClick={resendConfirmationEmail} disabled={loading}>
+              <button className="login-link-button" type="button" onClick={resendConfirmationEmail} disabled={loading}>
                 Reenviar confirmação por email
               </button>
             )}
@@ -805,7 +916,7 @@ export function App() {
               Email de confirmação enviado para <strong>{confirmationEmail}</strong>.
             </p>
           )}
-        </section>
+        </form>
         {toast && <div className="toast">{toast}</div>}
       </main>
     );
@@ -927,7 +1038,88 @@ export function App() {
           </div>
         </header>
 
-        {active === "dashboard" && (
+        {active === "dashboard" && needsOperationalOnboarding && (
+          <section className="page-grid">
+            <section className="panel wide onboarding-panel">
+              <div className="panel-head">
+                <div>
+                  <h2>Onboarding operacional</h2>
+                  <p>Esta empresa ainda não tem dados de campanha. Complete a implantação para o painel começar com informação real.</p>
+                </div>
+                <ShieldCheck size={18} />
+              </div>
+              <div className="onboarding-grid">
+                <OnboardingStep
+                  title="Empresa"
+                  detail={`${tenant?.name ?? "Empresa"} · ${tenant?.whatsapp_number ?? "WhatsApp pendente"}`}
+                  done={Boolean(tenant?.id && tenant?.whatsapp_number)}
+                  action="Revisar"
+                  onClick={() => setActive("settings")}
+                />
+                <OnboardingStep
+                  title="Meta CAPI"
+                  detail="Pixel ID e token salvos no cofre do projeto"
+                  done={Boolean(onboarding?.meta_connected)}
+                  action="Integrar Meta"
+                  onClick={() => setActive("integrations")}
+                />
+                <OnboardingStep
+                  title="UTM dos anúncios"
+                  detail="Fonte, mídia e campanha são obrigatórias em todo Smart Link"
+                  done={tenantLinks.length > 0}
+                  action="Criar link"
+                  onClick={() => setActive("links")}
+                />
+                <OnboardingStep
+                  title="Primeiro clique"
+                  detail="O Lead só aparece após um clique real no link"
+                  done={tenantLeads.length > 0}
+                  action="Copiar link"
+                  onClick={() => setActive("links")}
+                />
+              </div>
+            </section>
+
+            <section className="panel wide">
+              <div className="panel-head">
+                <div>
+                  <h2>Criar primeiro Smart Link</h2>
+                  <p>Use a mesma UTM que será colocada no anúncio, bio, stories ou campanha.</p>
+                </div>
+                <Plus size={18} />
+              </div>
+              <SmartLinkForm draft={draft} setDraft={setDraft} onSubmit={createSmartLink} loading={loading} />
+            </section>
+
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <h2>Perfil da empresa</h2>
+                  <p>Base operacional que alimenta implantação e relatórios.</p>
+                </div>
+              </div>
+              <div className="settings-grid compact-grid">
+                <ReadOnly label="Segmento" value={onboarding?.business_segment ?? "Não preenchido"} />
+                <ReadOnly label="Cidade" value={onboarding?.city ?? "Não preenchido"} />
+                <ReadOnly label="UF" value={onboarding?.state ?? "Não preenchido"} />
+                <ReadOnly label="Responsável" value={onboarding?.responsible_name ?? "Não preenchido"} />
+              </div>
+            </section>
+
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <h2>Usuários desta empresa</h2>
+                  <p>Cada login fica vinculado apenas à empresa selecionada.</p>
+                </div>
+                <Users size={18} />
+              </div>
+              <TenantUsersList users={tenantUsers} />
+            </section>
+          </section>
+        )}
+
+        {active === "dashboard" && !needsOperationalOnboarding && (
           <section className="page-grid">
             <div className="kpi-grid">
               <Kpi label="Cliques" value={metrics.clicks.toLocaleString("pt-BR")} />
@@ -951,8 +1143,8 @@ export function App() {
             <section className="panel">
               <div className="panel-head">
                 <div>
-                  <h2>UsuÃ¡rios desta empresa</h2>
-                  <p>Cada login fica vinculado apenas Ã  empresa selecionada.</p>
+                  <h2>Usuários desta empresa</h2>
+                  <p>Cada login fica vinculado apenas à empresa selecionada.</p>
                 </div>
                 <Users size={18} />
               </div>
@@ -1097,7 +1289,7 @@ export function App() {
                 <Users size={18} />
               </div>
               <div className="ad-sync-row">
-                <input placeholder="ID da conta de anuncios, ex: act_123456789" value={adAccountId} onChange={(event) => setAdAccountId(event.target.value)} />
+                <input placeholder="ID da conta de anúncios, ex: act_123456789" value={adAccountId} onChange={(event) => setAdAccountId(event.target.value)} />
                 <button className="primary-button" onClick={syncMetaAudiences} disabled={integrationBusy}>
                   Sincronizar públicos
                 </button>
@@ -1223,8 +1415,12 @@ export function App() {
               </div>
               <div className="client-form">
                 <input placeholder="Nome da empresa" value={clientDraft.name} onChange={(event) => setClientDraft({ ...clientDraft, name: event.target.value, slug: slugify(event.target.value) })} />
+                <input placeholder="Segmento" value={clientDraft.businessSegment} onChange={(event) => setClientDraft({ ...clientDraft, businessSegment: event.target.value })} />
                 <input placeholder="Slug" value={clientDraft.slug} onChange={(event) => setClientDraft({ ...clientDraft, slug: slugify(event.target.value) })} />
                 <input placeholder="WhatsApp com DDI e DDD" value={clientDraft.whatsapp} onChange={(event) => setClientDraft({ ...clientDraft, whatsapp: event.target.value })} />
+                <input placeholder="Cidade" value={clientDraft.city} onChange={(event) => setClientDraft({ ...clientDraft, city: event.target.value })} />
+                <input placeholder="UF" maxLength={2} value={clientDraft.state} onChange={(event) => setClientDraft({ ...clientDraft, state: event.target.value.toUpperCase() })} />
+                <input placeholder="Responsável" value={clientDraft.responsibleName} onChange={(event) => setClientDraft({ ...clientDraft, responsibleName: event.target.value })} />
                 <button className="primary-button" onClick={createClient}>Criar cliente</button>
               </div>
             </section>
@@ -1367,10 +1563,48 @@ export function App() {
                 <SlidersHorizontal size={18} />
               </div>
               <div className="settings-grid">
-                <ReadOnly label="Empresa" value={tenant?.name} />
-                <ReadOnly label="Slug" value={tenant?.slug} />
-                <ReadOnly label="WhatsApp" value={tenant?.whatsapp_number} />
+                <label>
+                  Empresa
+                  <input value={profileDraft.name} onChange={(event) => setProfileDraft({ ...profileDraft, name: event.target.value, slug: slugify(event.target.value) })} />
+                </label>
+                <label>
+                  Segmento
+                  <input value={profileDraft.businessSegment} onChange={(event) => setProfileDraft({ ...profileDraft, businessSegment: event.target.value })} />
+                </label>
+                <label>
+                  Slug
+                  <input value={profileDraft.slug} onChange={(event) => setProfileDraft({ ...profileDraft, slug: slugify(event.target.value) })} />
+                </label>
+                <label>
+                  WhatsApp
+                  <input value={profileDraft.whatsapp} onChange={(event) => setProfileDraft({ ...profileDraft, whatsapp: event.target.value })} />
+                </label>
+                <label>
+                  Cidade
+                  <input value={profileDraft.city} onChange={(event) => setProfileDraft({ ...profileDraft, city: event.target.value })} />
+                </label>
+                <label>
+                  UF
+                  <input maxLength={2} value={profileDraft.state} onChange={(event) => setProfileDraft({ ...profileDraft, state: event.target.value.toUpperCase() })} />
+                </label>
+                <label>
+                  Meta mensal
+                  <input inputMode="decimal" value={profileDraft.monthlyGoal} onChange={(event) => setProfileDraft({ ...profileDraft, monthlyGoal: event.target.value })} />
+                </label>
+                <label>
+                  Ticket médio
+                  <input inputMode="decimal" value={profileDraft.averageTicket} onChange={(event) => setProfileDraft({ ...profileDraft, averageTicket: event.target.value })} />
+                </label>
+                <label>
+                  Canal principal
+                  <input value={profileDraft.primaryChannel} onChange={(event) => setProfileDraft({ ...profileDraft, primaryChannel: event.target.value })} />
+                </label>
+                <label>
+                  Responsável
+                  <input value={profileDraft.responsibleName} onChange={(event) => setProfileDraft({ ...profileDraft, responsibleName: event.target.value })} />
+                </label>
                 <ReadOnly label="Ofertas" value={String(tenantOffers.length)} />
+                <button className="primary-button" onClick={saveTenantProfile} disabled={loading}>Salvar empresa</button>
               </div>
             </section>
 
@@ -1418,6 +1652,34 @@ function Kpi({ label, value }: { label: string; value: string }) {
   );
 }
 
+function OnboardingStep({
+  title,
+  detail,
+  done,
+  action,
+  onClick,
+}: {
+  title: string;
+  detail: string;
+  done: boolean;
+  action: string;
+  onClick: () => void;
+}) {
+  return (
+    <article className={`onboarding-step ${done ? "done" : ""}`}>
+      <div>
+        <strong>{title}</strong>
+        <small>{detail}</small>
+      </div>
+      {done ? (
+        <span className="status-pill status-pill-good">Pronto</span>
+      ) : (
+        <button className="ghost-dark-button" onClick={onClick}>{action}</button>
+      )}
+    </article>
+  );
+}
+
 function SmartLinkForm({
   draft,
   setDraft,
@@ -1450,15 +1712,23 @@ function SmartLinkForm({
       </label>
       <label>
         Campanha
-        <input value={draft.campaign} onChange={(event) => set("campaign", event.target.value)} placeholder="campanha-real" />
+        <input value={draft.campaign} onChange={(event) => set("campaign", event.target.value)} placeholder="utm_campaign do anúncio" />
       </label>
       <label>
         Fonte
-        <input value={draft.source} onChange={(event) => set("source", event.target.value)} />
+        <input value={draft.source} onChange={(event) => set("source", event.target.value)} placeholder="meta" />
       </label>
       <label>
         Mídia
-        <input value={draft.medium} onChange={(event) => set("medium", event.target.value)} />
+        <input value={draft.medium} onChange={(event) => set("medium", event.target.value)} placeholder="paid" />
+      </label>
+      <label>
+        Conteúdo
+        <input value={draft.content} onChange={(event) => set("content", event.target.value)} placeholder="criativo ou anúncio" />
+      </label>
+      <label>
+        Termo
+        <input value={draft.term} onChange={(event) => set("term", event.target.value)} placeholder="palavra ou público" />
       </label>
       <label className="span-2">
         Mensagem WhatsApp
@@ -1471,7 +1741,7 @@ function SmartLinkForm({
   );
 }
 
-function LinksTable({ links, onCopy }: { links: SmartLink[]; onCopy: (code: string) => void }) {
+function LinksTable({ links, onCopy }: { links: SmartLink[]; onCopy: (link: SmartLink) => void }) {
   if (!links.length) return <EmptyState text="Nenhum link criado ainda." />;
   return (
     <div className="table-wrap">
@@ -1492,7 +1762,7 @@ function LinksTable({ links, onCopy }: { links: SmartLink[]; onCopy: (code: stri
             <tr key={link.id}>
               <td>
                 <strong>{link.name}</strong>
-                <small>{smartLinkUrl(link.code)}</small>
+                <small>{smartLinkWithUtms(link)}</small>
               </td>
               <td>{link.offer_name ?? "-"}</td>
               <td>{link.clicks ?? 0}</td>
@@ -1500,7 +1770,7 @@ function LinksTable({ links, onCopy }: { links: SmartLink[]; onCopy: (code: stri
               <td>{formatMoney(link.revenue)}</td>
               <td>{Number(link.conversion_rate ?? 0).toFixed(1)}%</td>
               <td>
-                <button className="icon-button" onClick={() => onCopy(link.code)} aria-label="Copiar link">
+                <button className="icon-button" onClick={() => onCopy(link)} aria-label="Copiar link">
                   <Clipboard size={15} />
                 </button>
               </td>
@@ -1669,7 +1939,7 @@ function CrmHistory({ activities, leads }: { activities: CrmActivity[]; leads: L
 }
 
 function TenantUsersList({ users }: { users: TenantUser[] }) {
-  if (!users.length) return <EmptyState text="Nenhum usuario vinculado ainda." />;
+  if (!users.length) return <EmptyState text="Nenhum usuário vinculado ainda." />;
   return (
     <div className="user-list">
       {users.map((user) => (
@@ -1887,7 +2157,7 @@ function statusLabel(status: LeadStatus | string): string {
 
 function audienceStatusLabel(status: MetaAudienceStatus["sync_status"]): string {
   return {
-    not_created: "Nao criado",
+    not_created: "Não criado",
     created: "Criado",
     syncing: "Sincronizando",
     synced: "Sincronizado",

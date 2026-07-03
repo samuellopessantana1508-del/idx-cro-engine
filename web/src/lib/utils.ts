@@ -45,8 +45,10 @@ export function envConfigured(): boolean {
   return Boolean(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY);
 }
 
+const DEFAULT_REDIRECT_BASE = "https://tykeycwworjtfpssjevw.supabase.co";
+
 export function redirectBase(): string {
-  return String(import.meta.env.VITE_PUBLIC_REDIRECT_BASE || import.meta.env.VITE_SUPABASE_URL || "https://go.idx.app").replace(/\/$/, "");
+  return String(import.meta.env.VITE_PUBLIC_REDIRECT_BASE || import.meta.env.VITE_SUPABASE_URL || DEFAULT_REDIRECT_BASE).replace(/\/$/, "");
 }
 
 export function redirectPrefix(): string {
@@ -56,4 +58,3 @@ export function redirectPrefix(): string {
 export function smartLinkUrl(code: string): string {
   return `${redirectBase()}${redirectPrefix()}/${code}`;
 }
-
