@@ -253,6 +253,7 @@ export function App() {
   const [metaAssetsLoaded, setMetaAssetsLoaded] = useState(false);
   const [crmNotes, setCrmNotes] = useState<Record<string, string>>({});
   const [crmContacts, setCrmContacts] = useState<Record<string, ContactDraft>>({});
+  const [crmRevenue, setCrmRevenue] = useState<Record<string, string>>({});
   const [crmBusyRef, setCrmBusyRef] = useState("");
   const [integrationBusy, setIntegrationBusy] = useState(false);
   const [supabaseStatus, setSupabaseStatus] = useState<"unknown" | "ok" | "error">(isConfigured ? "unknown" : "ok");
@@ -648,6 +649,12 @@ export function App() {
   async function updateCrmStage(lead: Lead, status: LeadStatus) {
     const note = (crmNotes[lead.id] ?? "").trim();
     const contact = crmContacts[lead.id] ?? { phone: "", email: "", name: "" };
+    const saleValue = moneyInputToNumber(crmRevenue[lead.id] ?? String(lead.revenue ?? ""));
+    if (status === "sold" && (!Number.isFinite(saleValue) || saleValue <= 0)) {
+      setToast("Informe o valor da venda no card do lead.");
+      return;
+    }
+
     if (!isConfigured || !supabase) {
       setToast("Configure o Supabase para atualizar o CRM real.");
       return;
@@ -664,13 +671,15 @@ export function App() {
         customer_phone: contact.phone || undefined,
         customer_email: contact.email || undefined,
         customer_name: contact.name || undefined,
+        revenue: status === "sold" ? saleValue : undefined,
       }),
     });
     const data = await res.json();
     setCrmBusyRef("");
-    if (!res.ok) return setToast(data.error || "Erro ao atualizar CRM.");
+    if (!res.ok) return setToast(humanError(data.error) || "Erro ao atualizar CRM.");
     setCrmNotes((items) => ({ ...items, [lead.id]: "" }));
     setCrmContacts((items) => ({ ...items, [lead.id]: { phone: "", email: "", name: "" } }));
+    if (status === "sold") setCrmRevenue((items) => ({ ...items, [lead.id]: "" }));
     setToast(crmUpdateToast(data, status));
     await loadTenantData();
   }
@@ -1377,7 +1386,7 @@ export function App() {
               <div className="panel-head">
                 <div>
                   <h2>Confirmar venda</h2>
-                  <p>O atendente usa o ref que veio na mensagem do WhatsApp.</p>
+                  <p>Finalize pelo card do lead no CRM. O ref fica apenas como fallback manual.</p>
                 </div>
                 <Check size={18} />
               </div>
@@ -1427,9 +1436,11 @@ export function App() {
                   leads={tenantLeads}
                   notes={crmNotes}
                   contacts={crmContacts}
+                  revenues={crmRevenue}
                   busyRef={crmBusyRef}
                   onNoteChange={(leadId, value) => setCrmNotes((items) => ({ ...items, [leadId]: value }))}
                   onContactChange={(leadId, value) => setCrmContacts((items) => ({ ...items, [leadId]: { ...(items[leadId] ?? { phone: "", email: "", name: "" }), ...value } }))}
+                  onRevenueChange={(leadId, value) => setCrmRevenue((items) => ({ ...items, [leadId]: value }))}
                   onStageChange={updateCrmStage}
                 />
             </section>
@@ -2026,17 +2037,21 @@ function CrmPipeline({
   leads,
   notes,
   contacts,
+  revenues,
   busyRef,
   onNoteChange,
   onContactChange,
+  onRevenueChange,
   onStageChange,
 }: {
   leads: Lead[];
   notes: Record<string, string>;
   contacts: Record<string, ContactDraft>;
+  revenues: Record<string, string>;
   busyRef: string;
   onNoteChange: (leadId: string, value: string) => void;
   onContactChange: (leadId: string, value: Partial<ContactDraft>) => void;
+  onRevenueChange: (leadId: string, value: string) => void;
   onStageChange: (lead: Lead, status: LeadStatus) => void;
 }) {
   if (!leads.length) return <EmptyState text="Nenhum lead no CRM ainda." />;
@@ -2067,6 +2082,11 @@ function CrmPipeline({
                     <TagRow tags={lead.tags} fallback={lead.utm_source ?? "whatsapp"} />
                     <div className="crm-contact-grid">
                       <input
+                        value={contacts[lead.id]?.name ?? lead.customer_name ?? ""}
+                        onChange={(event) => onContactChange(lead.id, { name: event.target.value })}
+                        placeholder="Nome do contato"
+                      />
+                      <input
                         value={contacts[lead.id]?.phone ?? lead.customer_phone ?? ""}
                         onChange={(event) => onContactChange(lead.id, { phone: event.target.value })}
                         placeholder="Telefone para público"
@@ -2076,6 +2096,12 @@ function CrmPipeline({
                         onChange={(event) => onContactChange(lead.id, { email: event.target.value })}
                         placeholder="Email opcional"
                         type="email"
+                      />
+                      <input
+                        value={revenues[lead.id] ?? (lead.revenue ? String(lead.revenue) : "")}
+                        onChange={(event) => onRevenueChange(lead.id, event.target.value)}
+                        placeholder="Valor da venda"
+                        inputMode="decimal"
                       />
                     </div>
                     <textarea
@@ -2098,7 +2124,14 @@ function CrmPipeline({
                           onClick={() => onStageChange(lead, "qualified")}
                           disabled={busyRef === lead.ref || lead.lead_status === "qualified"}
                         >
-                          Qualificar + remarketing
+                          Qualificar
+                        </button>
+                        <button
+                          className="primary-button"
+                          onClick={() => onStageChange(lead, "sold")}
+                          disabled={busyRef === lead.ref}
+                        >
+                          Vender
                         </button>
                         <button
                           className="ghost-dark-button"
@@ -2484,7 +2517,18 @@ function humanError(error?: string | null): string {
     missing_meta_app_env: "Facebook Login ainda não está configurado. Informe META_APP_ID e META_APP_SECRET da Meta App, ou use Pixel ID + Token CAPI.",
     missing_meta_credentials: "Salve Pixel ID e Token CAPI antes de testar ou sincronizar eventos.",
     meta_not_connected: "Conecte a Meta com Pixel ID + Token CAPI ou Facebook Login antes de sincronizar.",
+    invalid_revenue: "Informe o valor real da venda no card do lead.",
   }[String(error ?? "")] ?? String(error ?? "");
+}
+
+function moneyInputToNumber(value: string): number {
+  const clean = value.trim().replace(/[^\d,.-]/g, "");
+  const comma = clean.lastIndexOf(",");
+  const dot = clean.lastIndexOf(".");
+  if (comma >= 0) return Number(clean.replace(/\./g, "").replace(",", "."));
+  if ((clean.match(/\./g) ?? []).length > 1) return Number(clean.replace(/\./g, ""));
+  if (dot >= 0 && clean.length - dot - 1 === 3) return Number(clean.replace(".", ""));
+  return Number(clean.replace(/,/g, ""));
 }
 
 function userStatusLabel(status: TenantUser["status"]): string {
