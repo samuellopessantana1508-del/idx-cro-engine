@@ -759,7 +759,7 @@ export function App() {
     });
     const data = await res.json();
     setIntegrationBusy(false);
-    if (!res.ok) return setToast(data.error || "Erro ao iniciar Facebook Login.");
+    if (!res.ok) return setToast(humanError(data.error) || "Erro ao iniciar Facebook Login.");
     window.location.href = data.auth_url;
   }
 
@@ -2279,6 +2279,9 @@ function humanError(error?: string | null): string {
     platform_admin_required: "Este login não tem permissão de gestor IDX para criar clientes.",
     missing_tenant_id: "Selecione uma empresa antes de continuar.",
     forbidden: "Seu login não tem permissão para esta ação.",
+    missing_meta_app_env: "Facebook Login ainda não está configurado. Informe META_APP_ID e META_APP_SECRET da Meta App, ou use Pixel ID + Token CAPI.",
+    missing_meta_credentials: "Salve Pixel ID e Token CAPI antes de testar ou sincronizar eventos.",
+    meta_not_connected: "Conecte a Meta com Pixel ID + Token CAPI ou Facebook Login antes de sincronizar.",
   }[String(error ?? "")] ?? String(error ?? "");
 }
 
