@@ -25,6 +25,51 @@ function randomState(): string {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function accountPixels(account: Record<string, any>): Record<string, any>[] {
+  const pixels = account.adspixels;
+  if (Array.isArray(pixels)) return pixels;
+  return Array.isArray(pixels?.data) ? pixels.data : [];
+}
+
+async function autoSelectMetaAssets(tenantId: string, accessToken: string, version: string) {
+  const { data: current } = await supa
+    .from("tenant_meta_credentials")
+    .select("pixel_id, selected_ad_account_id")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (current?.selected_ad_account_id) return;
+
+  const assetsUrl = new URL(`https://graph.facebook.com/${version}/me/adaccounts`);
+  assetsUrl.searchParams.set("fields", "id,account_id,name,adspixels{id,name}");
+  assetsUrl.searchParams.set("limit", "50");
+  assetsUrl.searchParams.set("access_token", accessToken);
+
+  const response = await fetch(assetsUrl.toString());
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !Array.isArray(payload.data) || !payload.data.length) return;
+
+  const currentPixelId = String(current?.pixel_id ?? "");
+  const matchingAccount = currentPixelId
+    ? payload.data.find((account: Record<string, any>) => accountPixels(account).some((pixel) => String(pixel.id) === currentPixelId))
+    : null;
+  const selectedAccount = matchingAccount ?? payload.data.find((account: Record<string, any>) => accountPixels(account).length) ?? payload.data[0];
+  const pixels = accountPixels(selectedAccount);
+  const selectedPixel = pixels.find((pixel) => String(pixel.id) === currentPixelId) ?? pixels[0] ?? null;
+
+  const updates: Record<string, unknown> = {
+    selected_ad_account_id: selectedAccount.id ?? null,
+    selected_ad_account_name: selectedAccount.name ?? selectedAccount.account_id ?? null,
+    selected_pixel_name: selectedPixel?.name ?? null,
+    last_verified_at: new Date().toISOString(),
+    last_error: null,
+  };
+
+  if (!currentPixelId && selectedPixel?.id) updates.pixel_id = selectedPixel.id;
+
+  await supa.from("tenant_meta_credentials").update(updates).eq("tenant_id", tenantId);
+}
+
 async function currentUser(req: Request) {
   const token = req.headers.get("Authorization")?.replace("Bearer ", "");
   if (!token) return null;
@@ -144,6 +189,8 @@ Deno.serve(async (req: Request) => {
     last_verified_at: new Date().toISOString(),
     last_error: null,
   });
+
+  await autoSelectMetaAssets(stateRow.tenant_id, accessToken, version);
 
   await supa.from("integration_oauth_states").update({ used_at: new Date().toISOString() }).eq("id", stateRow.id);
   await supa.from("tenant_onboarding").upsert({ tenant_id: stateRow.tenant_id, meta_connected: true });

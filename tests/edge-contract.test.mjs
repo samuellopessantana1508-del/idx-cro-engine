@@ -129,6 +129,8 @@ assert.match(metaOauth, /dialog\/oauth/);
 assert.match(metaOauth, /META_LOGIN_CONFIG_ID/);
 assert.match(metaOauth, /config_id/);
 assert.doesNotMatch(metaOauth, /"email"/);
+assert.match(metaOauth, /autoSelectMetaAssets/);
+assert.match(metaOauth, /selected_ad_account_id/);
 assert.match(metaOauth, /oauth\/access_token/);
 assert.match(metaOauth, /integration_oauth_states/);
 assert.match(metaOauth, /tenant_meta_credentials/);
