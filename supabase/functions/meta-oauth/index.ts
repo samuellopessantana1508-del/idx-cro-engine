@@ -66,19 +66,17 @@ Deno.serve(async (req: Request) => {
       expires_at: expiresAt,
     });
 
-    const scope = [
-      "email",
-      "public_profile",
+    const scope = (Deno.env.get("META_OAUTH_SCOPES") ?? [
       "ads_read",
       "ads_management",
       "business_management",
-    ].join(",");
+    ].join(",")).trim();
 
     const authUrl = new URL(`https://www.facebook.com/${version}/dialog/oauth`);
     authUrl.searchParams.set("client_id", appId);
     authUrl.searchParams.set("redirect_uri", redirectUri);
     authUrl.searchParams.set("state", state);
-    authUrl.searchParams.set("scope", scope);
+    if (scope) authUrl.searchParams.set("scope", scope);
     authUrl.searchParams.set("response_type", "code");
     if (loginConfigId) {
       authUrl.searchParams.set("config_id", loginConfigId);

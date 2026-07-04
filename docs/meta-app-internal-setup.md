@@ -120,6 +120,8 @@ Custom Audiences:
    configuração.
 3. Confirme que a configuração inclui permissões de marketing como `ads_read`,
    `ads_management` e `business_management`.
+   Não inclua `email` no fluxo da IDX; o login de usuários é feito pelo
+   Supabase, e o Facebook Login aqui serve para Marketing API.
 4. Copie o **Configuration ID**.
 5. No Supabase, salve:
 
