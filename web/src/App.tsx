@@ -264,9 +264,13 @@ export function App() {
 
     async function boot() {
       const { data } = await supabase!.auth.getSession();
-      setSignedIn(Boolean(data.session));
+      if (data.session) {
+        setSignedIn(true);
+        await loadInitialData();
+      } else {
+        setSignedIn(false);
+      }
       setSessionReady(true);
-      if (data.session) await loadInitialData();
     }
 
     boot();
@@ -306,8 +310,8 @@ export function App() {
     const normalizedEmail = email.trim().toLowerCase();
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
-    setLoading(false);
     if (error) {
+      setLoading(false);
       setToast(error.message);
       return;
     }
@@ -331,9 +335,9 @@ export function App() {
         emailRedirectTo: authRedirectTo(),
       },
     });
-    setLoading(false);
 
     if (error) {
+      setLoading(false);
       setToast(error.message);
       return;
     }
@@ -345,6 +349,7 @@ export function App() {
       return;
     }
 
+    setLoading(false);
     setConfirmationEmail(normalizedEmail);
     setPassword("");
     setAuthMode("login");
