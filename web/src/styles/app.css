@@ -792,6 +792,19 @@ td small {
   font-size: 0.78rem;
 }
 
+.asset-toolbar,
+.meta-assets-box {
+  display: grid;
+  grid-template-columns: auto minmax(220px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.meta-assets-box {
+  grid-template-columns: minmax(240px, 1fr) auto;
+  margin-top: 12px;
+}
+
 .step-number {
   width: 28px;
   height: 28px;
@@ -1124,6 +1137,8 @@ td small {
   .integration-grid,
   .mini-form,
   .ad-sync-row,
+  .asset-toolbar,
+  .meta-assets-box,
   .client-form,
   .user-form,
   .supabase-box,
@@ -1151,6 +1166,8 @@ td small {
   .integration-grid,
   .mini-form,
   .ad-sync-row,
+  .asset-toolbar,
+  .meta-assets-box,
   .client-form,
   .setup-form,
   .user-form,

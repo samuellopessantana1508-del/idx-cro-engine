@@ -137,6 +137,9 @@ assert.doesNotMatch(metaOauth, /localhost:5177/);
 
 assert.match(metaAssets, /me\/adaccounts/);
 assert.match(metaAssets, /adspixels/);
+assert.match(metaAssets, /selected_ad_account_id/);
+assert.match(metaAssets, /normalizeActId/);
+assert.match(metaAssets, /missing_meta_asset_selection/);
 assert.match(metaAssets, /canOperateTenantOrPlatform/);
 
 assert.match(metaInsights, /\/insights/);

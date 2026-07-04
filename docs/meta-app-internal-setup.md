@@ -109,3 +109,31 @@ Use este caminho por padrão:
 
 Esse caminho já permite rodar piloto com Autoescola Vivo sem login OAuth e deve
 ser o padrão inicial da operação.
+
+## Checklist para Meta Ads e públicos automáticos
+
+Para liberar importação de gastos, seleção de conta de anúncios e criação de
+Custom Audiences:
+
+1. Em Meta Developers, abra a App `IDX CRO Engine`.
+2. Em **Facebook Login for Business > Configurations**, crie ou abra uma
+   configuração.
+3. Confirme que a configuração inclui permissões de marketing como `ads_read`,
+   `ads_management` e `business_management`.
+4. Copie o **Configuration ID**.
+5. No Supabase, salve:
+
+```bash
+supabase secrets set META_LOGIN_CONFIG_ID=SEU_CONFIGURATION_ID --project-ref tykeycwworjtfpssjevw
+```
+
+6. No painel IDX, abra `Integrações`.
+7. Clique `Conectar Facebook` e conclua o login com o usuário que tem acesso à
+   conta de anúncios.
+8. Clique `Buscar ativos Meta`.
+9. Selecione conta de anúncios + Pixel e clique `Usar estes ativos`.
+10. Rode `Sincronizar Meta Ads` e `Sincronizar públicos`.
+
+Se `Buscar ativos Meta` retornar `Missing Permissions`, o token conectado não
+tem permissão para Marketing API. Nesse caso, revise a configuração do Facebook
+Login for Business, adicione o usuário à App/Business e refaça o login.

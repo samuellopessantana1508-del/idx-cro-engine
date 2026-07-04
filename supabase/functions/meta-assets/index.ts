@@ -19,6 +19,16 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
+function cleanText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function normalizeActId(value: unknown): string {
+  const clean = cleanText(value);
+  if (!clean) return "";
+  return clean.startsWith("act_") ? clean : `act_${clean}`;
+}
+
 async function currentUser(req: Request) {
   const token = req.headers.get("Authorization")?.replace("Bearer ", "");
   if (!token) return null;
@@ -45,7 +55,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: creds } = await supa
       .from("tenant_meta_credentials")
-      .select("access_token, pixel_id, selected_ad_account_id")
+      .select("access_token, pixel_id, selected_pixel_name, selected_ad_account_id, selected_ad_account_name")
       .eq("tenant_id", tenantId)
       .maybeSingle();
 
@@ -60,7 +70,14 @@ Deno.serve(async (req: Request) => {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) return json({ error: "meta_assets_failed", detail: data }, 400);
 
-    return json({ ok: true, ad_accounts: data.data ?? [], selected_pixel_id: creds.pixel_id });
+    return json({
+      ok: true,
+      ad_accounts: data.data ?? [],
+      selected_ad_account_id: creds.selected_ad_account_id,
+      selected_ad_account_name: creds.selected_ad_account_name,
+      selected_pixel_id: creds.pixel_id,
+      selected_pixel_name: creds.selected_pixel_name,
+    });
   }
 
   if (req.method === "POST") {
@@ -71,21 +88,38 @@ Deno.serve(async (req: Request) => {
       return json({ error: "forbidden" }, 403);
     }
 
-    const { error } = await supa.from("tenant_meta_credentials").upsert({
+    const adAccountId = normalizeActId(body.ad_account_id);
+    const pixelId = cleanText(body.pixel_id);
+    if (!adAccountId && !pixelId) return json({ error: "missing_meta_asset_selection" }, 400);
+
+    const updates: Record<string, unknown> = {
       tenant_id: tenantId,
-      pixel_id: body.pixel_id,
-      selected_pixel_name: body.pixel_name ?? null,
-      selected_ad_account_id: body.ad_account_id ?? null,
-      selected_ad_account_name: body.ad_account_name ?? null,
+      selected_ad_account_id: adAccountId || null,
+      selected_ad_account_name: cleanText(body.ad_account_name) || null,
       integration_status: "connected",
       enabled: true,
       updated_by: user.id,
       last_verified_at: new Date().toISOString(),
       last_error: null,
-    });
+    };
+
+    if (pixelId) {
+      updates.pixel_id = pixelId;
+      updates.selected_pixel_name = cleanText(body.pixel_name) || null;
+    }
+
+    const { error } = await supa
+      .from("tenant_meta_credentials")
+      .upsert(updates, { onConflict: "tenant_id" });
 
     if (error) return json({ error: error.message }, 400);
-    return json({ ok: true });
+    return json({
+      ok: true,
+      selected_ad_account_id: adAccountId || null,
+      selected_ad_account_name: updates.selected_ad_account_name,
+      selected_pixel_id: pixelId || null,
+      selected_pixel_name: updates.selected_pixel_name ?? null,
+    });
   }
 
   return json({ error: "method_not_allowed" }, 405);

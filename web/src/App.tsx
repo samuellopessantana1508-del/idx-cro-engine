@@ -122,6 +122,18 @@ type QualityRow = {
   roas: number | null;
 };
 
+type MetaPixelAsset = {
+  id: string;
+  name?: string | null;
+};
+
+type MetaAdAccountAsset = {
+  id: string;
+  account_id?: string | null;
+  name?: string | null;
+  adspixels?: { data?: MetaPixelAsset[] } | MetaPixelAsset[] | null;
+};
+
 const META_OAUTH_CALLBACK_URL = "https://cro.idxparasuaempresa.com.br/meta-oauth-callback.html";
 
 const emptyDraft: DraftLink = {
@@ -186,6 +198,21 @@ function smartLinkWithUtms(link: SmartLink): string {
   return `${smartLinkUrl(link.code)}${query ? `?${query}` : ""}`;
 }
 
+function normalizeActId(value: string): string {
+  const clean = value.trim();
+  if (!clean) return "";
+  return clean.startsWith("act_") ? clean : `act_${clean}`;
+}
+
+function accountPixels(account: MetaAdAccountAsset): MetaPixelAsset[] {
+  if (Array.isArray(account.adspixels)) return account.adspixels;
+  return account.adspixels?.data ?? [];
+}
+
+function metaAssetValue(accountId: string, pixelId = ""): string {
+  return `${accountId}|${pixelId}`;
+}
+
 export function App() {
   const isConfigured = envConfigured() && Boolean(supabase);
   const [sessionReady, setSessionReady] = useState(!isConfigured);
@@ -221,6 +248,9 @@ export function App() {
   const [inviteDraft, setInviteDraft] = useState<InviteDraft>(emptyInviteDraft);
   const [metaDraft, setMetaDraft] = useState<MetaDraft>(emptyMetaDraft);
   const [adAccountId, setAdAccountId] = useState("");
+  const [metaAdAccounts, setMetaAdAccounts] = useState<MetaAdAccountAsset[]>([]);
+  const [selectedMetaAsset, setSelectedMetaAsset] = useState("");
+  const [metaAssetsLoaded, setMetaAssetsLoaded] = useState(false);
   const [crmNotes, setCrmNotes] = useState<Record<string, string>>({});
   const [crmContacts, setCrmContacts] = useState<Record<string, ContactDraft>>({});
   const [crmBusyRef, setCrmBusyRef] = useState("");
@@ -773,6 +803,80 @@ export function App() {
   async function copyMetaCallbackUrl() {
     await navigator.clipboard.writeText(META_OAUTH_CALLBACK_URL);
     setToast("URL de retorno copiada.");
+  }
+
+  async function loadMetaAssets() {
+    if (!tenant) return;
+    if (!isConfigured || !supabase) {
+      setToast("Configure o Supabase para buscar ativos Meta.");
+      return;
+    }
+
+    setIntegrationBusy(true);
+    const res = await authFetch(`meta-assets?tenant_id=${tenant.id}`, { method: "GET" });
+    const data = await res.json();
+    setIntegrationBusy(false);
+    setMetaAssetsLoaded(true);
+
+    if (!res.ok) {
+      setMetaAdAccounts([]);
+      setToast(humanError(data.error) || "Erro ao buscar ativos Meta.");
+      return;
+    }
+
+    const accounts = (data.ad_accounts ?? []) as MetaAdAccountAsset[];
+    setMetaAdAccounts(accounts);
+
+    const selectedAccountId = String(data.selected_ad_account_id ?? "");
+    const selectedPixelId = String(data.selected_pixel_id ?? "");
+    if (selectedAccountId) {
+      setAdAccountId(selectedAccountId);
+      setSelectedMetaAsset(metaAssetValue(selectedAccountId, selectedPixelId));
+    } else if (accounts.length) {
+      const first = accounts[0];
+      const firstPixel = accountPixels(first)[0];
+      setSelectedMetaAsset(metaAssetValue(first.id, firstPixel?.id ?? ""));
+    }
+
+    setToast(accounts.length ? `${accounts.length} conta(s) Meta encontradas.` : "Nenhuma conta Meta encontrada.");
+  }
+
+  async function saveMetaAssetSelection() {
+    if (!tenant) return;
+    const [selectedAccountId, selectedPixelId] = selectedMetaAsset.split("|");
+    const account = metaAdAccounts.find((item) => item.id === selectedAccountId);
+    const pixel = account ? accountPixels(account).find((item) => item.id === selectedPixelId) : null;
+    const manualAdAccountId = normalizeActId(adAccountId);
+    const adAccountToSave = account?.id || manualAdAccountId;
+
+    if (!adAccountToSave) {
+      setToast("Selecione ou informe uma conta de anúncios.");
+      return;
+    }
+
+    if (!isConfigured || !supabase) {
+      setToast("Configure o Supabase para salvar ativos Meta.");
+      return;
+    }
+
+    setIntegrationBusy(true);
+    const res = await authFetch("meta-assets", {
+      method: "POST",
+      body: JSON.stringify({
+        tenant_id: tenant.id,
+        ad_account_id: adAccountToSave,
+        ad_account_name: account?.name ?? null,
+        pixel_id: pixel?.id ?? undefined,
+        pixel_name: pixel?.name ?? null,
+      }),
+    });
+    const data = await res.json();
+    setIntegrationBusy(false);
+    if (!res.ok) return setToast(humanError(data.error) || "Erro ao salvar ativos Meta.");
+
+    setAdAccountId(String(data.selected_ad_account_id ?? adAccountToSave));
+    setToast("Conta Meta salva para campanhas e públicos.");
+    await loadTenantData();
   }
 
   async function saveMetaManual() {
@@ -1427,6 +1531,33 @@ export function App() {
             <section className="panel">
               <div className="panel-head">
                 <div>
+                  <h2>Conta de anúncios e Pixel</h2>
+                  <p>Selecione os ativos reais do Facebook ou salve o ID da conta para sincronizar campanhas e públicos.</p>
+                </div>
+                <SlidersHorizontal size={18} />
+              </div>
+              <div className="asset-toolbar">
+                <button className="primary-button" onClick={loadMetaAssets} disabled={integrationBusy}>
+                  Buscar ativos Meta
+                </button>
+                <input placeholder="ID da conta de anúncios, ex: act_123456789" value={adAccountId} onChange={(event) => setAdAccountId(event.target.value)} />
+                <button className="ghost-dark-button" onClick={saveMetaAssetSelection} disabled={integrationBusy}>
+                  Salvar conta
+                </button>
+              </div>
+              <MetaAssetsSelector
+                accounts={metaAdAccounts}
+                selected={selectedMetaAsset}
+                loaded={metaAssetsLoaded}
+                onChange={setSelectedMetaAsset}
+                onSave={saveMetaAssetSelection}
+                busy={integrationBusy}
+              />
+            </section>
+
+            <section className="panel">
+              <div className="panel-head">
+                <div>
                   <h2>Gastos e campanhas</h2>
                   <p>Sincronize dados do Meta Ads para cruzar investimento com leads e vendas.</p>
                 </div>
@@ -2052,6 +2183,56 @@ function TenantUsersList({ users }: { users: TenantUser[] }) {
           <StatusPill text={userStatusLabel(user.status)} tone={user.status === "active" ? "good" : "muted"} />
         </article>
       ))}
+    </div>
+  );
+}
+
+function MetaAssetsSelector({
+  accounts,
+  selected,
+  loaded,
+  onChange,
+  onSave,
+  busy,
+}: {
+  accounts: MetaAdAccountAsset[];
+  selected: string;
+  loaded: boolean;
+  onChange: (value: string) => void;
+  onSave: () => void;
+  busy: boolean;
+}) {
+  if (!loaded) {
+    return <EmptyState text="Conecte o Facebook e busque os ativos para selecionar conta e Pixel." />;
+  }
+
+  if (!accounts.length) {
+    return <EmptyState text="Nenhuma conta de anúncios retornada pelo Meta." />;
+  }
+
+  return (
+    <div className="meta-assets-box">
+      <select value={selected} onChange={(event) => onChange(event.target.value)}>
+        {accounts.flatMap((account) => {
+          const pixels = accountPixels(account);
+          if (!pixels.length) {
+            return (
+              <option key={account.id} value={metaAssetValue(account.id)}>
+                {account.name ?? account.id} · sem Pixel listado
+              </option>
+            );
+          }
+
+          return pixels.map((pixel) => (
+            <option key={`${account.id}-${pixel.id}`} value={metaAssetValue(account.id, pixel.id)}>
+              {account.name ?? account.id} · {pixel.name ?? pixel.id}
+            </option>
+          ));
+        })}
+      </select>
+      <button className="primary-button" onClick={onSave} disabled={busy || !selected}>
+        Usar estes ativos
+      </button>
     </div>
   );
 }
