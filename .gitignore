@@ -9,6 +9,7 @@ web/node_modules/
 web/dist/
 supabase/.temp/
 web/qa-*.png
+artifacts/
 
 *.log
 npm-debug.log*

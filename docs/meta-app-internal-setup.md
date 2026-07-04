@@ -9,7 +9,7 @@ Isso já permite rodar pilotos e clientes da IDX sem App Review.
 Já está implementado:
 
 - botão `Conectar Facebook`;
-- OAuth callback em `meta-oauth`;
+- página pública `/meta-oauth-callback.html` que encaminha para `meta-oauth`;
 - troca de short-lived token por long-lived token;
 - armazenamento server-side do token;
 - fallback por `Pixel ID + Token CAPI`;
@@ -48,11 +48,18 @@ configuração dentro da sua Meta App.
 Cadastre exatamente:
 
 ```txt
-https://SEU-PROJETO.supabase.co/functions/v1/meta-oauth
+https://SEU-DOMINIO.com/meta-oauth-callback.html
 ```
 
-Se usar domínio próprio para funções no futuro, adicione também a versão desse
-domínio.
+No ambiente atual da IDX, use:
+
+```txt
+https://cro.idxparasuaempresa.com.br/meta-oauth-callback.html
+```
+
+Essa página estática recebe `code/state` da Meta e redireciona para a Edge
+Function `meta-oauth` no Supabase. Se no futuro você expuser as Edge Functions em
+domínio próprio, pode trocar o fluxo para usar esse domínio direto.
 
 ### 4. Configurar Secrets no Supabase
 
@@ -62,8 +69,11 @@ supabase secrets set FALLBACK_URL=https://wa.me/5564999999999
 supabase secrets set META_GRAPH_VERSION=v25.0
 supabase secrets set META_APP_ID=SEU_APP_ID
 supabase secrets set META_APP_SECRET=SEU_APP_SECRET
-supabase secrets set META_REDIRECT_URI=https://SEU-PROJETO.supabase.co/functions/v1/meta-oauth
+supabase secrets set META_REDIRECT_URI=https://SEU-DOMINIO.com/meta-oauth-callback.html
+supabase secrets set META_LOGIN_CONFIG_ID=SEU_FACEBOOK_LOGIN_FOR_BUSINESS_CONFIG_ID
 ```
+
+Para Facebook Login for Business, crie uma configuração em **Facebook Login for Business > Configurations** e salve o **Configuration ID** em `META_LOGIN_CONFIG_ID`.
 
 ### 5. Modo interno recomendado
 

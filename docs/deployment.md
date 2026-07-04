@@ -32,10 +32,16 @@ supabase secrets set FALLBACK_URL=https://wa.me/5564999999999
 supabase secrets set META_GRAPH_VERSION=v25.0
 supabase secrets set META_APP_ID=SEU_META_APP_ID
 supabase secrets set META_APP_SECRET=SEU_META_APP_SECRET
-supabase secrets set META_REDIRECT_URI=https://SEU-PROJETO.supabase.co/functions/v1/meta-oauth
+supabase secrets set META_REDIRECT_URI=https://SEU-DOMINIO.com/meta-oauth-callback.html
+supabase secrets set META_LOGIN_CONFIG_ID=SEU_FACEBOOK_LOGIN_FOR_BUSINESS_CONFIG_ID
 ```
 
-`META_APP_ID`, `META_APP_SECRET` e `META_REDIRECT_URI` são opcionais nesta fase.
+`META_REDIRECT_URI` precisa ser exatamente a mesma URL cadastrada em **Valid OAuth
+Redirect URIs** na Meta App. No frontend atual, use a página
+`/meta-oauth-callback.html` do domínio público do painel; ela encaminha o retorno
+para a Edge Function `meta-oauth`.
+
+`META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI` e `META_LOGIN_CONFIG_ID` são opcionais nesta fase.
 O padrão inicial do produto é usar a integração manual pelo painel com
 `Pixel ID + Token CAPI`.
 

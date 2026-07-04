@@ -77,8 +77,13 @@ supabase secrets set META_GRAPH_VERSION=v25.0
 # Opcionais: necessárias apenas para "Conectar Facebook"
 supabase secrets set META_APP_ID=SEU_META_APP_ID
 supabase secrets set META_APP_SECRET=SEU_META_APP_SECRET
-supabase secrets set META_REDIRECT_URI=https://SEU-PROJETO.supabase.co/functions/v1/meta-oauth
+supabase secrets set META_REDIRECT_URI=https://SEU-DOMINIO.com/meta-oauth-callback.html
+supabase secrets set META_LOGIN_CONFIG_ID=SEU_FACEBOOK_LOGIN_FOR_BUSINESS_CONFIG_ID
 ```
+
+No deploy atual da IDX, o redirect aprovado na Meta deve ser a página pública do
+painel (`/meta-oauth-callback.html`). Essa página preserva `code/state` e
+encaminha a troca de token para a Edge Function `meta-oauth`.
 
 O padrão inicial do produto é integrar manualmente com `Pixel ID + Token CAPI`
 pelo painel, sem SQL. A Meta App fica preparada como opção avançada para quando

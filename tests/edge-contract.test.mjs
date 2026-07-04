@@ -101,6 +101,10 @@ assert.match(convert, /canOperateTenantOrPlatform/);
 
 assert.match(capi, /req\.method === "POST"/);
 assert.match(capi, /test_event_code/);
+assert.match(capi, /external_id/);
+assert.match(capi, /client_ip_address/);
+assert.match(capi, /requestPayload/);
+assert.doesNotMatch(capi, /request_payload: payload/);
 assert.match(capi, /tenant_meta_credentials/);
 assert.match(capi, /canReadTenantOrPlatform/);
 assert.match(capi, /canOperateTenantOrPlatform/);
@@ -122,6 +126,8 @@ assert.match(tenantAdmin, /monthly_goal/);
 assert.match(tenantAdmin, /average_ticket/);
 
 assert.match(metaOauth, /dialog\/oauth/);
+assert.match(metaOauth, /META_LOGIN_CONFIG_ID/);
+assert.match(metaOauth, /config_id/);
 assert.match(metaOauth, /oauth\/access_token/);
 assert.match(metaOauth, /integration_oauth_states/);
 assert.match(metaOauth, /tenant_meta_credentials/);
