@@ -152,6 +152,11 @@ label {
   width: 100%;
 }
 
+.mobile-tabbar,
+.mobile-more-sheet {
+  display: none;
+}
+
 .main {
   min-width: 0;
   padding: 28px 32px 48px;
@@ -1155,7 +1160,9 @@ td small {
   .app-shell {
     width: 100%;
     max-width: 100vw;
+    background: #f7f7f7;
     overflow-x: hidden;
+    padding-bottom: 86px;
   }
 
   .sidebar {
@@ -1168,6 +1175,7 @@ td small {
     max-width: 100vw;
     min-width: 0;
     overflow-x: hidden;
+    border-bottom: 1px solid var(--line-dark);
   }
 
   .sidebar > div,
@@ -1185,7 +1193,7 @@ td small {
   }
 
   .main {
-    padding: 18px 14px 34px;
+    padding: 18px 14px 22px;
     overflow-x: hidden;
   }
 
@@ -1256,55 +1264,126 @@ td small {
     grid-column: auto;
   }
 
-  .nav-list {
-    display: flex;
-    gap: 8px;
-    overflow-x: auto;
-    margin: 0 -16px;
-    padding: 0 16px 4px;
-    width: calc(100% + 32px);
-    max-width: calc(100% + 32px);
-    min-width: 0;
-    scrollbar-width: none;
-  }
-
-  .nav-list::-webkit-scrollbar {
+  .sidebar .nav-list {
     display: none;
-  }
-
-  .nav-button {
-    flex: 0 0 auto;
-    width: auto;
-    min-height: 38px;
-    padding: 0 11px;
-    border: 1px solid var(--line-dark);
-    border-radius: 8px;
-  }
-
-  .nav-button span {
-    display: inline;
-    font-size: 0.78rem;
-  }
-
-  .nav-button svg {
-    width: 16px;
-    height: 16px;
   }
 
   .sidebar-bottom {
     grid-template-columns: 1fr;
+    gap: 0;
   }
 
-  .sidebar-bottom .ghost-button.full {
-    width: 100%;
+  .sidebar-bottom .mini-label,
+  .sidebar-bottom .ghost-button {
+    display: none;
   }
 
   .sidebar select {
-    min-height: 42px;
+    min-height: 44px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+  }
+
+  .mobile-tabbar {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    z-index: 40;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+    padding: 7px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.14);
+    backdrop-filter: blur(16px);
+  }
+
+  .mobile-tabbar .nav-button {
+    width: 100%;
+    min-height: 52px;
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+    padding: 6px 4px;
+    border-radius: 8px;
+    color: var(--muted);
+    background: transparent;
+    font-size: 0.7rem;
+    line-height: 1;
+  }
+
+  .mobile-tabbar .nav-button svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .mobile-tabbar .nav-button span {
+    display: block;
+  }
+
+  .mobile-tabbar .nav-button.active {
+    background: var(--black);
+    color: var(--paper);
+    font-weight: 500;
+  }
+
+  .mobile-more-sheet {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: 84px;
+    z-index: 39;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.18);
+  }
+
+  .mobile-more-sheet button {
+    min-height: 44px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    color: var(--ink);
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 9px;
+    padding: 0 12px;
+    font-size: 0.82rem;
+    font-weight: 500;
+  }
+
+  .mobile-more-sheet button.active {
+    background: var(--black);
+    color: var(--paper);
+    border-color: var(--black);
   }
 
   .kpi-grid {
-    grid-template-columns: 1fr;
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    margin: 0 -14px;
+    padding: 0 14px 4px;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+
+  .kpi-grid::-webkit-scrollbar {
+    display: none;
+  }
+
+  .kpi-grid .kpi {
+    flex: 0 0 136px;
+    scroll-snap-align: start;
   }
 
   .lead-row {
@@ -1312,12 +1391,23 @@ td small {
   }
 
   .crm-pipeline {
-    grid-template-columns: 1fr;
-    overflow-x: visible;
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    margin: 0 -14px;
+    padding: 0 14px 8px;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+
+  .crm-pipeline::-webkit-scrollbar {
+    display: none;
   }
 
   .crm-column {
-    min-width: 0;
+    flex: 0 0 min(86vw, 340px);
+    min-width: min(86vw, 340px);
+    scroll-snap-align: start;
   }
 
   .crm-card-top {
@@ -1340,5 +1430,15 @@ td small {
 
   .search-box {
     min-width: 0;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  .toast {
+    bottom: 88px;
   }
 }

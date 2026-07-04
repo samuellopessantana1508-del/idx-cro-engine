@@ -11,6 +11,7 @@ import {
   Link2,
   LogOut,
   MessageCircle,
+  MoreHorizontal,
   Plus,
   Search,
   Settings,
@@ -223,6 +224,7 @@ export function App() {
   const [password, setPassword] = useState("");
   const [confirmationEmail, setConfirmationEmail] = useState("");
   const [active, setActive] = useState<Section>("dashboard");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [platformRole, setPlatformRole] = useState<PlatformRole | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [tenantSummaries, setTenantSummaries] = useState<TenantSummary[]>([]);
@@ -278,6 +280,13 @@ export function App() {
   const needsOperationalOnboarding = Boolean(tenant && !loading && !hasOperationalData);
   const qualityRows = useMemo(() => buildQualityRows(tenantLeads, tenantMetaCampaigns), [tenantLeads, tenantMetaCampaigns]);
   const tenantSummary = tenantSummaries.find((item) => item.tenant_id === tenant?.id);
+  const secondaryMobileSections: Section[] = ["leads", "clients", "users", "reports", "capi", "settings"];
+  const moreActive = secondaryMobileSections.includes(active);
+
+  function goToSection(section: Section) {
+    setActive(section);
+    setMobileMenuOpen(false);
+  }
 
   const metrics = useMemo(() => {
     const clicks = tenantLinks.reduce((sum, link) => sum + Number(link.clicks ?? 0), 0);
@@ -1155,16 +1164,16 @@ export function App() {
             <span>CRO Engine</span>
           </div>
           <nav className="nav-list">
-            <NavButton icon={<Gauge />} label="Dashboard" active={active === "dashboard"} onClick={() => setActive("dashboard")} />
-            <NavButton icon={<Link2 />} label="Links" active={active === "links"} onClick={() => setActive("links")} />
-            <NavButton icon={<MessageCircle />} label="Atendimentos" active={active === "leads"} onClick={() => setActive("leads")} />
-            <NavButton icon={<LayoutList />} label="CRM" active={active === "crm"} onClick={() => setActive("crm")} />
-            <NavButton icon={<ShieldCheck />} label="Integrações" active={active === "integrations"} onClick={() => setActive("integrations")} />
-            <NavButton icon={<LayoutList />} label="Clientes" active={active === "clients"} onClick={() => setActive("clients")} />
-            <NavButton icon={<Users />} label="Usuários" active={active === "users"} onClick={() => setActive("users")} />
-            <NavButton icon={<FileText />} label="Relatórios" active={active === "reports"} onClick={() => setActive("reports")} />
-            <NavButton icon={<Activity />} label="CAPI" active={active === "capi"} onClick={() => setActive("capi")} />
-            <NavButton icon={<Settings />} label="Config" active={active === "settings"} onClick={() => setActive("settings")} />
+            <NavButton icon={<Gauge />} label="Dashboard" active={active === "dashboard"} onClick={() => goToSection("dashboard")} />
+            <NavButton icon={<Link2 />} label="Links" active={active === "links"} onClick={() => goToSection("links")} />
+            <NavButton icon={<MessageCircle />} label="Atendimentos" active={active === "leads"} onClick={() => goToSection("leads")} />
+            <NavButton icon={<LayoutList />} label="CRM" active={active === "crm"} onClick={() => goToSection("crm")} />
+            <NavButton icon={<ShieldCheck />} label="Integrações" active={active === "integrations"} onClick={() => goToSection("integrations")} />
+            <NavButton icon={<LayoutList />} label="Clientes" active={active === "clients"} onClick={() => goToSection("clients")} />
+            <NavButton icon={<Users />} label="Usuários" active={active === "users"} onClick={() => goToSection("users")} />
+            <NavButton icon={<FileText />} label="Relatórios" active={active === "reports"} onClick={() => goToSection("reports")} />
+            <NavButton icon={<Activity />} label="CAPI" active={active === "capi"} onClick={() => goToSection("capi")} />
+            <NavButton icon={<Settings />} label="Config" active={active === "settings"} onClick={() => goToSection("settings")} />
           </nav>
         </div>
         <div className="sidebar-bottom">
@@ -1871,6 +1880,26 @@ export function App() {
         )}
       </main>
 
+      {mobileMenuOpen && (
+        <section className="mobile-more-sheet" aria-label="Mais opções">
+          <button type="button" onClick={() => goToSection("leads")} className={active === "leads" ? "active" : ""}><MessageCircle size={17} /> Atendimentos</button>
+          <button type="button" onClick={() => goToSection("clients")} className={active === "clients" ? "active" : ""}><LayoutList size={17} /> Clientes</button>
+          <button type="button" onClick={() => goToSection("users")} className={active === "users" ? "active" : ""}><Users size={17} /> Usuários</button>
+          <button type="button" onClick={() => goToSection("reports")} className={active === "reports" ? "active" : ""}><FileText size={17} /> Relatórios</button>
+          <button type="button" onClick={() => goToSection("capi")} className={active === "capi" ? "active" : ""}><Activity size={17} /> CAPI</button>
+          <button type="button" onClick={() => goToSection("settings")} className={active === "settings" ? "active" : ""}><Settings size={17} /> Config</button>
+          <button type="button" onClick={logout}><LogOut size={17} /> Sair</button>
+        </section>
+      )}
+
+      <nav className="mobile-tabbar" aria-label="Navegação principal">
+        <NavButton icon={<Gauge />} label="Início" active={active === "dashboard"} onClick={() => goToSection("dashboard")} />
+        <NavButton icon={<Link2 />} label="Links" active={active === "links"} onClick={() => goToSection("links")} />
+        <NavButton icon={<LayoutList />} label="CRM" active={active === "crm"} onClick={() => goToSection("crm")} />
+        <NavButton icon={<ShieldCheck />} label="Meta" active={active === "integrations"} onClick={() => goToSection("integrations")} />
+        <NavButton icon={<MoreHorizontal />} label="Mais" active={moreActive || mobileMenuOpen} onClick={() => setMobileMenuOpen((open) => !open)} />
+      </nav>
+
       {toast && <div className="toast">{toast}</div>}
     </div>
   );
@@ -1878,7 +1907,7 @@ export function App() {
 
 function NavButton({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
   return (
-    <button className={`nav-button ${active ? "active" : ""}`} onClick={onClick}>
+    <button className={`nav-button ${active ? "active" : ""}`} onClick={onClick} type="button" aria-label={label} aria-current={active ? "page" : undefined}>
       {icon}
       <span>{label}</span>
     </button>
