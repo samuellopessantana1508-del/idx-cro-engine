@@ -122,6 +122,8 @@ type QualityRow = {
   roas: number | null;
 };
 
+const META_OAUTH_CALLBACK_URL = "https://cro.idxparasuaempresa.com.br/meta-oauth-callback.html";
+
 const emptyDraft: DraftLink = {
   offerName: "",
   category: "",
@@ -763,6 +765,11 @@ export function App() {
     window.location.href = data.auth_url;
   }
 
+  async function copyMetaCallbackUrl() {
+    await navigator.clipboard.writeText(META_OAUTH_CALLBACK_URL);
+    setToast("URL de retorno copiada.");
+  }
+
   async function saveMetaManual() {
     if (!tenant || !metaDraft.pixelId.trim() || !metaDraft.accessToken.trim()) {
       setToast("Informe Pixel ID e token CAPI.");
@@ -1396,6 +1403,15 @@ export function App() {
                   <span className="step-number">3</span>
                   <h3>Facebook Ads</h3>
                   <p>Opcional: conecta a conta de anúncios para cruzar campanhas, gastos, CPL e ROAS com os leads do IDX.</p>
+                  <div className="oauth-callback-box">
+                    <span>URI de redirecionamento OAuth</span>
+                    <div className="copy-line">
+                      <code>{META_OAUTH_CALLBACK_URL}</code>
+                      <button className="icon-button" onClick={copyMetaCallbackUrl} title="Copiar URL de retorno" type="button">
+                        <Clipboard size={15} />
+                      </button>
+                    </div>
+                  </div>
                   <button className="ghost-dark-button" onClick={startMetaLogin} disabled={integrationBusy}>
                     Conectar Facebook <ArrowRight size={16} />
                   </button>

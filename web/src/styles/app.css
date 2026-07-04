@@ -761,6 +761,37 @@ td small {
   font-size: 0.9rem;
 }
 
+.oauth-callback-box {
+  display: grid;
+  gap: 7px;
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.oauth-callback-box span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.copy-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.copy-line code {
+  overflow: hidden;
+  color: var(--black);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+}
+
 .step-number {
   width: 28px;
   height: 28px;
