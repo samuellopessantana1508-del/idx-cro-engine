@@ -430,6 +430,17 @@ export function App() {
     setPlatformRole((data.platform_role ?? null) as PlatformRole | null);
     setTenantSummaries((data.tenant_summaries ?? []) as TenantSummary[]);
 
+    if (!loadedTenants.length && data.platform_role) {
+      setTenants([]);
+      setTenantId("");
+      setOnboarding(null);
+      setTenantSetupRequired(false);
+      setActive("clients");
+      setToast("Gestor IDX ativo. Cadastre o primeiro cliente com dados reais.");
+      setLoading(false);
+      return;
+    }
+
     if (!loadedTenants.length) {
       setTenants([]);
       setTenantId("");
@@ -655,7 +666,7 @@ export function App() {
       }),
     });
     const data = await res.json();
-    if (!res.ok) return setToast(data.error || "Erro ao criar cliente.");
+    if (!res.ok) return setToast(humanError(data.error) || "Erro ao criar cliente.");
     setTenants((items) => [data.tenant, ...items]);
     setTenantId(data.tenant.id);
     setPlatformRole((data.platform_role ?? platformRole) as PlatformRole | null);
@@ -697,7 +708,7 @@ export function App() {
     });
     const data = await res.json();
     setLoading(false);
-    if (!res.ok) return setToast(data.error || "Erro ao atualizar empresa.");
+    if (!res.ok) return setToast(humanError(data.error) || "Erro ao atualizar empresa.");
     setTenants((items) => items.map((item) => (item.id === data.tenant.id ? data.tenant : item)));
     setToast("Empresa atualizada.");
     await loadTenantData(data.tenant.id);
@@ -949,7 +960,7 @@ export function App() {
     );
   }
 
-  if (isConfigured && (tenantSetupRequired || !tenant)) {
+  if (isConfigured && (tenantSetupRequired || !tenant) && !isPlatformUser) {
     return (
       <main className="login-screen">
         <section className="login-panel setup-panel">
@@ -2260,6 +2271,15 @@ function platformRoleLabel(role: PlatformRole | null): string {
     support: "Gestor de tráfego",
     viewer: "Leitura",
   }[role];
+}
+
+function humanError(error?: string | null): string {
+  return {
+    invalid_tenant_payload: "Preencha nome, segmento e WhatsApp real com DDI/DDD. Exemplo: 5564999999999.",
+    platform_admin_required: "Este login não tem permissão de gestor IDX para criar clientes.",
+    missing_tenant_id: "Selecione uma empresa antes de continuar.",
+    forbidden: "Seu login não tem permissão para esta ação.",
+  }[String(error ?? "")] ?? String(error ?? "");
 }
 
 function userStatusLabel(status: TenantUser["status"]): string {
