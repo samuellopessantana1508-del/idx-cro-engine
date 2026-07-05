@@ -25,7 +25,7 @@ O gestor garante que cada empresa tenha:
 
 O link de acesso segue o padrão:
 
-`https://cro.idxparasuaempresa.com.br/nome-da-empresa`
+`https://idxparasuaempresa.com.br/nome-da-empresa`
 
 Cada usuário só vê empresas onde foi vinculado. A conta gestora IDX vê todas as empresas autorizadas.
 

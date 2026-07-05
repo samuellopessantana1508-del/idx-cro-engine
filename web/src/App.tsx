@@ -12,6 +12,7 @@ import {
   LogOut,
   MessageCircle,
   MoreHorizontal,
+  PhoneCall,
   Plus,
   Search,
   Settings,
@@ -24,7 +25,7 @@ import { supabase } from "./lib/supabaseClient";
 import type { CapiEvent, CapiHealth, CrmActivity, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, Offer, SmartLink, Tenant, TenantUser } from "./lib/types";
 import { envConfigured, formatDate, formatMoney, linkCode, slugify, smartLinkUrl, timeAgo } from "./lib/utils";
 
-type Section = "dashboard" | "links" | "leads" | "crm" | "integrations" | "clients" | "users" | "reports" | "capi" | "settings";
+type Section = "dashboard" | "sales" | "links" | "leads" | "crm" | "integrations" | "clients" | "users" | "reports" | "capi" | "settings";
 
 type PlatformRole = "owner" | "admin" | "support" | "viewer";
 
@@ -124,6 +125,7 @@ type QualityRow = {
 };
 
 type CrmFilter = LeadStatus | "all" | "needs_follow_up" | "no_identifier";
+type SalesFilter = "now" | "new" | "contacted" | "qualified" | "sold";
 
 type ReadinessItem = {
   title: string;
@@ -150,7 +152,8 @@ type MetaAdAccountAsset = {
   adspixels?: { data?: MetaPixelAsset[] } | MetaPixelAsset[] | null;
 };
 
-const META_OAUTH_CALLBACK_URL = "https://cro.idxparasuaempresa.com.br/meta-oauth-callback.html";
+const META_OAUTH_CALLBACK_URL = "https://idxparasuaempresa.com.br/meta-oauth-callback.html";
+const validSections: Section[] = ["dashboard", "sales", "links", "leads", "crm", "integrations", "clients", "users", "reports", "capi", "settings"];
 
 const emptyDraft: DraftLink = {
   offerName: "",
@@ -201,6 +204,11 @@ const emptyHealth: CapiHealth = {
 
 function authRedirectTo() {
   return `${window.location.origin}${window.location.pathname}`;
+}
+
+function requestedSectionFromUrl(): Section | null {
+  const section = new URLSearchParams(window.location.search).get("section") as Section | null;
+  return section && validSections.includes(section) ? section : null;
 }
 
 function smartLinkWithUtms(link: SmartLink): string {
@@ -270,9 +278,46 @@ function duplicateContactLead(lead: Lead, contact: ContactDraft | undefined, all
   return allLeads.find((item) => item.id !== lead.id && cleanPhone(item.customer_phone) === phone) ?? null;
 }
 
+function isOpenLead(lead: Lead): boolean {
+  return !["sold", "lost", "bad"].includes(lead.lead_status);
+}
+
+function leadFollowUpDue(lead: Lead): boolean {
+  if (!lead.next_follow_up_at || !isOpenLead(lead)) return false;
+  const followUpAt = new Date(lead.next_follow_up_at).getTime();
+  return Number.isFinite(followUpAt) && followUpAt <= Date.now();
+}
+
+function leadContactPhone(lead: Lead, contact?: ContactDraft): string {
+  return cleanPhone(contact?.phone || lead.customer_phone || "");
+}
+
+function whatsappUrl(phone: string): string {
+  return phone ? `https://wa.me/${phone}` : "";
+}
+
+function sortSalesQueue(leads: Lead[]): Lead[] {
+  const priority: Record<LeadStatus, number> = {
+    new: 1,
+    contacted: 2,
+    qualified: 3,
+    bad: 6,
+    lost: 7,
+    sold: 8,
+  };
+  return [...leads].sort((a, b) => {
+    const dueDiff = Number(leadFollowUpDue(b)) - Number(leadFollowUpDue(a));
+    if (dueDiff) return dueDiff;
+    const priorityDiff = priority[a.lead_status] - priority[b.lead_status];
+    if (priorityDiff) return priorityDiff;
+    return new Date(b.clicked_at).getTime() - new Date(a.clicked_at).getTime();
+  });
+}
+
 export function App() {
   const isConfigured = envConfigured() && Boolean(supabase);
   const requestedTenantSlug = useMemo(() => tenantSlugFromPath(), []);
+  const requestedSection = useMemo(() => requestedSectionFromUrl(), []);
   const [sessionReady, setSessionReady] = useState(!isConfigured);
   const [signedIn, setSignedIn] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
@@ -280,7 +325,9 @@ export function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmationEmail, setConfirmationEmail] = useState("");
-  const [active, setActive] = useState<Section>("dashboard");
+  const [currentUserId, setCurrentUserId] = useState("");
+  const [currentUserEmail, setCurrentUserEmail] = useState("");
+  const [active, setActive] = useState<Section>(requestedSection ?? "dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [platformRole, setPlatformRole] = useState<PlatformRole | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
@@ -305,6 +352,9 @@ export function App() {
   const [saleRevenue, setSaleRevenue] = useState("");
   const [crmSearch, setCrmSearch] = useState("");
   const [crmFilter, setCrmFilter] = useState<CrmFilter>("all");
+  const [salesSearch, setSalesSearch] = useState("");
+  const [salesFilter, setSalesFilter] = useState<SalesFilter>("now");
+  const [salesSelectedLeadId, setSalesSelectedLeadId] = useState("");
   const [clientDraft, setClientDraft] = useState<ClientDraft>(emptyClientDraft);
   const [profileDraft, setProfileDraft] = useState<ClientDraft>(emptyClientDraft);
   const [inviteDraft, setInviteDraft] = useState<InviteDraft>(emptyInviteDraft);
@@ -342,7 +392,13 @@ export function App() {
   const needsOperationalOnboarding = Boolean(tenant && !loading && !hasOperationalData);
   const qualityRows = useMemo(() => buildQualityRows(tenantLeads, tenantMetaCampaigns), [tenantLeads, tenantMetaCampaigns]);
   const tenantSummary = tenantSummaries.find((item) => item.tenant_id === tenant?.id);
-  const secondaryMobileSections: Section[] = ["leads", "clients", "users", "reports", "capi", "settings"];
+  const currentTenantUser = tenantUsers.find((user) =>
+    (currentUserId && user.user_id === currentUserId) ||
+    (currentUserEmail && user.email?.toLowerCase() === currentUserEmail.toLowerCase()),
+  );
+  const currentTenantRole = currentTenantUser?.role ?? (isPlatformUser ? "owner" : null);
+  const isSellerExperience = currentTenantRole === "operator" && !isPlatformUser;
+  const secondaryMobileSections: Section[] = isSellerExperience ? ["leads"] : ["integrations", "leads", "clients", "users", "reports", "capi", "settings"];
   const moreActive = secondaryMobileSections.includes(active);
 
   function goToSection(section: Section) {
@@ -403,6 +459,35 @@ export function App() {
       ].some((value) => String(value ?? "").toLowerCase().includes(q));
     });
   }, [crmFilter, crmSearch, tenantLeads]);
+
+  const salesVisibleLeads = useMemo(() => {
+    const q = salesSearch.trim().toLowerCase();
+    const openLeads = tenantLeads.filter((lead) => {
+      if (salesFilter === "now") return isOpenLead(lead);
+      return lead.lead_status === salesFilter;
+    });
+    const searched = q
+      ? openLeads.filter((lead) => [
+        lead.ref,
+        lead.customer_name,
+        lead.customer_phone,
+        lead.customer_email,
+        lead.offer_name,
+        lead.link_name,
+        lead.utm_campaign,
+        lead.utm_content,
+      ].some((value) => String(value ?? "").toLowerCase().includes(q)))
+      : openLeads;
+    return sortSalesQueue(searched);
+  }, [salesFilter, salesSearch, tenantLeads]);
+
+  const selectedSalesLead = salesVisibleLeads.find((lead) => lead.id === salesSelectedLeadId) ?? salesVisibleLeads[0] ?? null;
+  const salesStats = useMemo(() => ({
+    now: tenantLeads.filter(isOpenLead).length,
+    due: tenantLeads.filter(leadFollowUpDue).length,
+    qualified: tenantLeads.filter((lead) => lead.lead_status === "qualified").length,
+    sold: tenantLeads.filter((lead) => lead.lead_status === "sold").length,
+  }), [tenantLeads]);
 
   const operationalChecklist: ReadinessItem[] = useMemo(() => {
     const hasUtmReadyLink = tenantLinks.some((link) => link.default_utm_source && link.default_utm_medium && link.default_utm_campaign);
@@ -494,10 +579,17 @@ export function App() {
 
   useEffect(() => {
     const section = new URLSearchParams(window.location.search).get("section") as Section | null;
-    if (section && ["dashboard", "links", "leads", "crm", "integrations", "clients", "users", "reports", "capi", "settings"].includes(section)) {
+    if (section && validSections.includes(section)) {
       setActive(section);
     }
   }, []);
+
+  useEffect(() => {
+    if (!isSellerExperience || requestedSection) return;
+    if (["dashboard", "links", "integrations", "clients", "users", "reports", "capi", "settings"].includes(active)) {
+      setActive("sales");
+    }
+  }, [active, isSellerExperience, requestedSection]);
 
   useEffect(() => {
     if (!toast) return;
@@ -602,6 +694,8 @@ export function App() {
   async function logout() {
     if (supabase) await supabase.auth.signOut();
     setSignedIn(false);
+    setCurrentUserId("");
+    setCurrentUserEmail("");
     setTenantSetupRequired(false);
     setOnboarding(null);
     setPlatformRole(null);
@@ -636,6 +730,9 @@ export function App() {
       setLoading(false);
       return;
     }
+
+    setCurrentUserId(session.user.id);
+    setCurrentUserEmail(session.user.email?.toLowerCase() ?? "");
 
     const res = await authFetch("tenant-admin", {
       method: "POST",
@@ -697,7 +794,7 @@ export function App() {
       supabase.from("vw_lead_queue").select("*").eq("tenant_id", nextTenantId).order("clicked_at", { ascending: false }).limit(100),
       supabase.from("capi_events").select("event_name, ok, status_code, error_message, created_at").eq("tenant_id", nextTenantId).order("created_at", { ascending: false }).limit(40),
       supabase.from("crm_activities").select("*").eq("tenant_id", nextTenantId).order("created_at", { ascending: false }).limit(80),
-      supabase.from("tenant_users").select("id, tenant_id, email, role, status, created_at").eq("tenant_id", nextTenantId).order("created_at", { ascending: true }),
+      supabase.from("tenant_users").select("id, tenant_id, user_id, email, role, status, created_at").eq("tenant_id", nextTenantId).order("created_at", { ascending: true }),
       supabase.from("vw_capi_health").select("*").eq("tenant_id", nextTenantId).maybeSingle(),
       supabase.from("vw_meta_campaign_roi").select("*").eq("tenant_id", nextTenantId).order("spend", { ascending: false }).limit(100),
       supabase.from("vw_meta_audience_status").select("*").eq("tenant_id", nextTenantId).order("audience_key", { ascending: true }),
@@ -1378,8 +1475,15 @@ export function App() {
             <div className="brand-mark">IDX.</div>
             <span>CRO Engine</span>
           </div>
+          {isSellerExperience ? (
+            <nav className="nav-list">
+              <NavButton icon={<PhoneCall />} label="Atender" active={active === "sales"} onClick={() => goToSection("sales")} />
+              <NavButton icon={<MessageCircle />} label="Atendimentos" active={active === "leads"} onClick={() => goToSection("leads")} />
+            </nav>
+          ) : (
           <nav className="nav-list">
             <NavButton icon={<Gauge />} label="Dashboard" active={active === "dashboard"} onClick={() => goToSection("dashboard")} />
+            <NavButton icon={<PhoneCall />} label="Atender" active={active === "sales"} onClick={() => goToSection("sales")} />
             <NavButton icon={<Link2 />} label="Links" active={active === "links"} onClick={() => goToSection("links")} />
             <NavButton icon={<MessageCircle />} label="Atendimentos" active={active === "leads"} onClick={() => goToSection("leads")} />
             <NavButton icon={<LayoutList />} label="CRM" active={active === "crm"} onClick={() => goToSection("crm")} />
@@ -1390,6 +1494,7 @@ export function App() {
             <NavButton icon={<Activity />} label="CAPI" active={active === "capi"} onClick={() => goToSection("capi")} />
             <NavButton icon={<Settings />} label="Config" active={active === "settings"} onClick={() => goToSection("settings")} />
           </nav>
+          )}
         </div>
         <div className="sidebar-bottom">
           <label className="mini-label">Empresa</label>
@@ -1430,6 +1535,31 @@ export function App() {
             <strong>Acesso por link de empresa</strong>
             <span>{tenantRouteWarning}</span>
           </div>
+        )}
+
+        {active === "sales" && (
+          <SalesConsole
+            leads={salesVisibleLeads}
+            allLeads={tenantLeads}
+            selectedLead={selectedSalesLead}
+            selectedLeadId={selectedSalesLead?.id ?? ""}
+            stats={salesStats}
+            filter={salesFilter}
+            search={salesSearch}
+            notes={crmNotes}
+            contacts={crmContacts}
+            followUps={crmFollowUps}
+            revenues={crmRevenue}
+            busyRef={crmBusyRef}
+            onFilterChange={setSalesFilter}
+            onSearchChange={setSalesSearch}
+            onSelectLead={setSalesSelectedLeadId}
+            onNoteChange={(leadId, value) => setCrmNotes((items) => ({ ...items, [leadId]: value }))}
+            onContactChange={(leadId, value) => setCrmContacts((items) => ({ ...items, [leadId]: { ...(items[leadId] ?? { phone: "", email: "", name: "" }), ...value } }))}
+            onFollowUpChange={(leadId, value) => setCrmFollowUps((items) => ({ ...items, [leadId]: value }))}
+            onRevenueChange={(leadId, value) => setCrmRevenue((items) => ({ ...items, [leadId]: value }))}
+            onStageChange={updateCrmStage}
+          />
         )}
 
         {active === "dashboard" && needsOperationalOnboarding && (
@@ -2172,8 +2302,16 @@ export function App() {
         )}
       </main>
 
-      {mobileMenuOpen && (
+      {mobileMenuOpen && isSellerExperience && (
         <section className="mobile-more-sheet" aria-label="Mais opções">
+          <button type="button" onClick={() => goToSection("leads")} className={active === "leads" ? "active" : ""}><MessageCircle size={17} /> Atendimentos</button>
+          <button type="button" onClick={logout}><LogOut size={17} /> Sair</button>
+        </section>
+      )}
+
+      {mobileMenuOpen && !isSellerExperience && (
+        <section className="mobile-more-sheet" aria-label="Mais opções">
+          <button type="button" onClick={() => goToSection("integrations")} className={active === "integrations" ? "active" : ""}><ShieldCheck size={17} /> Meta</button>
           <button type="button" onClick={() => goToSection("leads")} className={active === "leads" ? "active" : ""}><MessageCircle size={17} /> Atendimentos</button>
           <button type="button" onClick={() => goToSection("clients")} className={active === "clients" ? "active" : ""}><LayoutList size={17} /> Clientes</button>
           <button type="button" onClick={() => goToSection("users")} className={active === "users" ? "active" : ""}><Users size={17} /> Usuários</button>
@@ -2184,13 +2322,23 @@ export function App() {
         </section>
       )}
 
-      <nav className="mobile-tabbar" aria-label="Navegação principal">
-        <NavButton icon={<Gauge />} label="Início" active={active === "dashboard"} onClick={() => goToSection("dashboard")} />
-        <NavButton icon={<Link2 />} label="Links" active={active === "links"} onClick={() => goToSection("links")} />
-        <NavButton icon={<LayoutList />} label="CRM" active={active === "crm"} onClick={() => goToSection("crm")} />
-        <NavButton icon={<ShieldCheck />} label="Meta" active={active === "integrations"} onClick={() => goToSection("integrations")} />
+      {isSellerExperience && (
+      <nav className="mobile-tabbar seller-mobile-tabbar" aria-label="Navegação do atendimento">
+        <NavButton icon={<PhoneCall />} label="Atender" active={active === "sales"} onClick={() => goToSection("sales")} />
+        <NavButton icon={<MessageCircle />} label="Leads" active={active === "leads"} onClick={() => goToSection("leads")} />
         <NavButton icon={<MoreHorizontal />} label="Mais" active={moreActive || mobileMenuOpen} onClick={() => setMobileMenuOpen((open) => !open)} />
       </nav>
+      )}
+
+      {!isSellerExperience && (
+      <nav className="mobile-tabbar" aria-label="Navegação principal">
+        <NavButton icon={<Gauge />} label="Início" active={active === "dashboard"} onClick={() => goToSection("dashboard")} />
+        <NavButton icon={<PhoneCall />} label="Atender" active={active === "sales"} onClick={() => goToSection("sales")} />
+        <NavButton icon={<Link2 />} label="Links" active={active === "links"} onClick={() => goToSection("links")} />
+        <NavButton icon={<LayoutList />} label="CRM" active={active === "crm"} onClick={() => goToSection("crm")} />
+        <NavButton icon={<MoreHorizontal />} label="Mais" active={moreActive || mobileMenuOpen} onClick={() => setMobileMenuOpen((open) => !open)} />
+      </nav>
+      )}
 
       {toast && <div className="toast">{toast}</div>}
     </div>
@@ -2212,6 +2360,198 @@ function Kpi({ label, value }: { label: string; value: string }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </article>
+  );
+}
+
+function SalesConsole({
+  leads,
+  allLeads,
+  selectedLead,
+  selectedLeadId,
+  stats,
+  filter,
+  search,
+  notes,
+  contacts,
+  followUps,
+  revenues,
+  busyRef,
+  onFilterChange,
+  onSearchChange,
+  onSelectLead,
+  onNoteChange,
+  onContactChange,
+  onFollowUpChange,
+  onRevenueChange,
+  onStageChange,
+}: {
+  leads: Lead[];
+  allLeads: Lead[];
+  selectedLead: Lead | null;
+  selectedLeadId: string;
+  stats: { now: number; due: number; qualified: number; sold: number };
+  filter: SalesFilter;
+  search: string;
+  notes: Record<string, string>;
+  contacts: Record<string, ContactDraft>;
+  followUps: Record<string, string>;
+  revenues: Record<string, string>;
+  busyRef: string;
+  onFilterChange: (value: SalesFilter) => void;
+  onSearchChange: (value: string) => void;
+  onSelectLead: (leadId: string) => void;
+  onNoteChange: (leadId: string, value: string) => void;
+  onContactChange: (leadId: string, value: Partial<ContactDraft>) => void;
+  onFollowUpChange: (leadId: string, value: string) => void;
+  onRevenueChange: (leadId: string, value: string) => void;
+  onStageChange: (lead: Lead, status: LeadStatus) => void;
+}) {
+  const lead = selectedLead;
+  const contact = lead ? contacts[lead.id] : undefined;
+  const phone = lead ? leadContactPhone(lead, contact) : "";
+  const duplicateLead = lead ? duplicateContactLead(lead, contact, allLeads) : null;
+  const filters: { value: SalesFilter; label: string }[] = [
+    { value: "now", label: "Agora" },
+    { value: "new", label: "Novos" },
+    { value: "contacted", label: "Contato" },
+    { value: "qualified", label: "Remarketing" },
+    { value: "sold", label: "Vendas" },
+  ];
+
+  return (
+    <section className="seller-page">
+      <div className="seller-summary">
+        <article>
+          <span>Fila aberta</span>
+          <strong>{stats.now}</strong>
+        </article>
+        <article>
+          <span>Follow-up</span>
+          <strong>{stats.due}</strong>
+        </article>
+        <article>
+          <span>Remarketing</span>
+          <strong>{stats.qualified}</strong>
+        </article>
+        <article>
+          <span>Vendas</span>
+          <strong>{stats.sold}</strong>
+        </article>
+      </div>
+
+      <section className="seller-workspace">
+        <aside className="seller-queue" aria-label="Fila de atendimento">
+          <div className="seller-section-head">
+            <div>
+              <h2>Fila de atendimento</h2>
+              <p>Priorize retorno, contato e qualificação.</p>
+            </div>
+          </div>
+          <div className="search-box seller-search">
+            <Search size={15} />
+            <input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Buscar lead, telefone ou campanha" />
+          </div>
+          <div className="segmented-filter seller-filter" aria-label="Filtro do atendimento">
+            {filters.map((item) => (
+              <button key={item.value} type="button" className={filter === item.value ? "active" : ""} onClick={() => onFilterChange(item.value)}>
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <div className="seller-lead-list">
+            {leads.length ? leads.map((item) => (
+              <button
+                className={`seller-lead-row ${item.id === selectedLeadId ? "active" : ""}`}
+                type="button"
+                key={item.id}
+                onClick={() => onSelectLead(item.id)}
+              >
+                <span>
+                  <strong>{item.customer_name || item.offer_name || item.link_name || "Lead WhatsApp"}</strong>
+                  <small>{item.ref} · {timeAgo(item.clicked_at)} · {item.utm_campaign ?? "sem campanha"}</small>
+                </span>
+                <Status status={item.lead_status} />
+                {leadFollowUpDue(item) && <em>retornar</em>}
+              </button>
+            )) : <EmptyState text="Nenhum lead nesta fila." />}
+          </div>
+        </aside>
+
+        <section className="seller-detail" aria-label="Atendimento selecionado">
+          {lead ? (
+            <>
+              <div className="seller-detail-top">
+                <div>
+                  <span className="seller-ref">Ref {lead.ref}</span>
+                  <h2>{lead.offer_name ?? lead.link_name ?? "Atendimento WhatsApp"}</h2>
+                  <p>{timeAgo(lead.clicked_at)} · {lead.utm_campaign ?? "sem campanha"} · {lead.utm_source ?? "origem não informada"}</p>
+                </div>
+                <Status status={lead.lead_status} />
+              </div>
+
+              <TagRow tags={lead.tags} fallback={lead.utm_content ?? lead.category ?? "lead"} />
+
+              <div className="seller-contact-grid">
+                <label>
+                  Nome
+                  <input value={contact?.name ?? lead.customer_name ?? ""} onChange={(event) => onContactChange(lead.id, { name: event.target.value })} placeholder="Nome do lead" />
+                </label>
+                <label>
+                  Telefone
+                  <input value={contact?.phone ?? lead.customer_phone ?? ""} onChange={(event) => onContactChange(lead.id, { phone: event.target.value })} placeholder="Telefone com DDI/DDD" inputMode="tel" />
+                </label>
+                <label>
+                  Email
+                  <input value={contact?.email ?? lead.customer_email ?? ""} onChange={(event) => onContactChange(lead.id, { email: event.target.value })} placeholder="Email opcional" type="email" />
+                </label>
+                <label>
+                  Retorno
+                  <input value={followUps[lead.id] ?? dateTimeLocalValue(lead.next_follow_up_at)} onChange={(event) => onFollowUpChange(lead.id, event.target.value)} type="datetime-local" />
+                </label>
+                <label>
+                  Valor da venda
+                  <input value={revenues[lead.id] ?? (lead.revenue ? String(lead.revenue) : "")} onChange={(event) => onRevenueChange(lead.id, event.target.value)} placeholder="0,00" inputMode="decimal" />
+                </label>
+              </div>
+
+              {duplicateLead && (
+                <div className="crm-warning">
+                  <span>Este telefone já está no lead {duplicateLead.ref}. Abra o lead correto antes de salvar.</span>
+                </div>
+              )}
+
+              <label className="seller-note">
+                Nota do atendimento
+                <textarea value={notes[lead.id] ?? ""} onChange={(event) => onNoteChange(lead.id, event.target.value)} rows={3} placeholder="Resumo objetivo da conversa" />
+              </label>
+
+              <div className="seller-actions">
+                {phone ? (
+                  <a className="primary-button seller-whatsapp" href={whatsappUrl(phone)} target="_blank" rel="noreferrer">
+                    <PhoneCall size={16} /> WhatsApp
+                  </a>
+                ) : (
+                  <button className="ghost-dark-button" type="button" disabled>Sem telefone</button>
+                )}
+                <button className="ghost-dark-button" type="button" onClick={() => onStageChange(lead, lead.lead_status)} disabled={busyRef === lead.ref}>Salvar</button>
+                <button className="ghost-dark-button" type="button" onClick={() => onStageChange(lead, "contacted")} disabled={busyRef === lead.ref || lead.lead_status === "contacted"}>Contato</button>
+                <button className="primary-button" type="button" onClick={() => onStageChange(lead, "qualified")} disabled={busyRef === lead.ref || lead.lead_status === "qualified"}>Qualificar</button>
+                <button className="primary-button" type="button" onClick={() => onStageChange(lead, "sold")} disabled={busyRef === lead.ref}>Venda</button>
+                <button className="ghost-dark-button" type="button" onClick={() => onStageChange(lead, "bad")} disabled={busyRef === lead.ref || lead.lead_status === "bad"}>Ruim</button>
+                <button className="ghost-dark-button" type="button" onClick={() => onStageChange(lead, "lost")} disabled={busyRef === lead.ref || lead.lead_status === "lost"}>Perdido</button>
+              </div>
+
+              <div className="seller-guidance">
+                <strong>Qualificado = remarketing.</strong>
+                <span>Use somente quando o lead realmente tem potencial. O sistema envia esse sinal para o Meta.</span>
+              </div>
+            </>
+          ) : (
+            <EmptyState text="Nenhum atendimento aberto agora." />
+          )}
+        </section>
+      </section>
+    </section>
   );
 }
 
@@ -3237,6 +3577,7 @@ function EmptyState({ text }: { text: string }) {
 function sectionTitle(section: Section): string {
   return {
     dashboard: "Dashboard",
+    sales: "Atender",
     links: "Smart Links",
     leads: "Atendimentos",
     crm: "CRM",

@@ -10,6 +10,7 @@ export type Tenant = {
 export type TenantUser = {
   id: string;
   tenant_id: string;
+  user_id?: string | null;
   email?: string | null;
   role: "owner" | "admin" | "operator" | "viewer";
   status: "active" | "invited" | "disabled";

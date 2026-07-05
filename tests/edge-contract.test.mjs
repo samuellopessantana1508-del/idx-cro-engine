@@ -144,7 +144,7 @@ assert.match(metaOauth, /selected_ad_account_id/);
 assert.match(metaOauth, /oauth\/access_token/);
 assert.match(metaOauth, /integration_oauth_states/);
 assert.match(metaOauth, /tenant_meta_credentials/);
-assert.match(metaOauth, /https:\/\/cro\.idxparasuaempresa\.com\.br/);
+assert.match(metaOauth, /https:\/\/idxparasuaempresa\.com\.br/);
 assert.match(metaOauth, /canOperateTenantOrPlatform/);
 assert.doesNotMatch(metaOauth, /localhost:5177/);
 

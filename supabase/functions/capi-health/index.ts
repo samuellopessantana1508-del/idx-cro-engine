@@ -84,7 +84,7 @@ Deno.serve(async (req: Request) => {
         event_name: "Lead",
         event_time: Math.floor(Date.now() / 1000),
         event_id: `test_${crypto.randomUUID()}`,
-        event_source_url: Deno.env.get("APP_URL") ?? "https://cro.idxparasuaempresa.com.br",
+        event_source_url: Deno.env.get("APP_URL") ?? "https://idxparasuaempresa.com.br",
         action_source: "website",
         user_data: cleanObject({
           client_ip_address: clientIp(req),

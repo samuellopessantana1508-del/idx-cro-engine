@@ -974,6 +974,232 @@ td small {
   color: var(--paper);
 }
 
+.seller-page {
+  display: grid;
+  gap: 16px;
+}
+
+.seller-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.seller-summary article,
+.seller-queue,
+.seller-detail {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.seller-summary article {
+  min-height: 86px;
+  padding: 14px;
+  display: grid;
+  align-content: space-between;
+  gap: 10px;
+}
+
+.seller-summary span,
+.seller-section-head p,
+.seller-detail-top p,
+.seller-ref,
+.seller-guidance span {
+  color: var(--muted);
+}
+
+.seller-summary span {
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.seller-summary strong {
+  font-size: 1.55rem;
+  line-height: 1;
+  font-weight: 600;
+}
+
+.seller-workspace {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.9fr) minmax(0, 1.4fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.seller-queue,
+.seller-detail {
+  min-width: 0;
+  padding: 16px;
+}
+
+.seller-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.seller-section-head h2,
+.seller-detail-top h2 {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.seller-section-head p,
+.seller-detail-top p {
+  margin: 5px 0 0;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.seller-search {
+  min-width: 0;
+  margin-bottom: 10px;
+}
+
+.seller-filter {
+  margin-bottom: 12px;
+}
+
+.seller-lead-list {
+  display: grid;
+  gap: 8px;
+  max-height: 65vh;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.seller-lead-row {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px;
+  text-align: left;
+}
+
+.seller-lead-row.active {
+  border-color: var(--black);
+  box-shadow: inset 0 0 0 1px var(--black);
+}
+
+.seller-lead-row strong,
+.seller-lead-row small {
+  display: block;
+}
+
+.seller-lead-row strong {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.seller-lead-row small {
+  color: var(--muted);
+  margin-top: 4px;
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seller-lead-row em {
+  grid-column: 1 / -1;
+  width: fit-content;
+  border-radius: 999px;
+  background: var(--black);
+  color: var(--paper);
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.seller-detail {
+  display: grid;
+  gap: 14px;
+}
+
+.seller-detail-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.seller-ref {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.seller-contact-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.seller-note {
+  display: grid;
+  gap: 7px;
+}
+
+.seller-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.seller-actions .primary-button,
+.seller-actions .ghost-dark-button,
+.seller-whatsapp {
+  min-height: 44px;
+  padding: 0 12px;
+  text-decoration: none;
+  font-size: 0.86rem;
+}
+
+.seller-actions button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.seller-whatsapp {
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.seller-guidance {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+  padding: 12px;
+  display: grid;
+  gap: 4px;
+}
+
+.seller-guidance strong {
+  font-size: 0.88rem;
+}
+
+.seller-guidance span {
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1390,6 +1616,14 @@ td small {
     grid-template-columns: 1fr;
   }
 
+  .seller-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .seller-lead-list {
+    max-height: none;
+  }
+
   .link-form,
   .sale-form,
   .onboarding-grid,
@@ -1409,6 +1643,11 @@ td small {
   .permission-grid,
   .client-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .seller-summary,
+  .seller-contact-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .alert-row {
@@ -1493,6 +1732,50 @@ td small {
     font-size: 0.8rem;
   }
 
+  .seller-page {
+    gap: 12px;
+    padding-bottom: 96px;
+  }
+
+  .seller-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .seller-summary article {
+    min-height: 76px;
+    padding: 12px;
+  }
+
+  .seller-summary strong {
+    font-size: 1.32rem;
+  }
+
+  .seller-queue,
+  .seller-detail {
+    padding: 14px;
+    box-shadow: none;
+  }
+
+  .seller-workspace,
+  .seller-contact-grid,
+  .seller-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .seller-detail-top {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .seller-actions .primary-button,
+  .seller-actions .ghost-dark-button,
+  .seller-whatsapp {
+    width: 100%;
+    min-height: 46px;
+  }
+
   .kpi {
     min-height: 78px;
     padding: 14px;
@@ -1563,6 +1846,10 @@ td small {
     background: rgba(255, 255, 255, 0.96);
     box-shadow: 0 10px 32px rgba(0, 0, 0, 0.14);
     backdrop-filter: blur(16px);
+  }
+
+  .seller-mobile-tabbar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .mobile-tabbar .nav-button {

@@ -39,13 +39,13 @@ conteudo gerado.
 
 Atualize no Supabase Auth:
 
-- `site_url`: URL final do painel, por exemplo `https://app.seudominio.com`.
-- `uri_allow_list`: inclua `https://app.seudominio.com/**`.
+- `site_url`: URL final do painel, `https://idxparasuaempresa.com.br`.
+- `uri_allow_list`: inclua `https://idxparasuaempresa.com.br/**`.
 
 Atualize tambem o secret das Edge Functions:
 
 ```powershell
-$env:APP_URL="https://app.seudominio.com"
+$env:APP_URL="https://idxparasuaempresa.com.br"
 ```
 
 Ou use a Management API/CLI para salvar `APP_URL` no projeto Supabase.
@@ -66,7 +66,7 @@ $env:SMTP_PASS="SENHA_DO_EMAIL"
 $env:SMTP_ADMIN_EMAIL="no-reply@seudominio.com"
 $env:SMTP_SENDER_NAME="IDX CRO Engine"
 
-powershell -ExecutionPolicy Bypass -File .\scripts\configure-supabase-auth-smtp.ps1 -AppUrl "https://app.seudominio.com"
+powershell -ExecutionPolicy Bypass -File .\scripts\configure-supabase-auth-smtp.ps1 -AppUrl "https://idxparasuaempresa.com.br"
 ```
 
 Nunca comite a senha SMTP.

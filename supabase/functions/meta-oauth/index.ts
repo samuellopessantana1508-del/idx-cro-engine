@@ -85,7 +85,7 @@ Deno.serve(async (req: Request) => {
   const appSecret = Deno.env.get("META_APP_SECRET");
   const redirectUri = Deno.env.get("META_REDIRECT_URI");
   const loginConfigId = Deno.env.get("META_LOGIN_CONFIG_ID") ?? Deno.env.get("META_CONFIG_ID");
-  const appUrl = Deno.env.get("APP_URL") ?? "https://cro.idxparasuaempresa.com.br";
+  const appUrl = Deno.env.get("APP_URL") ?? "https://idxparasuaempresa.com.br";
   const version = Deno.env.get("META_GRAPH_VERSION") ?? "v25.0";
 
   if (req.method === "POST") {

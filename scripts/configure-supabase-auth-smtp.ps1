@@ -1,6 +1,6 @@
 param(
   [string]$ProjectRef = "tykeycwworjtfpssjevw",
-  [string]$AppUrl = "https://cro.idxparasuaempresa.com.br",
+  [string]$AppUrl = "https://idxparasuaempresa.com.br",
   [switch]$IncludeLocalDevRedirects,
   [string]$SmtpHost = $env:SMTP_HOST,
   [int]$SmtpPort = 587,

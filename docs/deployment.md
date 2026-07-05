@@ -25,14 +25,14 @@ supabase functions deploy supabase-health
 Configure os secrets:
 
 ```bash
-supabase secrets set APP_URL=https://app.seudominio.com
+supabase secrets set APP_URL=https://idxparasuaempresa.com.br
 supabase secrets set PLATFORM_OWNER_EMAILS=seu-email@empresa.com
 supabase secrets set REQUIRE_PLATFORM_ADMIN_FOR_TENANT_CREATE=true
 supabase secrets set FALLBACK_URL=https://wa.me/5564999999999
 supabase secrets set META_GRAPH_VERSION=v25.0
 supabase secrets set META_APP_ID=SEU_META_APP_ID
 supabase secrets set META_APP_SECRET=SEU_META_APP_SECRET
-supabase secrets set META_REDIRECT_URI=https://SEU-DOMINIO.com/meta-oauth-callback.html
+supabase secrets set META_REDIRECT_URI=https://idxparasuaempresa.com.br/meta-oauth-callback.html
 supabase secrets set META_LOGIN_CONFIG_ID=SEU_FACEBOOK_LOGIN_FOR_BUSINESS_CONFIG_ID
 ```
 

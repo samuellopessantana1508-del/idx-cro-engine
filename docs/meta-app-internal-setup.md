@@ -54,7 +54,7 @@ https://SEU-DOMINIO.com/meta-oauth-callback.html
 No ambiente atual da IDX, use:
 
 ```txt
-https://cro.idxparasuaempresa.com.br/meta-oauth-callback.html
+https://idxparasuaempresa.com.br/meta-oauth-callback.html
 ```
 
 Essa página estática recebe `code/state` da Meta e redireciona para a Edge
@@ -64,12 +64,12 @@ domínio próprio, pode trocar o fluxo para usar esse domínio direto.
 ### 4. Configurar Secrets no Supabase
 
 ```bash
-supabase secrets set APP_URL=https://app.seudominio.com
+supabase secrets set APP_URL=https://idxparasuaempresa.com.br
 supabase secrets set FALLBACK_URL=https://wa.me/5564999999999
 supabase secrets set META_GRAPH_VERSION=v25.0
 supabase secrets set META_APP_ID=SEU_APP_ID
 supabase secrets set META_APP_SECRET=SEU_APP_SECRET
-supabase secrets set META_REDIRECT_URI=https://SEU-DOMINIO.com/meta-oauth-callback.html
+supabase secrets set META_REDIRECT_URI=https://idxparasuaempresa.com.br/meta-oauth-callback.html
 supabase secrets set META_LOGIN_CONFIG_ID=SEU_FACEBOOK_LOGIN_FOR_BUSINESS_CONFIG_ID
 ```
 

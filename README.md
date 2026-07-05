@@ -40,7 +40,7 @@ Leia: `docs/single-database-multitenant.md`.
 Cada empresa pode acessar o painel por uma URL limpa baseada no slug:
 
 ```txt
-https://cro.idxparasuaempresa.com.br/nome-da-empresa
+https://idxparasuaempresa.com.br/nome-da-empresa
 ```
 
 O app seleciona a empresa pelo slug depois do login. Se o usuário não tiver
@@ -81,7 +81,7 @@ VITE_PUBLIC_REDIRECT_BASE=https://SEU-DOMINIO.com
 Configure uma vez no Supabase:
 
 ```bash
-supabase secrets set APP_URL=https://app.seudominio.com
+supabase secrets set APP_URL=https://idxparasuaempresa.com.br
 supabase secrets set PLATFORM_OWNER_EMAILS=seu-email@empresa.com
 supabase secrets set REQUIRE_PLATFORM_ADMIN_FOR_TENANT_CREATE=true
 supabase secrets set FALLBACK_URL=https://wa.me/5564999999999
@@ -90,7 +90,7 @@ supabase secrets set META_GRAPH_VERSION=v25.0
 # Opcionais: necessárias apenas para "Conectar Facebook"
 supabase secrets set META_APP_ID=SEU_META_APP_ID
 supabase secrets set META_APP_SECRET=SEU_META_APP_SECRET
-supabase secrets set META_REDIRECT_URI=https://SEU-DOMINIO.com/meta-oauth-callback.html
+supabase secrets set META_REDIRECT_URI=https://idxparasuaempresa.com.br/meta-oauth-callback.html
 supabase secrets set META_LOGIN_CONFIG_ID=SEU_FACEBOOK_LOGIN_FOR_BUSINESS_CONFIG_ID
 ```
 
@@ -130,7 +130,7 @@ producao, mantenha a confirmacao de email ativa em `Authentication > Providers`
 e cadastre as URLs do painel em `Authentication > URL Configuration`:
 
 - Local: `http://127.0.0.1:5177`
-- Producao: URL final do GitHub Pages ou dominio do painel IDX
+- Producao: `https://idxparasuaempresa.com.br`
 
 O painel tambem permite reenviar a confirmacao de cadastro sem abrir o Supabase.
 Convites de novos usuários por empresa são enviados por email pela Edge Function
