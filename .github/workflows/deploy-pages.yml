@@ -41,16 +41,16 @@ jobs:
           test -n "$VITE_SUPABASE_ANON_KEY" || (echo "::error::Missing GitHub variable or secret VITE_SUPABASE_ANON_KEY" && exit 1)
           test -n "$VITE_PUBLIC_REDIRECT_BASE" || (echo "::error::Missing GitHub variable VITE_PUBLIC_REDIRECT_BASE" && exit 1)
         env:
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_PUBLIC_REDIRECT_BASE: ${{ vars.VITE_PUBLIC_REDIRECT_BASE || vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || 'https://tykeycwworjtfpssjevw.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY || 'sb_publishable_H6HNEnMsY4T53ghQE-D8UQ_FRU4L98E' }}
+          VITE_PUBLIC_REDIRECT_BASE: ${{ vars.VITE_PUBLIC_REDIRECT_BASE || vars.VITE_SUPABASE_URL || 'https://tykeycwworjtfpssjevw.supabase.co' }}
 
       - name: Build
         run: npm run build
         env:
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_PUBLIC_REDIRECT_BASE: ${{ vars.VITE_PUBLIC_REDIRECT_BASE || vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || 'https://tykeycwworjtfpssjevw.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY || 'sb_publishable_H6HNEnMsY4T53ghQE-D8UQ_FRU4L98E' }}
+          VITE_PUBLIC_REDIRECT_BASE: ${{ vars.VITE_PUBLIC_REDIRECT_BASE || vars.VITE_SUPABASE_URL || 'https://tykeycwworjtfpssjevw.supabase.co' }}
           VITE_REDIRECT_PATH_PREFIX: ${{ vars.VITE_REDIRECT_PATH_PREFIX || '/functions/v1/go' }}
 
       - name: Configure Pages
