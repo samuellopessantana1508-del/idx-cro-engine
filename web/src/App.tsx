@@ -123,6 +123,21 @@ type QualityRow = {
   roas: number | null;
 };
 
+type CrmFilter = LeadStatus | "all" | "needs_follow_up" | "no_identifier";
+
+type ReadinessItem = {
+  title: string;
+  detail: string;
+  done: boolean;
+  section: Section;
+};
+
+type ExecutiveInsight = {
+  title: string;
+  detail: string;
+  tone: "good" | "warning" | "neutral";
+};
+
 type MetaPixelAsset = {
   id: string;
   name?: string | null;
@@ -243,8 +258,11 @@ export function App() {
   const [toast, setToast] = useState("");
   const [leadSearch, setLeadSearch] = useState("");
   const [saleRef, setSaleRef] = useState("");
+  const [saleName, setSaleName] = useState("");
   const [salePhone, setSalePhone] = useState("");
   const [saleRevenue, setSaleRevenue] = useState("");
+  const [crmSearch, setCrmSearch] = useState("");
+  const [crmFilter, setCrmFilter] = useState<CrmFilter>("all");
   const [clientDraft, setClientDraft] = useState<ClientDraft>(emptyClientDraft);
   const [profileDraft, setProfileDraft] = useState<ClientDraft>(emptyClientDraft);
   const [inviteDraft, setInviteDraft] = useState<InviteDraft>(emptyInviteDraft);
@@ -255,6 +273,7 @@ export function App() {
   const [metaAssetsLoaded, setMetaAssetsLoaded] = useState(false);
   const [crmNotes, setCrmNotes] = useState<Record<string, string>>({});
   const [crmContacts, setCrmContacts] = useState<Record<string, ContactDraft>>({});
+  const [crmFollowUps, setCrmFollowUps] = useState<Record<string, string>>({});
   const [crmRevenue, setCrmRevenue] = useState<Record<string, string>>({});
   const [crmBusyRef, setCrmBusyRef] = useState("");
   const [integrationBusy, setIntegrationBusy] = useState(false);
@@ -298,6 +317,107 @@ export function App() {
     const conversion = clicks ? (sales / clicks) * 100 : 0;
     return { clicks, sales, revenue, waiting, conversion };
   }, [tenantLeads, tenantLinks]);
+
+  const crmVisibleLeads = useMemo(() => {
+    const q = crmSearch.trim().toLowerCase();
+    const now = Date.now();
+    return tenantLeads.filter((lead) => {
+      const hasIdentifier = Boolean(lead.customer_phone || lead.customer_email);
+      const followUpAt = lead.next_follow_up_at ? new Date(lead.next_follow_up_at).getTime() : 0;
+      const followUpDue = Boolean(followUpAt && followUpAt <= now && !["sold", "lost", "bad"].includes(lead.lead_status));
+      const statusMatches =
+        crmFilter === "all" ||
+        lead.lead_status === crmFilter ||
+        (crmFilter === "needs_follow_up" && followUpDue) ||
+        (crmFilter === "no_identifier" && !hasIdentifier);
+
+      if (!statusMatches) return false;
+      if (!q) return true;
+
+      return [
+        lead.ref,
+        lead.customer_name,
+        lead.customer_phone,
+        lead.customer_email,
+        lead.offer_name,
+        lead.link_name,
+        lead.utm_source,
+        lead.utm_campaign,
+        lead.utm_content,
+      ].some((value) => String(value ?? "").toLowerCase().includes(q));
+    });
+  }, [crmFilter, crmSearch, tenantLeads]);
+
+  const operationalChecklist: ReadinessItem[] = useMemo(() => {
+    const hasUtmReadyLink = tenantLinks.some((link) => link.default_utm_source && link.default_utm_medium && link.default_utm_campaign);
+    const qualifiedAudience = metaAudiences.find((audience) => audience.audience_key === "qualified");
+    const purchasedAudience = metaAudiences.find((audience) => audience.audience_key === "purchased");
+    const metaAdAccountReady = tenantMetaCampaigns.length > 0 || metaAudiences.some((audience) => audience.ad_account_id);
+    const anyCapiSignal = health.total_events > 0 || events.length > 0;
+
+    return [
+      {
+        title: "Empresa",
+        detail: tenant?.whatsapp_number ? `${tenant.name} · ${tenant.whatsapp_number}` : "WhatsApp com DDI/DDD pendente",
+        done: Boolean(tenant?.id && tenant?.whatsapp_number),
+        section: "settings",
+      },
+      {
+        title: "Perfil operacional",
+        detail: onboarding?.business_segment && onboarding?.city
+          ? `${onboarding.business_segment} · ${onboarding.city}${onboarding.state ? `/${onboarding.state}` : ""}`
+          : "Segmento, cidade e responsável ainda precisam ser preenchidos",
+        done: Boolean(onboarding?.business_segment && onboarding?.city && onboarding?.responsible_name),
+        section: "settings",
+      },
+      {
+        title: "Smart Link com UTM",
+        detail: tenantLinks.length ? `${tenantLinks.length} link(s), ${hasUtmReadyLink ? "UTM pronta" : "UTM incompleta"}` : "Nenhum link real criado",
+        done: tenantLinks.length > 0 && hasUtmReadyLink,
+        section: "links",
+      },
+      {
+        title: "Primeiro clique real",
+        detail: tenantLeads.length ? `${tenantLeads.length} atendimento(s) capturado(s)` : "O lead aparece somente depois de clique real no Smart Link",
+        done: tenantLeads.length > 0,
+        section: "links",
+      },
+      {
+        title: "Meta CAPI",
+        detail: anyCapiSignal ? `${health.successful_events}/${health.total_events} evento(s) OK nos últimos 7 dias` : "Pixel ID + Token CAPI ainda sem evento real",
+        done: Boolean(onboarding?.meta_connected || anyCapiSignal),
+        section: "integrations",
+      },
+      {
+        title: "Conta Meta Ads",
+        detail: metaAdAccountReady ? `${tenantMetaCampaigns.length} linha(s) de campanha/gasto` : "Conecte Facebook Login e selecione a conta de anúncios",
+        done: metaAdAccountReady,
+        section: "integrations",
+      },
+      {
+        title: "Públicos automáticos",
+        detail: qualifiedAudience?.meta_audience_id && purchasedAudience?.meta_audience_id
+          ? "Qualificados e compradores criados no Meta"
+          : "Faltam público de qualificados ou compradores",
+        done: Boolean(qualifiedAudience?.meta_audience_id && purchasedAudience?.meta_audience_id),
+        section: "crm",
+      },
+      {
+        title: "CRM em operação",
+        detail: tenantCrmActivities.length ? `${tenantCrmActivities.length} movimento(s) no CRM` : "Nenhum lead movimentado no pipeline",
+        done: tenantCrmActivities.length > 0,
+        section: "crm",
+      },
+      {
+        title: "Stakeholders",
+        detail: tenantUsers.length ? `${tenantUsers.length} usuário(s) vinculado(s)` : "Inclua dono, atendente ou visualizador",
+        done: tenantUsers.length > 0,
+        section: "users",
+      },
+    ];
+  }, [events.length, health.successful_events, health.total_events, metaAudiences, onboarding, tenant, tenantCrmActivities.length, tenantLeads.length, tenantLinks, tenantMetaCampaigns.length, tenantUsers.length]);
+
+  const executiveInsights = useMemo(() => buildExecutiveInsights(qualityRows, operationalChecklist, health, metaAudiences), [health, metaAudiences, operationalChecklist, qualityRows]);
 
   useEffect(() => {
     if (!isConfigured || !supabase) return;
@@ -612,9 +732,9 @@ export function App() {
 
   async function confirmSale() {
     const ref = saleRef.trim().toLowerCase();
-    const revenue = Number(saleRevenue.replace(",", "."));
-    if (!ref || !salePhone || !revenue) {
-      setToast("Informe ref, telefone e valor.");
+    const revenue = moneyInputToNumber(saleRevenue);
+    if (!salePhone.trim() || !Number.isFinite(revenue) || revenue <= 0) {
+      setToast("Informe telefone e valor. O ref é opcional.");
       return;
     }
 
@@ -636,7 +756,9 @@ export function App() {
       },
       body: JSON.stringify({
         action: "purchase",
-        ref,
+        tenant_id: tenant?.id,
+        ref: ref || undefined,
+        customer_name: saleName || undefined,
         customer_phone: salePhone,
         revenue,
       }),
@@ -650,6 +772,7 @@ export function App() {
 
     setToast(body.capi_ok ? "Venda confirmada e enviada ao Meta." : "Venda confirmada. CAPI sem credencial ou com erro.");
     setSaleRef("");
+    setSaleName("");
     setSalePhone("");
     setSaleRevenue("");
     await loadTenantData();
@@ -659,6 +782,7 @@ export function App() {
     const note = (crmNotes[lead.id] ?? "").trim();
     const contact = crmContacts[lead.id] ?? { phone: "", email: "", name: "" };
     const saleValue = moneyInputToNumber(crmRevenue[lead.id] ?? String(lead.revenue ?? ""));
+    const followUpValue = crmFollowUps[lead.id];
     if (status === "sold" && (!Number.isFinite(saleValue) || saleValue <= 0)) {
       setToast("Informe o valor da venda no card do lead.");
       return;
@@ -680,6 +804,7 @@ export function App() {
         customer_phone: contact.phone || undefined,
         customer_email: contact.email || undefined,
         customer_name: contact.name || undefined,
+        next_follow_up_at: followUpValue === undefined ? undefined : localDateTimeToIso(followUpValue),
         revenue: status === "sold" ? saleValue : undefined,
       }),
     });
@@ -688,6 +813,11 @@ export function App() {
     if (!res.ok) return setToast(humanError(data.error) || "Erro ao atualizar CRM.");
     setCrmNotes((items) => ({ ...items, [lead.id]: "" }));
     setCrmContacts((items) => ({ ...items, [lead.id]: { phone: "", email: "", name: "" } }));
+    setCrmFollowUps((items) => {
+      const next = { ...items };
+      delete next[lead.id];
+      return next;
+    });
     if (status === "sold") setCrmRevenue((items) => ({ ...items, [lead.id]: "" }));
     setToast(crmUpdateToast(data, status));
     await loadTenantData();
@@ -1216,40 +1346,11 @@ export function App() {
               <div className="panel-head">
                 <div>
                   <h2>Onboarding operacional</h2>
-                  <p>Esta empresa ainda não tem dados de campanha. Complete a implantação para o painel começar com informação real.</p>
+                  <p>Esta empresa ainda não tem dados suficientes. Complete os pontos abaixo para liberar um painel confiável.</p>
                 </div>
                 <ShieldCheck size={18} />
               </div>
-              <div className="onboarding-grid">
-                <OnboardingStep
-                  title="Empresa"
-                  detail={`${tenant?.name ?? "Empresa"} · ${tenant?.whatsapp_number ?? "WhatsApp pendente"}`}
-                  done={Boolean(tenant?.id && tenant?.whatsapp_number)}
-                  action="Revisar"
-                  onClick={() => setActive("settings")}
-                />
-                <OnboardingStep
-                  title="Meta CAPI"
-                  detail="Pixel ID e token salvos no cofre do projeto"
-                  done={Boolean(onboarding?.meta_connected)}
-                  action="Integrar Meta"
-                  onClick={() => setActive("integrations")}
-                />
-                <OnboardingStep
-                  title="UTM dos anúncios"
-                  detail="Fonte, mídia e campanha são obrigatórias em todo Smart Link"
-                  done={tenantLinks.length > 0}
-                  action="Criar link"
-                  onClick={() => setActive("links")}
-                />
-                <OnboardingStep
-                  title="Primeiro clique"
-                  detail="O Lead só aparece após um clique real no link"
-                  done={tenantLeads.length > 0}
-                  action="Copiar link"
-                  onClick={() => setActive("links")}
-                />
-              </div>
+              <ReadinessChecklist items={operationalChecklist} onGo={goToSection} />
             </section>
 
             <section className="panel wide">
@@ -1281,6 +1382,23 @@ export function App() {
             <section className="panel">
               <div className="panel-head">
                 <div>
+                  <h2>Alertas de integração</h2>
+                  <p>Somente bloqueios reais encontrados nos dados desta empresa.</p>
+                </div>
+                <Activity size={18} />
+              </div>
+              <IntegrationAlerts
+                checklist={operationalChecklist}
+                audiences={metaAudiences}
+                leads={tenantLeads}
+                health={health}
+                campaigns={tenantMetaCampaigns}
+              />
+            </section>
+
+            <section className="panel">
+              <div className="panel-head">
+                <div>
                   <h2>Usuários desta empresa</h2>
                   <p>Cada login fica vinculado apenas à empresa selecionada.</p>
                 </div>
@@ -1300,6 +1418,17 @@ export function App() {
               <Kpi label="Receita" value={formatMoney(metrics.revenue)} />
               <Kpi label="Conversão" value={`${metrics.conversion.toFixed(1)}%`} />
             </div>
+
+            <section className="panel wide">
+              <div className="panel-head">
+                <div>
+                  <h2>Prontidão operacional</h2>
+                  <p>Checklist real para saber se a empresa está pronta para vender, medir e otimizar.</p>
+                </div>
+                <ShieldCheck size={18} />
+              </div>
+              <ReadinessChecklist items={operationalChecklist} onGo={goToSection} compact />
+            </section>
 
             <section className="panel wide">
               <div className="panel-head">
@@ -1395,12 +1524,13 @@ export function App() {
               <div className="panel-head">
                 <div>
                   <h2>Confirmar venda</h2>
-                  <p>Finalize pelo card do lead no CRM. O ref fica apenas como fallback manual.</p>
+                  <p>Use telefone e valor. A ref continua opcional para atribuição exata quando estiver disponível.</p>
                 </div>
                 <Check size={18} />
               </div>
               <div className="sale-form">
-                <input placeholder="Ref: a7k9-p2m4" value={saleRef} onChange={(event) => setSaleRef(event.target.value)} />
+                <input placeholder="Ref opcional: a7k9-p2m4" value={saleRef} onChange={(event) => setSaleRef(event.target.value)} />
+                <input placeholder="Nome do cliente" value={saleName} onChange={(event) => setSaleName(event.target.value)} />
                 <input placeholder="Telefone com DDD" value={salePhone} onChange={(event) => setSalePhone(event.target.value)} />
                 <input placeholder="Valor da venda" value={saleRevenue} onChange={(event) => setSaleRevenue(event.target.value)} />
                 <button className="primary-button" onClick={confirmSale}>Confirmar Purchase</button>
@@ -1441,14 +1571,34 @@ export function App() {
                 </div>
                 <LayoutList size={18} />
               </div>
+              <div className="crm-toolbar">
+                <div className="search-box">
+                  <Search size={15} />
+                  <input value={crmSearch} onChange={(event) => setCrmSearch(event.target.value)} placeholder="Buscar nome, telefone, ref ou campanha" />
+                </div>
+                <div className="segmented-filter" aria-label="Filtro do CRM">
+                  {crmFilterOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={crmFilter === option.value ? "active" : ""}
+                      onClick={() => setCrmFilter(option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
                 <CrmPipeline
-                  leads={tenantLeads}
+                  leads={crmVisibleLeads}
                   notes={crmNotes}
                   contacts={crmContacts}
+                  followUps={crmFollowUps}
                   revenues={crmRevenue}
                   busyRef={crmBusyRef}
                   onNoteChange={(leadId, value) => setCrmNotes((items) => ({ ...items, [leadId]: value }))}
                   onContactChange={(leadId, value) => setCrmContacts((items) => ({ ...items, [leadId]: { ...(items[leadId] ?? { phone: "", email: "", name: "" }), ...value } }))}
+                  onFollowUpChange={(leadId, value) => setCrmFollowUps((items) => ({ ...items, [leadId]: value }))}
                   onRevenueChange={(leadId, value) => setCrmRevenue((items) => ({ ...items, [leadId]: value }))}
                   onStageChange={updateCrmStage}
                 />
@@ -1653,6 +1803,20 @@ export function App() {
               </section>
             )}
 
+            <section className="panel wide">
+              <div className="panel-head">
+                <div>
+                  <h2>Saúde dos clientes</h2>
+                  <p>Auditoria rápida para saber quem está pronto, quem precisa implantação e onde agir.</p>
+                </div>
+                <Activity size={18} />
+              </div>
+              <ClientHealthTable tenants={tenants} summaries={tenantSummaries} selectedTenantId={tenant?.id} onSelect={async (id) => {
+                setTenantId(id);
+                if (isConfigured) await loadTenantData(id);
+              }} />
+            </section>
+
             <section className="panel">
               <div className="panel-head">
                 <div>
@@ -1743,6 +1907,16 @@ export function App() {
               <Kpi label="Receita" value={formatMoney(metrics.revenue)} />
               <Kpi label="Conv." value={`${metrics.conversion.toFixed(1)}%`} />
             </div>
+            <section className="panel wide">
+              <div className="panel-head">
+                <div>
+                  <h2>Resumo executivo</h2>
+                  <p>Leitura objetiva para decidir próxima ação com dados reais.</p>
+                </div>
+                <FileText size={18} />
+              </div>
+              <ExecutiveInsights insights={executiveInsights} />
+            </section>
             <section className="panel wide">
               <div className="panel-head">
                 <div>
@@ -1862,6 +2036,27 @@ export function App() {
             <section className="panel">
               <div className="panel-head">
                 <div>
+                  <h2>Governança e dados</h2>
+                  <p>Escopo operacional para vender com confiança e manter dados separados por empresa.</p>
+                </div>
+                <ShieldCheck size={18} />
+              </div>
+              <div className="permission-grid">
+                <ReadOnly label="Banco" value="Único IDX com tenant_id" />
+                <ReadOnly label="Acesso" value="Empresa vê apenas seus próprios dados" />
+                <ReadOnly label="CAPI" value="Eventos enviados server-side" />
+                <ReadOnly label="Públicos" value="Telefone/email enviados com hash SHA-256" />
+              </div>
+              <div className="legal-link-row">
+                <a href="/privacy.html" target="_blank" rel="noreferrer">Privacidade</a>
+                <a href="/terms.html" target="_blank" rel="noreferrer">Termos</a>
+                <a href="/data-deletion.html" target="_blank" rel="noreferrer">Exclusão de dados</a>
+              </div>
+            </section>
+
+            <section className="panel">
+              <div className="panel-head">
+                <div>
                   <h2>Checklist de implantação</h2>
                   <p>O produto só está pronto para cliente quando estes pontos fecharem.</p>
                 </div>
@@ -1948,6 +2143,31 @@ function OnboardingStep({
         <button className="ghost-dark-button" onClick={onClick}>{action}</button>
       )}
     </article>
+  );
+}
+
+function ReadinessChecklist({ items, onGo, compact = false }: { items: ReadinessItem[]; onGo: (section: Section) => void; compact?: boolean }) {
+  const doneCount = items.filter((item) => item.done).length;
+  return (
+    <div className={`readiness-block ${compact ? "compact" : ""}`}>
+      <div className="readiness-progress">
+        <strong>{doneCount}/{items.length} prontos</strong>
+        <div className="meter-track">
+          <span style={{ width: `${items.length ? (doneCount / items.length) * 100 : 0}%` }} />
+        </div>
+      </div>
+      <div className="readiness-grid">
+        {items.map((item) => (
+          <button className={`readiness-item ${item.done ? "done" : ""}`} key={item.title} type="button" onClick={() => onGo(item.section)}>
+            <span className="readiness-dot">{item.done ? <Check size={14} /> : <CircleDot size={14} />}</span>
+            <span>
+              <strong>{item.title}</strong>
+              <small>{item.detail}</small>
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -2062,24 +2282,38 @@ const crmColumns: { status: LeadStatus; title: string }[] = [
   { status: "lost", title: "Perdido" },
 ];
 
+const crmFilterOptions: { value: CrmFilter; label: string }[] = [
+  { value: "all", label: "Todos" },
+  { value: "new", label: "Novos" },
+  { value: "contacted", label: "Contato" },
+  { value: "qualified", label: "Remarketing" },
+  { value: "needs_follow_up", label: "Follow-up" },
+  { value: "no_identifier", label: "Sem contato" },
+  { value: "sold", label: "Vendas" },
+];
+
 function CrmPipeline({
   leads,
   notes,
   contacts,
+  followUps,
   revenues,
   busyRef,
   onNoteChange,
   onContactChange,
+  onFollowUpChange,
   onRevenueChange,
   onStageChange,
 }: {
   leads: Lead[];
   notes: Record<string, string>;
   contacts: Record<string, ContactDraft>;
+  followUps: Record<string, string>;
   revenues: Record<string, string>;
   busyRef: string;
   onNoteChange: (leadId: string, value: string) => void;
   onContactChange: (leadId: string, value: Partial<ContactDraft>) => void;
+  onFollowUpChange: (leadId: string, value: string) => void;
   onRevenueChange: (leadId: string, value: string) => void;
   onStageChange: (lead: Lead, status: LeadStatus) => void;
 }) {
@@ -2109,6 +2343,11 @@ function CrmPipeline({
                       <Status status={lead.lead_status} />
                     </div>
                     <TagRow tags={lead.tags} fallback={lead.utm_source ?? "whatsapp"} />
+                    {lead.next_follow_up_at && (
+                      <span className={`followup-pill ${isFollowUpDue(lead.next_follow_up_at) ? "due" : ""}`}>
+                        Follow-up {formatDate(lead.next_follow_up_at)}
+                      </span>
+                    )}
                     <div className="crm-contact-grid">
                       <input
                         value={contacts[lead.id]?.name ?? lead.customer_name ?? ""}
@@ -2127,6 +2366,12 @@ function CrmPipeline({
                         type="email"
                       />
                       <input
+                        value={followUps[lead.id] ?? dateTimeLocalValue(lead.next_follow_up_at)}
+                        onChange={(event) => onFollowUpChange(lead.id, event.target.value)}
+                        placeholder="Próximo follow-up"
+                        type="datetime-local"
+                      />
+                      <input
                         value={revenues[lead.id] ?? (lead.revenue ? String(lead.revenue) : "")}
                         onChange={(event) => onRevenueChange(lead.id, event.target.value)}
                         placeholder="Valor da venda"
@@ -2141,6 +2386,13 @@ function CrmPipeline({
                     />
                     {lead.lead_status !== "sold" && (
                       <div className="crm-actions">
+                        <button
+                          className="ghost-dark-button"
+                          onClick={() => onStageChange(lead, lead.lead_status)}
+                          disabled={busyRef === lead.ref}
+                        >
+                          Salvar
+                        </button>
                         <button
                           className="ghost-dark-button"
                           onClick={() => onStageChange(lead, "contacted")}
@@ -2388,6 +2640,128 @@ function MetaAudiencesTable({ audiences }: { audiences: MetaAudienceStatus[] }) 
   );
 }
 
+function IntegrationAlerts({
+  checklist,
+  audiences,
+  leads,
+  health,
+  campaigns,
+}: {
+  checklist: ReadinessItem[];
+  audiences: MetaAudienceStatus[];
+  leads: Lead[];
+  health: CapiHealth;
+  campaigns: MetaCampaignRoi[];
+}) {
+  const missing = checklist.filter((item) => !item.done && ["Meta CAPI", "Conta Meta Ads", "Públicos automáticos", "Smart Link com UTM"].includes(item.title));
+  const skippedMembers = audiences.reduce((sum, item) => sum + Number(item.skipped_members ?? 0), 0);
+  const failedMembers = audiences.reduce((sum, item) => sum + Number(item.failed_members ?? 0), 0);
+  const leadsWithoutIdentifier = leads.filter((lead) => !lead.customer_phone && !lead.customer_email).length;
+  const alerts = [
+    ...missing.map((item) => ({ title: item.title, detail: item.detail, tone: "warning" as const })),
+    ...(health.failed_events ? [{ title: "Falhas CAPI", detail: `${health.failed_events} evento(s) com falha nos últimos 7 dias`, tone: "warning" as const }] : []),
+    ...(skippedMembers ? [{ title: "Públicos incompletos", detail: `${skippedMembers} lead(s) sem telefone/email para enviar ao Meta`, tone: "warning" as const }] : []),
+    ...(failedMembers ? [{ title: "Sincronização Meta", detail: `${failedMembers} tentativa(s) de público falharam`, tone: "warning" as const }] : []),
+    ...(leads.length && leadsWithoutIdentifier ? [{ title: "Identificação do lead", detail: `${leadsWithoutIdentifier} lead(s) ainda sem telefone/email no CRM`, tone: "neutral" as const }] : []),
+    ...(campaigns.length ? [] : [{ title: "Gastos Meta", detail: "Nenhuma campanha sincronizada para cruzar investimento com qualidade", tone: "neutral" as const }]),
+  ];
+
+  if (!alerts.length) return <EmptyState text="Nenhum alerta de integração no momento." />;
+
+  return (
+    <div className="alert-list">
+      {alerts.map((alert) => (
+        <article className={`alert-row alert-${alert.tone}`} key={`${alert.title}-${alert.detail}`}>
+          <strong>{alert.title}</strong>
+          <span>{alert.detail}</span>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function ExecutiveInsights({ insights }: { insights: ExecutiveInsight[] }) {
+  if (!insights.length) return <EmptyState text="Ainda não há dados suficientes para recomendações." />;
+  return (
+    <div className="insight-grid">
+      {insights.map((insight) => (
+        <article className={`insight-card insight-${insight.tone}`} key={insight.title}>
+          <strong>{insight.title}</strong>
+          <p>{insight.detail}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function ClientHealthTable({
+  tenants,
+  summaries,
+  selectedTenantId,
+  onSelect,
+}: {
+  tenants: Tenant[];
+  summaries: TenantSummary[];
+  selectedTenantId?: string;
+  onSelect: (tenantId: string) => void;
+}) {
+  if (!tenants.length) return <EmptyState text="Nenhum cliente cadastrado." />;
+  const byTenant = new Map(summaries.map((summary) => [summary.tenant_id, summary]));
+
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>Implantação</th>
+            <th>Links</th>
+            <th>Leads</th>
+            <th>CRM</th>
+            <th>CAPI</th>
+            <th>Meta</th>
+            <th>Ação</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tenants.map((tenant) => {
+            const summary = byTenant.get(tenant.id);
+            const score = [
+              Boolean(tenant.whatsapp_number),
+              Boolean(summary?.smart_links),
+              Boolean(summary?.tracking_sessions),
+              Boolean(summary?.crm_activities),
+              Boolean(summary?.capi_events),
+              Boolean(summary?.meta_insight_rows),
+            ].filter(Boolean).length;
+            const status = score >= 5 ? "Operando" : score >= 3 ? "Em implantação" : "Precisa setup";
+
+            return (
+              <tr key={tenant.id} className={tenant.id === selectedTenantId ? "selected-row" : ""}>
+                <td>
+                  <strong>{tenant.name}</strong>
+                  <small>{tenant.slug}</small>
+                </td>
+                <td>{status}</td>
+                <td>{summary?.smart_links ?? 0}</td>
+                <td>{summary?.tracking_sessions ?? 0}</td>
+                <td>{summary?.crm_activities ?? 0}</td>
+                <td>{summary?.capi_events ?? 0}</td>
+                <td>{summary?.meta_insight_rows ?? 0}</td>
+                <td>
+                  <button className="ghost-dark-button table-action" type="button" onClick={() => onSelect(tenant.id)}>
+                    Abrir
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function LeadQualityTable({ rows }: { rows: QualityRow[] }) {
   if (!rows.length) return <EmptyState text="Sem leads suficientes para relatório de qualidade." />;
   return (
@@ -2543,11 +2917,34 @@ function humanError(error?: string | null): string {
     platform_admin_required: "Este login não tem permissão de gestor IDX para criar clientes.",
     missing_tenant_id: "Selecione uma empresa antes de continuar.",
     forbidden: "Seu login não tem permissão para esta ação.",
+    contact_match_not_found: "Não encontrei lead com esse telefone. Salve o contato no card do CRM ou informe a ref.",
+    ambiguous_contact_match: "Encontrei mais de um lead para esse contato. Informe a ref para confirmar sem risco.",
+    missing_contact_identifier: "Informe telefone ou email do cliente para localizar o lead.",
     missing_meta_app_env: "Facebook Login ainda não está configurado. Informe META_APP_ID e META_APP_SECRET da Meta App, ou use Pixel ID + Token CAPI.",
     missing_meta_credentials: "Salve Pixel ID e Token CAPI antes de testar ou sincronizar eventos.",
     meta_not_connected: "Conecte a Meta com Pixel ID + Token CAPI ou Facebook Login antes de sincronizar.",
     invalid_revenue: "Informe o valor real da venda no card do lead.",
   }[String(error ?? "")] ?? String(error ?? "");
+}
+
+function dateTimeLocalValue(value?: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function localDateTimeToIso(value: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
+function isFollowUpDue(value?: string | null): boolean {
+  if (!value) return false;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) && date.getTime() <= Date.now();
 }
 
 function moneyInputToNumber(value: string): number {
@@ -2566,6 +2963,64 @@ function userStatusLabel(status: TenantUser["status"]): string {
     invited: "Convidado",
     disabled: "Desativado",
   }[status];
+}
+
+function buildExecutiveInsights(
+  rows: QualityRow[],
+  checklist: ReadinessItem[],
+  health: CapiHealth,
+  audiences: MetaAudienceStatus[],
+): ExecutiveInsight[] {
+  const insights: ExecutiveInsight[] = [];
+  const firstMissing = checklist.find((item) => !item.done);
+
+  if (firstMissing) {
+    insights.push({
+      title: "Próximo bloqueio",
+      detail: `${firstMissing.title}: ${firstMissing.detail}`,
+      tone: "warning",
+    });
+  }
+
+  const bestByQuality = rows
+    .filter((row) => row.leads > 0)
+    .sort((a, b) => b.qualityRate - a.qualityRate || b.sales - a.sales || b.revenue - a.revenue)[0];
+
+  if (bestByQuality) {
+    insights.push({
+      title: "Campanha com melhor qualidade",
+      detail: `${bestByQuality.campaign}: ${bestByQuality.qualityRate.toFixed(1)}% de qualidade, ${bestByQuality.qualified} lead(s) em remarketing e ${bestByQuality.sales} venda(s).`,
+      tone: bestByQuality.qualityRate > 0 ? "good" : "neutral",
+    });
+  }
+
+  const bestByRevenue = rows.filter((row) => row.revenue > 0).sort((a, b) => b.revenue - a.revenue)[0];
+  if (bestByRevenue) {
+    insights.push({
+      title: "Campanha com receita confirmada",
+      detail: `${bestByRevenue.campaign}: ${formatMoney(bestByRevenue.revenue)} em vendas registradas no CRM.`,
+      tone: "good",
+    });
+  }
+
+  const audienceIssues = audiences.reduce((sum, audience) => sum + Number(audience.skipped_members ?? 0) + Number(audience.failed_members ?? 0), 0);
+  if (audienceIssues) {
+    insights.push({
+      title: "Ajuste de público",
+      detail: `${audienceIssues} tentativa(s) de público precisam de telefone/email válido ou revisão da integração Meta.`,
+      tone: "warning",
+    });
+  }
+
+  if (health.total_events > 0) {
+    insights.push({
+      title: "Saúde CAPI",
+      detail: `${health.success_rate}% de sucesso em ${health.total_events} evento(s) recentes.`,
+      tone: health.success_rate >= 90 ? "good" : "warning",
+    });
+  }
+
+  return insights.slice(0, 4);
 }
 
 function buildQualityRows(leads: Lead[], campaigns: MetaCampaignRoi[]): QualityRow[] {

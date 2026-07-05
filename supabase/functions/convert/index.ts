@@ -32,6 +32,10 @@ function cleanDigits(value: string | null | undefined): string {
   return String(value ?? "").replace(/\D/g, "");
 }
 
+function cleanText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
 async function h256(value: string): Promise<string> {
   const bytes = new TextEncoder().encode(value.toLowerCase().trim());
   const digest = await crypto.subtle.digest("SHA-256", bytes);
@@ -89,19 +93,70 @@ Deno.serve(async (req: Request) => {
 
   const body = await req.json().catch(() => ({}));
   const action = body.action ?? "purchase";
-  const ref = String(body.ref ?? "").trim().toLowerCase();
-  if (!ref) return json({ error: "missing_ref" }, 400);
+  const ref = cleanText(body.ref).toLowerCase();
+  const requestedTenantId = cleanText(body.tenant_id);
+  const phone = cleanDigits(body.customer_phone);
+  const email = cleanText(body.customer_email).toLowerCase();
+  const name = cleanText(body.customer_name);
+  const select = "*, tenant:tenants(*), offer:offers(*), smart_link:smart_links(*)";
+  let session: Record<string, any> | null = null;
+  let matchStrategy = "ref";
 
-  const { data: session, error: sessionError } = await supa
-    .from("tracking_sessions")
-    .select("*, tenant:tenants(*), offer:offers(*), smart_link:smart_links(*)")
-    .eq("ref", ref)
-    .maybeSingle();
+  if (ref) {
+    const { data, error: sessionError } = await supa
+      .from("tracking_sessions")
+      .select(select)
+      .eq("ref", ref)
+      .maybeSingle();
 
-  if (sessionError || !session) return json({ error: "session_not_found" }, 404);
+    if (sessionError || !data) return json({ error: "session_not_found" }, 404);
+    session = data;
 
-  if (!(await canOperateTenantOrPlatform(supa, session.tenant_id, user.id, user.email))) {
-    return json({ error: "forbidden" }, 403);
+    if (!(await canOperateTenantOrPlatform(supa, session.tenant_id, user.id, user.email))) {
+      return json({ error: "forbidden" }, 403);
+    }
+  } else {
+    if (!requestedTenantId) return json({ error: "missing_tenant_id" }, 400);
+    if (!phone && !email) return json({ error: "missing_contact_identifier" }, 400);
+    if (!(await canOperateTenantOrPlatform(supa, requestedTenantId, user.id, user.email))) {
+      return json({ error: "forbidden" }, 403);
+    }
+
+    const matches = new Map<string, Record<string, any>>();
+    const addMatches = (rows: Record<string, any>[] | null) => {
+      for (const row of rows ?? []) matches.set(row.id, row);
+    };
+
+    if (phone) {
+      const { data } = await supa
+        .from("tracking_sessions")
+        .select(select)
+        .eq("tenant_id", requestedTenantId)
+        .neq("lead_status", "sold")
+        .eq("customer_phone", phone)
+        .order("clicked_at", { ascending: false })
+        .limit(3);
+      addMatches(data as Record<string, any>[] | null);
+      matchStrategy = "phone";
+    }
+
+    if (email) {
+      const { data } = await supa
+        .from("tracking_sessions")
+        .select(select)
+        .eq("tenant_id", requestedTenantId)
+        .neq("lead_status", "sold")
+        .ilike("customer_email", email)
+        .order("clicked_at", { ascending: false })
+        .limit(3);
+      addMatches(data as Record<string, any>[] | null);
+      matchStrategy = phone ? "phone_or_email" : "email";
+    }
+
+    const matchedSessions = Array.from(matches.values()).sort((a, b) => String(b.clicked_at).localeCompare(String(a.clicked_at)));
+    if (!matchedSessions.length) return json({ error: "contact_match_not_found" }, 404);
+    if (matchedSessions.length > 1) return json({ error: "ambiguous_contact_match", matches: matchedSessions.map((item) => ({ ref: item.ref, clicked_at: item.clicked_at })) }, 409);
+    session = matchedSessions[0];
   }
 
   if (action === "lost") {
@@ -118,9 +173,6 @@ Deno.serve(async (req: Request) => {
 
   if (session.sold_at) return json({ error: "already_sold" }, 409);
 
-  const phone = cleanDigits(body.customer_phone);
-  const email = String(body.customer_email ?? "").trim();
-  const name = String(body.customer_name ?? "").trim();
   const revenue = Number(body.revenue ?? session.offer?.price ?? 0);
   if (!Number.isFinite(revenue) || revenue <= 0) {
     return json({ error: "invalid_revenue" }, 400);
@@ -219,5 +271,5 @@ Deno.serve(async (req: Request) => {
     metadata: audienceSync,
   });
 
-  return json({ ok: true, capi_ok: capi.ok, audience_sync: audienceSync, status: "sold" });
+  return json({ ok: true, capi_ok: capi.ok, audience_sync: audienceSync, status: "sold", match_strategy: matchStrategy, ref: session.ref });
 });

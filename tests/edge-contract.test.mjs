@@ -98,6 +98,9 @@ assert.match(convert, /event_name: "Purchase"/);
 assert.match(convert, /lead_status: "sold"/);
 assert.match(convert, /tenant_meta_credentials/);
 assert.match(convert, /canOperateTenantOrPlatform/);
+assert.match(convert, /contact_match_not_found/);
+assert.match(convert, /ambiguous_contact_match/);
+assert.match(convert, /match_strategy/);
 
 assert.match(capi, /req\.method === "POST"/);
 assert.match(capi, /test_event_code/);

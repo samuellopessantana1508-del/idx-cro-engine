@@ -674,6 +674,75 @@ td small {
   color: var(--muted);
 }
 
+.alert-list,
+.insight-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.insight-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.alert-row,
+.insight-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--paper);
+}
+
+.alert-row {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.alert-row strong,
+.insight-card strong {
+  font-weight: 560;
+}
+
+.alert-row span,
+.insight-card p {
+  color: var(--muted);
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.alert-warning,
+.insight-warning {
+  border-color: var(--surface-2);
+}
+
+.insight-good {
+  border-color: var(--black);
+}
+
+.legal-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.legal-link-row a,
+.table-action {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  min-height: 34px;
+  padding: 8px 10px;
+  text-decoration: none;
+  font-size: 0.82rem;
+}
+
+.selected-row {
+  background: var(--soft);
+}
+
 .health-meter {
   display: flex;
   align-items: flex-end;
@@ -712,9 +781,81 @@ td small {
   background: var(--black);
 }
 
+.readiness-block {
+  display: grid;
+  gap: 14px;
+}
+
+.readiness-progress {
+  display: grid;
+  gap: 8px;
+}
+
+.readiness-progress strong {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.readiness-block.compact .readiness-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.readiness-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 10px;
+  text-align: left;
+}
+
+.readiness-item.done {
+  border-color: var(--black);
+}
+
+.readiness-item strong,
+.readiness-item small {
+  display: block;
+}
+
+.readiness-item strong {
+  font-weight: 560;
+}
+
+.readiness-item small {
+  color: var(--muted);
+  margin-top: 4px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.readiness-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: var(--soft);
+}
+
+.readiness-item.done .readiness-dot {
+  background: var(--black);
+  color: var(--paper);
+}
+
 .sale-form {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: 1fr 1fr 1fr 1fr auto;
   gap: 12px;
 }
 
@@ -731,6 +872,57 @@ td small {
 .search-box input {
   border: 0;
   padding-left: 0;
+}
+
+.crm-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.2fr);
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.segmented-filter {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.segmented-filter button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--muted);
+  min-height: 36px;
+  padding: 0 12px;
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+
+.segmented-filter button.active {
+  background: var(--black);
+  border-color: var(--black);
+  color: var(--paper);
+}
+
+.followup-pill {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 4px 9px;
+  font-size: 0.74rem;
+  width: fit-content;
+}
+
+.followup-pill.due {
+  background: var(--black);
+  border-color: var(--black);
+  color: var(--paper);
 }
 
 .settings-grid {
@@ -1141,6 +1333,10 @@ td small {
   .link-form,
   .sale-form,
   .onboarding-grid,
+  .readiness-grid,
+  .readiness-block.compact .readiness-grid,
+  .insight-grid,
+  .crm-toolbar,
   .settings-grid,
   .integration-grid,
   .mini-form,
@@ -1153,6 +1349,10 @@ td small {
   .permission-grid,
   .client-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .alert-row {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1245,6 +1445,10 @@ td small {
   .link-form,
   .sale-form,
   .onboarding-grid,
+  .readiness-grid,
+  .readiness-block.compact .readiness-grid,
+  .insight-grid,
+  .crm-toolbar,
   .settings-grid,
   .integration-grid,
   .mini-form,
@@ -1387,6 +1591,19 @@ td small {
   }
 
   .lead-row {
+    grid-template-columns: 1fr;
+  }
+
+  .crm-toolbar {
+    gap: 10px;
+  }
+
+  .segmented-filter {
+    margin: 0 -14px;
+    padding: 0 14px 2px;
+  }
+
+  .alert-row {
     grid-template-columns: 1fr;
   }
 
