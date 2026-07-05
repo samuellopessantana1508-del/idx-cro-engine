@@ -196,6 +196,27 @@ label {
   font-size: 0.9rem;
 }
 
+.inline-alert {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+  margin: -10px 0 18px;
+  padding: 12px;
+}
+
+.inline-alert strong {
+  font-size: 0.86rem;
+  font-weight: 560;
+}
+
+.inline-alert span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
 .page-grid,
 .stack {
   display: grid;
@@ -550,6 +571,34 @@ td small {
   margin-top: 4px;
   font-size: 0.78rem;
   line-height: 1.35;
+}
+
+.crm-warning {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+  padding: 9px;
+}
+
+.crm-warning span {
+  color: var(--ink);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.crm-warning button {
+  border: 1px solid var(--black);
+  border-radius: 8px;
+  background: var(--paper);
+  min-height: 32px;
+  padding: 0 9px;
+  color: var(--black);
+  font-size: 0.75rem;
+  font-weight: 560;
 }
 
 .tag-row {
@@ -1126,6 +1175,11 @@ td small {
   margin-top: 5px;
 }
 
+.client-card span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .report-layout {
   display: grid;
   gap: 18px;
@@ -1239,6 +1293,12 @@ td small {
   color: #d8d8d8;
   font-size: 0.9rem;
   line-height: 1.45;
+}
+
+.login-panel .auth-hint.compact {
+  margin: -6px 0 2px;
+  border-top: 0;
+  padding-top: 0;
 }
 
 .auth-hint strong {
@@ -1629,6 +1689,14 @@ td small {
 
   .crm-card-top {
     flex-direction: column;
+  }
+
+  .crm-warning {
+    grid-template-columns: 1fr;
+  }
+
+  .crm-warning button {
+    width: 100%;
   }
 
   .audience-row,

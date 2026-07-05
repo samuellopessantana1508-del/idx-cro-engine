@@ -35,6 +35,19 @@ Supabase; ele usa apenas o painel.
 
 Leia: `docs/single-database-multitenant.md`.
 
+## Acesso por empresa
+
+Cada empresa pode acessar o painel por uma URL limpa baseada no slug:
+
+```txt
+https://cro.idxparasuaempresa.com.br/nome-da-empresa
+```
+
+O app seleciona a empresa pelo slug depois do login. Se o usuário não tiver
+acesso à empresa daquele link, o painel avisa e mantém a empresa permitida.
+O build gera `404.html` automaticamente para o GitHub Pages carregar rotas SPA
+como `/nome-da-empresa` sem tela em branco.
+
 ## Decisão principal de produto
 
 Não existe página pública obrigatória no caminho do lead.
@@ -161,7 +174,11 @@ As funções públicas/privadas também estão declaradas em `supabase/config.to
 cd web
 npm run build
 npm run test:edge
+npm run test:e2e
 ```
+
+O E2E público valida carregamento desktop/mobile e rota direta por empresa. Para
+testar login real, use `E2E_EMAIL` e `E2E_PASSWORD` no ambiente local/CI.
 
 ## Deploy GitHub Pages
 

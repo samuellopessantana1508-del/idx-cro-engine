@@ -85,6 +85,21 @@ function invalidLinkRedirect(): Response {
   return invalidLinkResponse();
 }
 
+async function logInvalidLink(req: Request, code: string | null | undefined, reason: string): Promise<void> {
+  try {
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+    await supa.from("invalid_link_events").insert({
+      code: code || null,
+      request_url: req.url,
+      ip,
+      ua: req.headers.get("user-agent"),
+      reason,
+    });
+  } catch (_err) {
+    // Link logging must never block the redirect/error response.
+  }
+}
+
 async function sendCapi(
   tenantId: string,
   event: Record<string, unknown>,
@@ -126,7 +141,10 @@ Deno.serve(async (req: Request) => {
 
   const url = new URL(req.url);
   const code = url.pathname.split("/").filter(Boolean).pop();
-  if (!code) return invalidLinkRedirect();
+  if (!code) {
+    await logInvalidLink(req, null, "missing_code");
+    return invalidLinkRedirect();
+  }
 
   const { data: link, error } = await supa
     .from("smart_links")
@@ -136,6 +154,7 @@ Deno.serve(async (req: Request) => {
     .maybeSingle();
 
   if (error || !link || link.tenant?.status !== "active") {
+    await logInvalidLink(req, code, error ? "lookup_error" : "invalid_or_inactive");
     return invalidLinkRedirect();
   }
 

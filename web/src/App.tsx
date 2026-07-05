@@ -229,8 +229,50 @@ function metaAssetValue(accountId: string, pixelId = ""): string {
   return `${accountId}|${pixelId}`;
 }
 
+const RESERVED_COMPANY_PATHS = new Set([
+  "assets",
+  "data-deletion.html",
+  "favicon.ico",
+  "index.html",
+  "meta-oauth-callback.html",
+  "privacy.html",
+  "terms.html",
+]);
+
+function tenantSlugFromPath(pathname = window.location.pathname): string {
+  const segment = decodeURIComponent(pathname.split("/").filter(Boolean)[0] ?? "");
+  if (!segment || segment.includes(".") || RESERVED_COMPANY_PATHS.has(segment.toLowerCase())) return "";
+  return slugify(segment);
+}
+
+function tenantAccessUrl(slug: string | null | undefined): string {
+  const clean = slugify(slug ?? "");
+  return clean ? `${window.location.origin}/${clean}` : window.location.origin;
+}
+
+function cleanPhone(value: string | null | undefined): string {
+  return String(value ?? "").replace(/\D/g, "");
+}
+
+function contactWasEdited(lead: Lead, contact: ContactDraft): boolean {
+  return Boolean(
+    (contact.name.trim() && contact.name.trim() !== String(lead.customer_name ?? "").trim()) ||
+      (contact.email.trim() && contact.email.trim().toLowerCase() !== String(lead.customer_email ?? "").trim().toLowerCase()) ||
+      (cleanPhone(contact.phone) && cleanPhone(contact.phone) !== cleanPhone(lead.customer_phone)),
+  );
+}
+
+function duplicateContactLead(lead: Lead, contact: ContactDraft | undefined, allLeads: Lead[]): Lead | null {
+  const requestedPhone = cleanPhone(contact?.phone);
+  const currentPhone = cleanPhone(lead.customer_phone);
+  const phone = requestedPhone || currentPhone;
+  if (!phone) return null;
+  return allLeads.find((item) => item.id !== lead.id && cleanPhone(item.customer_phone) === phone) ?? null;
+}
+
 export function App() {
   const isConfigured = envConfigured() && Boolean(supabase);
+  const requestedTenantSlug = useMemo(() => tenantSlugFromPath(), []);
   const [sessionReady, setSessionReady] = useState(!isConfigured);
   const [signedIn, setSignedIn] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
@@ -284,6 +326,7 @@ export function App() {
     tenant_isolation: undefined,
     tenant_scope: undefined,
   });
+  const [tenantRouteWarning, setTenantRouteWarning] = useState("");
   const [loading, setLoading] = useState(false);
 
   const tenant = tenants.find((item) => item.id === tenantId) ?? tenants[0];
@@ -305,6 +348,19 @@ export function App() {
   function goToSection(section: Section) {
     setActive(section);
     setMobileMenuOpen(false);
+  }
+
+  async function copyTenantAccessUrl() {
+    if (!tenant?.slug) return;
+    await navigator.clipboard.writeText(tenantAccessUrl(tenant.slug));
+    setToast("Link de acesso da empresa copiado.");
+  }
+
+  function focusCrmLead(lead: Lead) {
+    setActive("crm");
+    setCrmFilter("all");
+    setCrmSearch(lead.ref || lead.customer_phone || lead.customer_email || "");
+    setToast(`Lead ${lead.ref} destacado no CRM.`);
   }
 
   const metrics = useMemo(() => {
@@ -621,7 +677,13 @@ export function App() {
 
     setTenantSetupRequired(false);
     setTenants(loadedTenants);
-    const currentTenant = loadedTenants.find((item) => item.id === tenantId) ?? loadedTenants[0];
+    const routeTenant = requestedTenantSlug ? loadedTenants.find((item) => item.slug === requestedTenantSlug) : null;
+    if (requestedTenantSlug && !routeTenant) {
+      setTenantRouteWarning(`O login atual não tem acesso à empresa /${requestedTenantSlug} ou ela ainda não existe.`);
+    } else {
+      setTenantRouteWarning("");
+    }
+    const currentTenant = routeTenant ?? loadedTenants.find((item) => item.id === tenantId) ?? loadedTenants[0];
     setTenantId(currentTenant.id);
     await loadTenantData(currentTenant.id);
     setLoading(false);
@@ -783,6 +845,24 @@ export function App() {
     const contact = crmContacts[lead.id] ?? { phone: "", email: "", name: "" };
     const saleValue = moneyInputToNumber(crmRevenue[lead.id] ?? String(lead.revenue ?? ""));
     const followUpValue = crmFollowUps[lead.id];
+    const typedPhone = cleanPhone(contact.phone);
+    const savedPhone = cleanPhone(lead.customer_phone);
+    const duplicateLead = typedPhone && typedPhone !== savedPhone ? duplicateContactLead(lead, contact, tenantLeads) : null;
+
+    if (duplicateLead) {
+      setCrmFilter("all");
+      setCrmSearch(duplicateLead.ref);
+      setToast(`Telefone já existe no lead ${duplicateLead.ref}. Abra o lead existente antes de salvar.`);
+      return;
+    }
+
+    if (["qualified", "sold"].includes(status) && contactWasEdited(lead, contact)) {
+      const confirmed = window.confirm(
+        "Você alterou nome, telefone ou email deste lead. Confirme apenas se estes dados pertencem exatamente a esta conversa; isso será usado no Meta CAPI e nas audiências.",
+      );
+      if (!confirmed) return;
+    }
+
     if (status === "sold" && (!Number.isFinite(saleValue) || saleValue <= 0)) {
       setToast("Informe o valor da venda no card do lead.");
       return;
@@ -1192,6 +1272,11 @@ export function App() {
           <div className="brand-mark">IDX.</div>
           <h1>{authMode === "login" ? "CRO Engine" : "Criar acesso"}</h1>
           <p>{authMode === "login" ? "Entre para gerenciar Smart Links, WhatsApp Leads e CAPI." : "Crie seu acesso inicial e configure a primeira empresa."}</p>
+          {requestedTenantSlug && (
+            <p className="auth-hint compact">
+              Acesso da empresa <strong>/{requestedTenantSlug}</strong>.
+            </p>
+          )}
           <label>
             Email
             <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" />
@@ -1339,6 +1424,13 @@ export function App() {
             {tenant?.name}
           </div>
         </header>
+
+        {tenantRouteWarning && (
+          <div className="inline-alert">
+            <strong>Acesso por link de empresa</strong>
+            <span>{tenantRouteWarning}</span>
+          </div>
+        )}
 
         {active === "dashboard" && needsOperationalOnboarding && (
           <section className="page-grid">
@@ -1591,6 +1683,7 @@ export function App() {
               </div>
                 <CrmPipeline
                   leads={crmVisibleLeads}
+                  allLeads={tenantLeads}
                   notes={crmNotes}
                   contacts={crmContacts}
                   followUps={crmFollowUps}
@@ -1601,6 +1694,7 @@ export function App() {
                   onFollowUpChange={(leadId, value) => setCrmFollowUps((items) => ({ ...items, [leadId]: value }))}
                   onRevenueChange={(leadId, value) => setCrmRevenue((items) => ({ ...items, [leadId]: value }))}
                   onStageChange={updateCrmStage}
+                  onOpenLead={focusCrmLead}
                 />
             </section>
 
@@ -1838,6 +1932,7 @@ export function App() {
                     >
                       <strong>{item.name}</strong>
                       <span>{item.slug}</span>
+                      <span>{tenantAccessUrl(item.slug)}</span>
                       <small>{summary ? `${summary.tenant_users} stakeholders · ${summary.smart_links} links · ${summary.tracking_sessions} cliques` : item.whatsapp_number}</small>
                     </button>
                   );
@@ -2029,6 +2124,8 @@ export function App() {
                   <input value={profileDraft.responsibleName} onChange={(event) => setProfileDraft({ ...profileDraft, responsibleName: event.target.value })} />
                 </label>
                 <ReadOnly label="Ofertas" value={String(tenantOffers.length)} />
+                <ReadOnly label="Link de acesso" value={tenantAccessUrl(profileDraft.slug || tenant?.slug)} />
+                <button className="ghost-dark-button" onClick={copyTenantAccessUrl} disabled={!tenant?.slug}>Copiar acesso</button>
                 <button className="primary-button" onClick={saveTenantProfile} disabled={loading}>Salvar empresa</button>
               </div>
             </section>
@@ -2294,6 +2391,7 @@ const crmFilterOptions: { value: CrmFilter; label: string }[] = [
 
 function CrmPipeline({
   leads,
+  allLeads,
   notes,
   contacts,
   followUps,
@@ -2304,8 +2402,10 @@ function CrmPipeline({
   onFollowUpChange,
   onRevenueChange,
   onStageChange,
+  onOpenLead,
 }: {
   leads: Lead[];
+  allLeads: Lead[];
   notes: Record<string, string>;
   contacts: Record<string, ContactDraft>;
   followUps: Record<string, string>;
@@ -2316,6 +2416,7 @@ function CrmPipeline({
   onFollowUpChange: (leadId: string, value: string) => void;
   onRevenueChange: (leadId: string, value: string) => void;
   onStageChange: (lead: Lead, status: LeadStatus) => void;
+  onOpenLead: (lead: Lead) => void;
 }) {
   if (!leads.length) return <EmptyState text="Nenhum lead no CRM ainda." />;
 
@@ -2331,7 +2432,9 @@ function CrmPipeline({
             </div>
             <div className="crm-card-list">
               {columnLeads.length ? (
-                columnLeads.map((lead) => (
+                columnLeads.map((lead) => {
+                  const duplicateLead = duplicateContactLead(lead, contacts[lead.id], allLeads);
+                  return (
                   <article className="crm-card" key={lead.id}>
                     <div className="crm-card-top">
                       <div>
@@ -2343,6 +2446,14 @@ function CrmPipeline({
                       <Status status={lead.lead_status} />
                     </div>
                     <TagRow tags={lead.tags} fallback={lead.utm_source ?? "whatsapp"} />
+                    {duplicateLead && (
+                      <div className="crm-warning">
+                        <span>Telefone já aparece no lead {duplicateLead.ref}.</span>
+                        <button type="button" onClick={() => onOpenLead(duplicateLead)}>
+                          Abrir lead
+                        </button>
+                      </div>
+                    )}
                     {lead.next_follow_up_at && (
                       <span className={`followup-pill ${isFollowUpDue(lead.next_follow_up_at) ? "due" : ""}`}>
                         Follow-up {formatDate(lead.next_follow_up_at)}
@@ -2431,7 +2542,8 @@ function CrmPipeline({
                       </div>
                     )}
                   </article>
-                ))
+                  );
+                })
               ) : (
                 <div className="crm-empty">Sem leads</div>
               )}
@@ -2468,7 +2580,7 @@ function CrmHistory({ activities, leads }: { activities: CrmActivity[]; leads: L
           <article className="history-row" key={activity.id}>
             <div>
               <strong>{lead?.ref ?? "Lead"}</strong>
-              <small>{lead?.offer_name ?? activity.activity_type}</small>
+              <small>{[lead?.offer_name ?? activity.activity_type, crmActivityDetail(activity)].filter(Boolean).join(" · ")}</small>
             </div>
             <span>
               {activity.from_status && activity.to_status
@@ -2481,6 +2593,13 @@ function CrmHistory({ activities, leads }: { activities: CrmActivity[]; leads: L
       })}
     </div>
   );
+}
+
+function crmActivityDetail(activity: CrmActivity): string {
+  if (activity.metadata?.contact_changed === true) return "contato alterado";
+  if (activity.activity_type === "capi" && activity.metadata?.ok === false) return "CAPI com falha";
+  if (activity.activity_type === "system" && String(activity.body ?? "").includes("meta_audience")) return "público Meta";
+  return "";
 }
 
 function TenantUsersList({ users }: { users: TenantUser[] }) {

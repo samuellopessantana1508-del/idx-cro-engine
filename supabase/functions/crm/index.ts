@@ -238,6 +238,21 @@ Deno.serve(async (req: Request) => {
   const phone = cleanDigits(body.customer_phone);
   const email = cleanText(body.customer_email);
   const name = cleanText(body.customer_name);
+  const previousContact = {
+    phone: cleanDigits(session.customer_phone),
+    email: cleanText(session.customer_email),
+    name: cleanText(session.customer_name),
+  };
+  const nextContact = {
+    phone: phone || previousContact.phone,
+    email: email || previousContact.email,
+    name: name || previousContact.name,
+  };
+  const contactChanged =
+    Boolean(phone && phone !== previousContact.phone) ||
+    Boolean(email && email.toLowerCase() !== previousContact.email.toLowerCase()) ||
+    Boolean(name && name !== previousContact.name);
+
   if (phone) updates.customer_phone = phone;
   if (email) updates.customer_email = email;
   if (name) updates.customer_name = name;
@@ -265,7 +280,13 @@ Deno.serve(async (req: Request) => {
       body: note || null,
       from_status: session.lead_status,
       to_status: status,
-      metadata: { tags },
+      metadata: {
+        tags,
+        contact_changed: contactChanged,
+        previous_contact: previousContact,
+        next_contact: nextContact,
+        next_follow_up_at: updates.next_follow_up_at ?? session.next_follow_up_at ?? null,
+      },
     },
   ];
 

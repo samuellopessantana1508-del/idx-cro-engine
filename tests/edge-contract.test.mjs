@@ -36,6 +36,7 @@ const migration5 = read("supabase/migrations/202607010001_platform_control.sql")
 const migration7 = read("supabase/migrations/20260701112934_tenant_user_profiles.sql");
 const migration8 = read("supabase/migrations/20260701143000_meta_custom_audiences.sql");
 const migration9 = read("supabase/migrations/20260702125744_tenant_onboarding_company_profile.sql");
+const migration10 = read("supabase/migrations/20260705010424_invalid_link_events.sql");
 const config = read("supabase/config.toml");
 const go = read("supabase/functions/go/index.ts");
 const convert = read("supabase/functions/convert/index.ts");
@@ -79,6 +80,10 @@ assert.match(migration8, /USER_PROVIDED_ONLY/);
 assert.match(migration9, /business_segment/);
 assert.match(migration9, /monthly_goal/);
 assert.match(migration9, /average_ticket/);
+assert.match(migration10, /create table if not exists public\.invalid_link_events/);
+assert.match(migration10, /enable row level security/);
+assert.match(migration10, /service_role/);
+assert.match(migration10, /vw_invalid_link_health/);
 
 assert.match(config, /\[functions\.go\][\s\S]*verify_jwt = false/);
 assert.match(config, /\[functions\.convert\][\s\S]*verify_jwt = true/);
@@ -92,6 +97,8 @@ assert.match(go, /event_name: "Lead"/);
 assert.match(go, /tenant_meta_credentials/);
 assert.match(go, /invalidLinkResponse/);
 assert.match(go, /ALLOW_INVALID_LINK_FALLBACK/);
+assert.match(go, /logInvalidLink/);
+assert.match(go, /invalid_link_events/);
 assert.doesNotMatch(go, /go\.idx\.app/);
 
 assert.match(convert, /event_name: "Purchase"/);
@@ -175,6 +182,7 @@ assert.match(crm, /QualifiedLead/);
 assert.match(crm, /DisqualifiedLead/);
 assert.match(crm, /crm_activities/);
 assert.match(crm, /remarketing/);
+assert.match(crm, /contact_changed/);
 assert.match(crm, /tenant_meta_credentials/);
 assert.match(crm, /syncSessionToMetaAudience/);
 assert.match(crm, /canOperateTenantOrPlatform/);
@@ -182,5 +190,6 @@ assert.match(crm, /canOperateTenantOrPlatform/);
 assert.match(supabaseHealth, /single_owned_multi_tenant/);
 assert.match(supabaseHealth, /tenant_id \+ rls \+ edge_functions/);
 assert.match(supabaseHealth, /platform_users/);
+assert.match(supabaseHealth, /invalid_link_events/);
 
 console.log("Edge function contract tests passed.");

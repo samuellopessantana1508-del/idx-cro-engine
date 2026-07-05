@@ -73,7 +73,7 @@ Deno.serve(async (req: Request) => {
   const isPlatform = ["owner", "admin", "support", "viewer"].includes(String(role ?? ""));
   const tenantIds = isPlatform ? [] : await userTenantIds(user.id);
 
-  const [tenantCount, linkCount, sessionCount, crmCount, capiCount, metaInsightCount] = isPlatform
+  const [tenantCount, linkCount, sessionCount, crmCount, capiCount, metaInsightCount, invalidLinkCount] = isPlatform
     ? await Promise.all([
         supa.from("tenants").select("id", { count: "exact", head: true }),
         supa.from("smart_links").select("id", { count: "exact", head: true }),
@@ -81,6 +81,7 @@ Deno.serve(async (req: Request) => {
         supa.from("crm_activities").select("id", { count: "exact", head: true }),
         supa.from("capi_events").select("id", { count: "exact", head: true }),
         supa.from("meta_campaign_insights").select("id", { count: "exact", head: true }),
+        supa.from("invalid_link_events").select("id", { count: "exact", head: true }),
       ])
     : await Promise.all([
         Promise.resolve({ count: tenantIds.length, error: null }),
@@ -89,9 +90,10 @@ Deno.serve(async (req: Request) => {
         tenantScopedCount("crm_activities", tenantIds),
         tenantScopedCount("capi_events", tenantIds),
         tenantScopedCount("meta_campaign_insights", tenantIds),
+        Promise.resolve({ count: 0, error: null }),
       ]);
 
-  const errors = [tenantCount, linkCount, sessionCount, crmCount, capiCount, metaInsightCount]
+  const errors = [tenantCount, linkCount, sessionCount, crmCount, capiCount, metaInsightCount, invalidLinkCount]
     .map((result) => result.error?.message)
     .filter(Boolean);
 
@@ -111,6 +113,7 @@ Deno.serve(async (req: Request) => {
       crm_activities: crmCount.count ?? 0,
       capi_events: capiCount.count ?? 0,
       meta_campaign_insights: metaInsightCount.count ?? 0,
+      invalid_link_events: invalidLinkCount.count ?? 0,
     },
     functions: ["go", "convert", "crm", "capi-health", "tenant-admin", "meta-oauth", "meta-assets", "meta-insights", "supabase-health"],
     errors,
