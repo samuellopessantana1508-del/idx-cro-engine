@@ -358,6 +358,7 @@ export function App() {
   const [clientDraft, setClientDraft] = useState<ClientDraft>(emptyClientDraft);
   const [profileDraft, setProfileDraft] = useState<ClientDraft>(emptyClientDraft);
   const [inviteDraft, setInviteDraft] = useState<InviteDraft>(emptyInviteDraft);
+  const [sellerInviteEmail, setSellerInviteEmail] = useState("");
   const [metaDraft, setMetaDraft] = useState<MetaDraft>(emptyMetaDraft);
   const [adAccountId, setAdAccountId] = useState("");
   const [metaAdAccounts, setMetaAdAccounts] = useState<MetaAdAccountAsset[]>([]);
@@ -388,6 +389,7 @@ export function App() {
   const tenantMetaCampaigns = metaCampaigns.filter((item) => item.tenant_id === tenant?.id);
   const tenantCrmActivities = crmActivities.filter((item) => item.tenant_id === tenant?.id);
   const remarketingLeads = tenantLeads.filter((lead) => lead.lead_status === "qualified");
+  const sellerUsers = tenantUsers.filter((user) => user.role === "operator");
   const hasOperationalData = tenantLinks.length > 0 || tenantLeads.length > 0;
   const needsOperationalOnboarding = Boolean(tenant && !loading && !hasOperationalData);
   const qualityRows = useMemo(() => buildQualityRows(tenantLeads, tenantMetaCampaigns), [tenantLeads, tenantMetaCampaigns]);
@@ -1076,14 +1078,18 @@ export function App() {
     await loadTenantData(data.tenant.id);
   }
 
-  async function inviteUser() {
-    if (!tenant || !inviteDraft.email.trim()) {
-      setToast("Informe o email do usuário.");
+  async function inviteUser(options?: { email?: string; role?: InviteDraft["role"]; successMessage?: string }) {
+    const email = (options?.email ?? inviteDraft.email).trim();
+    const role = options?.role ?? inviteDraft.role;
+
+    if (!tenant || !email) {
+      setToast(role === "operator" ? "Informe o email do vendedor." : "Informe o email do usuário.");
       return;
     }
 
     if (!isConfigured || !supabase) {
-      setInviteDraft(emptyInviteDraft);
+      if (role === "operator") setSellerInviteEmail("");
+      else setInviteDraft(emptyInviteDraft);
       setToast("Configure o Supabase para enviar convites reais.");
       return;
     }
@@ -1093,14 +1099,15 @@ export function App() {
       body: JSON.stringify({
         action: "invite_user",
         tenant_id: tenant.id,
-        email: inviteDraft.email,
-        role: inviteDraft.role,
+        email,
+        role,
       }),
     });
     const data = await res.json();
     if (!res.ok) return setToast(data.error || "Erro ao convidar usuário.");
-    setInviteDraft(emptyInviteDraft);
-    setToast("Convite enviado por email.");
+    if (role === "operator") setSellerInviteEmail("");
+    else setInviteDraft(emptyInviteDraft);
+    setToast(options?.successMessage ?? "Convite enviado por email.");
     await loadTenantData();
   }
 
@@ -2074,13 +2081,60 @@ export function App() {
 
         {active === "users" && (
           <section className="stack">
+            <section className="panel access-hero-panel">
+              <div className="panel-head">
+                <div>
+                  <h2>Enviar acesso de vendedor</h2>
+                  <p>Libere um login simples para atendimento. O vendedor entra direto na fila, atualiza o CRM e não vê integrações, clientes ou configurações.</p>
+                </div>
+                <UserPlus size={18} />
+              </div>
+              <div className="access-hero-grid">
+                <div className="seller-invite-box">
+                  <div className="access-kicker">
+                    <span>{sellerUsers.length}</span>
+                    <strong>vendedores ativos nesta empresa</strong>
+                  </div>
+                  <div className="seller-invite-form">
+                    <label>
+                      Email do vendedor
+                      <input
+                        type="email"
+                        placeholder="vendedor@empresa.com"
+                        value={sellerInviteEmail}
+                        onChange={(event) => setSellerInviteEmail(event.target.value)}
+                      />
+                    </label>
+                    <button
+                      className="primary-button"
+                      onClick={() => inviteUser({
+                        email: sellerInviteEmail,
+                        role: "operator",
+                        successMessage: "Acesso de vendedor enviado por email.",
+                      })}
+                    >
+                      Enviar acesso
+                    </button>
+                  </div>
+                  <div className="seller-permission-strip">
+                    <span>Atender leads</span>
+                    <span>Qualificar</span>
+                    <span>Registrar venda</span>
+                    <span>Sem painel gerencial</span>
+                  </div>
+                </div>
+
+                <SellerAccessPreview />
+              </div>
+            </section>
+
             <section className="panel">
               <div className="panel-head">
                 <div>
-                  <h2>Convidar stakeholder</h2>
-                  <p>Adicione donos, gestores, atendentes e visualizadores vinculados apenas à empresa atual.</p>
+                  <h2>Outros acessos da empresa</h2>
+                  <p>Use para donos, gestores, administradores e visualizadores. Cada login fica vinculado apenas à empresa selecionada.</p>
                 </div>
-                <UserPlus size={18} />
+                <ShieldCheck size={18} />
               </div>
               <div className="user-form">
                 <input placeholder="email@empresa.com" value={inviteDraft.email} onChange={(event) => setInviteDraft({ ...inviteDraft, email: event.target.value })} />
@@ -2090,15 +2144,15 @@ export function App() {
                   <option value="operator">CRM / Atendimento</option>
                   <option value="viewer">Visualizador</option>
                 </select>
-                <button className="primary-button" onClick={inviteUser}>Enviar convite</button>
+                <button className="primary-button" onClick={() => inviteUser()}>Enviar convite</button>
               </div>
             </section>
 
             <section className="panel">
               <div className="panel-head">
                 <div>
-                  <h2>Stakeholders cadastrados</h2>
-                  <p>Acessos liberados para verificar dados e operar o CRM desta empresa.</p>
+                  <h2>Acessos desta empresa</h2>
+                  <p>Quem pode entrar no painel da {tenant?.name ?? "empresa"} e qual experiência cada pessoa recebe.</p>
                 </div>
                 <Users size={18} />
               </div>
@@ -2116,7 +2170,7 @@ export function App() {
                 <ReadOnly label="Gestor IDX" value="Acesso multiempresa via platform_users" />
                 <ReadOnly label="Owner" value="Dono da empresa, integrações e stakeholders" />
                 <ReadOnly label="Admin" value="Links, integrações, CRM e relatórios" />
-                <ReadOnly label="CRM / Atendimento" value="Acompanha leads e atualiza pipeline" />
+                <ReadOnly label="Vendedor / Atendimento" value="Tela reduzida: Atender, leads e ações de CRM" />
                 <ReadOnly label="Visualizador" value="Verifica dados e relatórios da empresa" />
               </div>
             </section>
@@ -2947,7 +3001,7 @@ function TenantUsersList({ users }: { users: TenantUser[] }) {
   return (
     <div className="user-list">
       {users.map((user) => (
-        <article className="user-row" key={user.id}>
+        <article className={`user-row user-row-${user.role}`} key={user.id}>
           <div>
             <strong>{user.email || "Usuário sem email"}</strong>
             <small>{user.created_at ? `Criado em ${formatDate(user.created_at)}` : "Acesso vinculado"}</small>
@@ -2956,6 +3010,43 @@ function TenantUsersList({ users }: { users: TenantUser[] }) {
           <StatusPill text={userStatusLabel(user.status)} tone={user.status === "active" ? "good" : "muted"} />
         </article>
       ))}
+    </div>
+  );
+}
+
+function SellerAccessPreview() {
+  return (
+    <div className="seller-access-preview" aria-label="Prévia do acesso de vendedor">
+      <div className="preview-topbar">
+        <strong>IDX.</strong>
+        <span>Vendedor</span>
+      </div>
+      <div className="preview-screen">
+        <div className="preview-head">
+          <small>Acesso reduzido</small>
+          <strong>Atender</strong>
+        </div>
+        <div className="preview-metrics">
+          <span>Fila 4</span>
+          <span>Remarketing 2</span>
+        </div>
+        <div className="preview-lead active">
+          <div>
+            <strong>Lead WhatsApp</strong>
+            <small>Campanha CNH · agora</small>
+          </div>
+          <span>Novo</span>
+        </div>
+        <div className="preview-actions">
+          <button type="button"><PhoneCall size={14} /> WhatsApp</button>
+          <button type="button"><Check size={14} /> Qualificar</button>
+        </div>
+        <div className="preview-tabs">
+          <span><PhoneCall size={13} /> Atender</span>
+          <span><MessageCircle size={13} /> Leads</span>
+          <span><MoreHorizontal size={13} /> Mais</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -3355,7 +3446,7 @@ function userRoleLabel(role: TenantUser["role"]): string {
   return {
     owner: "Owner",
     admin: "Admin",
-    operator: "CRM / Atendimento",
+    operator: "Vendedor / Atendimento",
     viewer: "Visualizador",
   }[role];
 }
