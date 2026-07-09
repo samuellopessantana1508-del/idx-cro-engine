@@ -1776,6 +1776,18 @@ td small {
   text-decoration: underline;
 }
 
+.login-link-button.strong {
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 8px;
+  color: var(--paper);
+  min-height: 42px;
+}
+
+.login-link-button.strong:hover {
+  background: rgba(255, 255, 255, 0.08);
+  text-decoration: none;
+}
+
 @media (max-width: 1060px) {
   .app-shell {
     grid-template-columns: 1fr;

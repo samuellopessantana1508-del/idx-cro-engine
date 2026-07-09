@@ -340,6 +340,54 @@ Deno.serve(async (req: Request) => {
       return json({ error: "invalid_invite" }, 400);
     }
 
+    const { data: existingTenantUser } = await supa
+      .from("tenant_users")
+      .select("id, role, status")
+      .eq("tenant_id", tenantId)
+      .eq("email", email)
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (existingTenantUser) {
+      if (existingTenantUser.role !== role) {
+        const { error: roleError } = await supa
+          .from("tenant_users")
+          .update({ role })
+          .eq("id", existingTenantUser.id);
+        if (roleError) return json({ error: roleError.message }, 400);
+      }
+
+      const { data: previousInvite } = await supa
+        .from("tenant_invites")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("email", email)
+        .eq("role", role)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (previousInvite) {
+        await supa.from("tenant_invites").update({
+          invited_by: user.id,
+          status: "sent",
+          error_message: null,
+        }).eq("id", previousInvite.id);
+      } else {
+        await supa.from("tenant_invites").insert({
+          tenant_id: tenantId,
+          email,
+          role,
+          invited_by: user.id,
+          status: "sent",
+          error_message: null,
+        });
+      }
+
+      await audit(user.id, "tenant_user.already_active", tenantId, "tenant_user", existingTenantUser.id, { email, role });
+      return json({ ok: true, already_active: true });
+    }
+
     const inviteRow = {
       tenant_id: tenantId,
       email,

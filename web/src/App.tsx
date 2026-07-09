@@ -325,6 +325,7 @@ export function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmationEmail, setConfirmationEmail] = useState("");
+  const [accessLinkEmail, setAccessLinkEmail] = useState("");
   const [currentUserId, setCurrentUserId] = useState("");
   const [currentUserEmail, setCurrentUserEmail] = useState("");
   const [active, setActive] = useState<Section>(requestedSection ?? "dashboard");
@@ -626,7 +627,35 @@ export function App() {
       return;
     }
     setSignedIn(true);
+    setAccessLinkEmail("");
     await loadInitialData();
+  }
+
+  async function sendAccessLink() {
+    if (!supabase) return;
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      setToast("Informe o email para receber o link de acesso.");
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithOtp({
+      email: normalizedEmail,
+      options: {
+        emailRedirectTo: authRedirectTo(),
+        shouldCreateUser: false,
+      },
+    });
+    setLoading(false);
+
+    if (error) {
+      setToast(error.message);
+      return;
+    }
+
+    setAccessLinkEmail(normalizedEmail);
+    setToast("Enviamos um link seguro para acessar.");
   }
 
   async function signup() {
@@ -1107,7 +1136,7 @@ export function App() {
     if (!res.ok) return setToast(data.error || "Erro ao convidar usuário.");
     if (role === "operator") setSellerInviteEmail("");
     else setInviteDraft(emptyInviteDraft);
-    setToast(options?.successMessage ?? "Convite enviado por email.");
+    setToast(data.already_active ? "Este vendedor já tinha acesso ativo. Ele pode entrar por senha ou link no email." : (options?.successMessage ?? "Convite enviado por email."));
     await loadTenantData();
   }
 
@@ -1393,6 +1422,11 @@ export function App() {
             <button className="primary-button" type="submit" disabled={loading}>
               {authMode === "login" ? "Entrar" : "Criar conta"}
             </button>
+            {authMode === "login" && (
+              <button className="login-link-button strong" type="button" onClick={sendAccessLink} disabled={loading}>
+                Receber link no email
+              </button>
+            )}
             <button className="login-link-button" type="button" onClick={() => setAuthMode(authMode === "login" ? "signup" : "login")} disabled={loading}>
               {authMode === "login" ? "Criar primeiro acesso" : "Voltar para login"}
             </button>
@@ -1405,6 +1439,11 @@ export function App() {
           {confirmationEmail && (
             <p className="auth-hint">
               Email de confirmação enviado para <strong>{confirmationEmail}</strong>.
+            </p>
+          )}
+          {accessLinkEmail && (
+            <p className="auth-hint">
+              Link de acesso enviado para <strong>{accessLinkEmail}</strong>. Abra o email neste dispositivo para entrar.
             </p>
           )}
         </form>
