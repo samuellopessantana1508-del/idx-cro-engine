@@ -99,6 +99,11 @@ assert.match(go, /invalidLinkResponse/);
 assert.match(go, /ALLOW_INVALID_LINK_FALLBACK/);
 assert.match(go, /logInvalidLink/);
 assert.match(go, /invalid_link_events/);
+assert.match(go, /isPreviewCrawler/);
+assert.match(go, /isMetaPreviewIp/);
+assert.match(go, /facebookexternalhit/);
+assert.match(go, /meta-externalfetcher/);
+assert.match(go, /173\.252\./);
 assert.doesNotMatch(go, /go\.idx\.app/);
 
 assert.match(convert, /event_name: "Purchase"/);

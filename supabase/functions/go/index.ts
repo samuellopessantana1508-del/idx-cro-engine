@@ -85,13 +85,49 @@ function invalidLinkRedirect(): Response {
   return invalidLinkResponse();
 }
 
+function clientIp(req: Request): string | null {
+  return req.headers.get("cf-connecting-ip")
+    ?? req.headers.get("x-real-ip")
+    ?? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    ?? null;
+}
+
+function isMetaPreviewIp(ip: string | null): boolean {
+  const value = String(ip ?? "").trim();
+  return [
+    "31.13.",
+    "66.220.",
+    "69.63.",
+    "69.171.",
+    "74.119.76.",
+    "103.4.96.",
+    "129.134.",
+    "157.240.",
+    "173.252.",
+    "179.60.",
+    "185.60.216.",
+    "204.15.20.",
+  ].some((prefix) => value.startsWith(prefix));
+}
+
+function isPreviewCrawler(userAgent: string | null, ip: string | null): boolean {
+  const value = String(userAgent ?? "").toLowerCase();
+  const hasPreviewUserAgent = [
+    "facebookexternalhit",
+    "facebot",
+    "meta-externalagent",
+    "meta-externalfetcher",
+  ].some((agent) => value.includes(agent));
+
+  return hasPreviewUserAgent || isMetaPreviewIp(ip);
+}
+
 async function logInvalidLink(req: Request, code: string | null | undefined, reason: string): Promise<void> {
   try {
-    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
     await supa.from("invalid_link_events").insert({
       code: code || null,
       request_url: req.url,
-      ip,
+      ip: clientIp(req),
       ua: req.headers.get("user-agent"),
       reason,
     });
@@ -165,7 +201,7 @@ Deno.serve(async (req: Request) => {
   const fbclid = param(url, "fbclid");
   const fbc = param(url, "fbc") ?? fbcFromFbclid(fbclid);
   const fbp = param(url, "fbp");
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  const ip = clientIp(req);
   const ua = req.headers.get("user-agent");
   const sourceUrl = req.headers.get("referer");
 
@@ -186,6 +222,10 @@ Deno.serve(async (req: Request) => {
 
   const whatsapp = cleanDigits(tenant.whatsapp_number);
   const targetUrl = `https://wa.me/${whatsapp}?text=${encodeURIComponent(message)}`;
+
+  if (isPreviewCrawler(ua, ip)) {
+    return Response.redirect(targetUrl, 302);
+  }
 
   const { data: session, error: sessionError } = await supa
     .from("tracking_sessions")
