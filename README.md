@@ -16,7 +16,11 @@ uma fila simples para o atendente confirmar venda.
 
 - `web/`: painel SaaS em React + Vite, visual preto/branco/cinza.
 - `supabase/migrations/`: banco multiempresa com RLS, views e grants.
-- `supabase/functions/go`: redirect público para WhatsApp + Lead CAPI.
+- `supabase/functions/go`: redirect público para WhatsApp + confirmação de entrada.
+  O clique redireciona em milissegundos; o evento `Lead` CAPI só é enviado quando
+  o navegador confirma (via `/go/confirm`) que a pessoa realmente saiu para o
+  WhatsApp. Cliques que não abrem o WhatsApp ficam registrados como clique, mas
+  não viram lead no Meta nem no CRM.
 - `supabase/functions/convert`: confirmação de venda/perda + Purchase CAPI.
 - `supabase/functions/capi-health`: diagnóstico de eventos CAPI.
 - `supabase/functions/crm`: pipeline de leads, histórico e eventos CAPI por etapa.
