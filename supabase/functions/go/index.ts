@@ -45,6 +45,27 @@ function applyTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? "");
 }
 
+function escapeHtmlAttr(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+// Runs work after the response is sent, so the user never waits for it.
+function runBackground(promise: Promise<unknown>): void {
+  const runtime = (globalThis as {
+    EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void };
+  }).EdgeRuntime;
+  if (runtime?.waitUntil) {
+    runtime.waitUntil(promise.catch(() => {}));
+  } else {
+    promise.catch(() => {});
+  }
+}
+
 function invalidLinkResponse(): Response {
   return new Response(
     `<!doctype html>
@@ -170,13 +191,159 @@ async function sendCapi(
   }
 }
 
+// Sends the Lead CAPI event for a session that confirmed WhatsApp entry.
+async function sendLeadForSession(session: Record<string, any>): Promise<void> {
+  const offer = session.offer ?? null;
+  const link = session.smart_link ?? null;
+  const value = offer?.price ?? 0;
+  const eventId = `lead_${session.id}`;
+
+  const capiPayload = {
+    event_name: "Lead",
+    event_time: Math.floor(Date.now() / 1000),
+    event_id: eventId,
+    event_source_url: session.request_url ?? undefined,
+    action_source: "website",
+    user_data: {
+      client_ip_address: session.ip ?? undefined,
+      client_user_agent: session.ua ?? undefined,
+      fbc: session.fbc ?? undefined,
+      fbp: session.fbp ?? undefined,
+    },
+    custom_data: {
+      content_ids: [offer?.slug ?? link?.code ?? "smart-link"],
+      content_type: "product",
+      content_name: offer?.name ?? link?.name ?? "Smart Link",
+      content_category: offer?.category ?? "local_offer",
+      value,
+      currency: "BRL",
+      ref: session.ref,
+      utm_source: session.utm_source,
+      utm_medium: session.utm_medium,
+      utm_campaign: session.utm_campaign,
+      utm_content: session.utm_content,
+      utm_term: session.utm_term,
+    },
+  };
+
+  const capi = await sendCapi(session.tenant_id, capiPayload);
+
+  await supa.from("capi_events").insert({
+    tenant_id: session.tenant_id,
+    tracking_session_id: session.id,
+    event_name: "Lead",
+    event_id: eventId,
+    pixel_id: capi.pixelId ?? null,
+    request_payload: capiPayload,
+    response_payload: capi.data,
+    ok: capi.ok,
+    status_code: capi.status,
+    error_message: capi.error ?? null,
+  });
+
+  if (capi.ok) {
+    await supa.from("tracking_sessions").update({ capi_lead_ok: true }).eq("id", session.id);
+  }
+}
+
+// POST/GET /go/confirm?ref=xxxx-xxxx
+// Fired by the redirect page only when the browser actually left to WhatsApp.
+async function handleConfirm(req: Request, url: URL): Promise<Response> {
+  if (req.method !== "POST" && req.method !== "GET") {
+    return new Response("Method not allowed", { status: 405 });
+  }
+
+  const ref = String(param(url, "ref") ?? "").toLowerCase();
+  if (!ref || ref.length > 32) {
+    return new Response(null, { status: 400 });
+  }
+
+  // Atomic: only the first confirmation flips whatsapp_opened_at, so the
+  // Lead event is sent exactly once per session.
+  const { data: session } = await supa
+    .from("tracking_sessions")
+    .update({ whatsapp_opened_at: new Date().toISOString() })
+    .eq("ref", ref)
+    .is("whatsapp_opened_at", null)
+    .select("*, tenant:tenants(*), offer:offers(*), smart_link:smart_links(*)")
+    .maybeSingle();
+
+  if (session) {
+    runBackground(sendLeadForSession(session));
+  }
+
+  return new Response(null, {
+    status: 204,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+// Ultra-light page: opens WhatsApp immediately and confirms the entry via
+// beacon only when the browser actually navigates away to WhatsApp.
+function redirectPage(targetUrl: string, confirmUrl: string): Response {
+  const targetJson = JSON.stringify(targetUrl);
+  const confirmJson = JSON.stringify(confirmUrl);
+  const targetAttr = escapeHtmlAttr(targetUrl);
+
+  return new Response(
+    `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Abrindo WhatsApp…</title>
+<style>body{margin:0;background:#0a0a0a}</style>
+</head>
+<body>
+<script>
+(function(){
+  var target=${targetJson};
+  var confirmUrl=${confirmJson};
+  var sent=false;
+  function confirmEntry(){
+    if(sent)return;
+    sent=true;
+    try{
+      if(navigator.sendBeacon&&navigator.sendBeacon(confirmUrl))return;
+    }catch(e){}
+    try{fetch(confirmUrl,{method:"POST",keepalive:true});}catch(e){}
+  }
+  addEventListener("pagehide",confirmEntry);
+  document.addEventListener("visibilitychange",function(){
+    if(document.visibilityState==="hidden")confirmEntry();
+  });
+  location.replace(target);
+})();
+</script>
+<noscript><meta http-equiv="refresh" content="0;url=${targetAttr}"><a href="${targetAttr}">Abrir WhatsApp</a></noscript>
+</body>
+</html>`,
+    {
+      status: 200,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer",
+      },
+    },
+  );
+}
+
 Deno.serve(async (req: Request) => {
+  const url = new URL(req.url);
+  const segments = url.pathname.split("/").filter(Boolean);
+  const lastSegment = segments[segments.length - 1] ?? "";
+
+  if (lastSegment === "confirm") {
+    return handleConfirm(req, url);
+  }
+
   if (req.method !== "GET") {
     return new Response("Method not allowed", { status: 405 });
   }
 
-  const url = new URL(req.url);
-  const code = url.pathname.split("/").filter(Boolean).pop();
+  const code = lastSegment;
   if (!code) {
     await logInvalidLink(req, null, "missing_code");
     return invalidLinkRedirect();
@@ -223,10 +390,14 @@ Deno.serve(async (req: Request) => {
   const whatsapp = cleanDigits(tenant.whatsapp_number);
   const targetUrl = `https://wa.me/${whatsapp}?text=${encodeURIComponent(message)}`;
 
+  // Meta preview crawlers never become sessions nor leads.
   if (isPreviewCrawler(ua, ip)) {
     return Response.redirect(targetUrl, 302);
   }
 
+  // Only fast local work happens before the user moves on: one lookup and one
+  // insert. The Lead CAPI call happens later, in /confirm, and only for people
+  // who actually entered WhatsApp.
   const { data: session, error: sessionError } = await supa
     .from("tracking_sessions")
     .insert({
@@ -259,54 +430,9 @@ Deno.serve(async (req: Request) => {
     return Response.redirect(targetUrl, 302);
   }
 
-  const value = offer?.price ?? 0;
-  const eventId = `lead_${session.id}`;
-  const capiPayload = {
-    event_name: "Lead",
-    event_time: Math.floor(Date.now() / 1000),
-    event_id: eventId,
-    event_source_url: url.toString(),
-    action_source: "website",
-    user_data: {
-      client_ip_address: ip,
-      client_user_agent: ua,
-      fbc,
-      fbp,
-    },
-    custom_data: {
-      content_ids: [offer?.slug ?? link.code],
-      content_type: "product",
-      content_name: offer?.name ?? link.name,
-      content_category: offer?.category ?? "local_offer",
-      value,
-      currency: "BRL",
-      ref,
-      utm_source,
-      utm_medium,
-      utm_campaign,
-      utm_content,
-      utm_term,
-    },
-  };
+  // URL relativa: o navegador resolve para .../go/confirm mantendo qualquer
+  // prefixo do gateway (ex.: /functions/v1), que o runtime remove de req.url.
+  const confirmUrl = `confirm?ref=${encodeURIComponent(ref)}`;
 
-  const capi = await sendCapi(tenant.id, capiPayload);
-
-  await supa.from("capi_events").insert({
-    tenant_id: tenant.id,
-    tracking_session_id: session.id,
-    event_name: "Lead",
-    event_id: eventId,
-    pixel_id: capi.pixelId ?? null,
-    request_payload: capiPayload,
-    response_payload: capi.data,
-    ok: capi.ok,
-    status_code: capi.status,
-    error_message: capi.error ?? null,
-  });
-
-  if (capi.ok) {
-    await supa.from("tracking_sessions").update({ capi_lead_ok: true }).eq("id", session.id);
-  }
-
-  return Response.redirect(targetUrl, 302);
+  return redirectPage(targetUrl, confirmUrl);
 });
