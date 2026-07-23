@@ -149,7 +149,11 @@ async function buildCapiPayload(
   body: Record<string, any>,
 ) {
   const revenue = Number(body.revenue ?? session.revenue ?? session.offer?.price ?? 0);
-  const eventId = `${eventName.toLowerCase()}_${session.id}_${Date.now()}`;
+  // Deterministic event_id: Meta deduplica reenvios do mesmo estágio, e o
+  // Purchase usa o MESMO id do fluxo /convert para nunca contar venda em dobro.
+  const eventId = eventName === "Purchase"
+    ? `purchase_${session.id}`
+    : `${eventName.toLowerCase()}_${session.id}`;
   return {
     event_name: eventName,
     event_time: Math.floor(Date.now() / 1000),
@@ -309,7 +313,12 @@ Deno.serve(async (req: Request) => {
   let capi: CapiResult | null = null;
   let eventId: string | null = null;
 
-  if (eventName) {
+  // Não reenvia CAPI quando o lead já estava neste estágio (clique repetido)
+  // nem Purchase quando a venda já foi enviada com sucesso por qualquer fluxo.
+  const statusChanged = session.lead_status !== status;
+  const purchaseAlreadySent = eventName === "Purchase" && session.capi_purchase_ok === true;
+
+  if (eventName && statusChanged && !purchaseAlreadySent) {
     const capiPayload = await buildCapiPayload(eventName, session, status, body);
     eventId = String(capiPayload.event_id);
     capi = await sendCapi(session.tenant_id, capiPayload);
