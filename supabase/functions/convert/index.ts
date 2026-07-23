@@ -183,9 +183,9 @@ Deno.serve(async (req: Request) => {
     .update({
       lead_status: "sold",
       sold_at: new Date().toISOString(),
-      customer_phone: phone || null,
-      customer_email: email || null,
-      customer_name: name || null,
+      customer_phone: phone || session.customer_phone || null,
+      customer_email: email || session.customer_email || null,
+      customer_name: name || session.customer_name || null,
       revenue,
       sale_notes: body.notes ?? null,
     })
