@@ -430,9 +430,27 @@ Deno.serve(async (req: Request) => {
     return Response.redirect(targetUrl, 302);
   }
 
-  // URL relativa: o navegador resolve para .../go/confirm mantendo qualquer
-  // prefixo do gateway (ex.: /functions/v1), que o runtime remove de req.url.
-  const confirmUrl = `confirm?ref=${encodeURIComponent(ref)}`;
+  // Redirect 302 direto: instantâneo e 100% confiável. Páginas HTML servidas
+  // pelo domínio functions.supabase.co são forçadas a text/plain pelo gateway
+  // e não renderizam, então a confirmação por beacon é feita fora deste caminho.
+  // O Lead vai em background para não segurar o redirect.
+  runBackground(sendLeadForSession({
+    id: session.id,
+    tenant_id: tenant.id,
+    ref,
+    request_url: url.toString(),
+    ip,
+    ua,
+    fbc,
+    fbp,
+    utm_source,
+    utm_medium,
+    utm_campaign,
+    utm_content,
+    utm_term,
+    offer,
+    smart_link: link,
+  }));
 
-  return redirectPage(targetUrl, confirmUrl);
+  return Response.redirect(targetUrl, 302);
 });
