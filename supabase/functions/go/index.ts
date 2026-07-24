@@ -395,62 +395,64 @@ Deno.serve(async (req: Request) => {
     return Response.redirect(targetUrl, 302);
   }
 
-  // Only fast local work happens before the user moves on: one lookup and one
-  // insert. The Lead CAPI call happens later, in /confirm, and only for people
-  // who actually entered WhatsApp.
-  const { data: session, error: sessionError } = await supa
-    .from("tracking_sessions")
-    .insert({
+  // O ÚNICO trabalho no caminho crítico foi o lookup do link acima. Geramos o
+  // id da sessão localmente e jogamos o insert + o Lead CAPI para o background,
+  // para que o redirect 302 saia praticamente instantâneo (sem esperar o banco
+  // nem o Facebook). Páginas HTML servidas pelo domínio functions.supabase.co
+  // são forçadas a text/plain pelo gateway e não renderizam, por isso usamos
+  // redirect direto em vez de página intermediária.
+  const sessionId = crypto.randomUUID();
+
+  runBackground((async () => {
+    const { data: session, error: sessionError } = await supa
+      .from("tracking_sessions")
+      .insert({
+        id: sessionId,
+        tenant_id: tenant.id,
+        smart_link_id: link.id,
+        offer_id: offer?.id ?? null,
+        ref,
+        source_url: sourceUrl,
+        request_url: url.toString(),
+        target_url: targetUrl,
+        ip,
+        ua,
+        fbc,
+        fbp,
+        fbclid,
+        gclid: param(url, "gclid"),
+        ttclid: param(url, "ttclid"),
+        utm_source,
+        utm_medium,
+        utm_campaign,
+        utm_content,
+        utm_term,
+        clicked_at: now,
+        redirected_at: now,
+      })
+      .select("id")
+      .single();
+
+    if (sessionError || !session) return;
+
+    await sendLeadForSession({
+      id: session.id,
       tenant_id: tenant.id,
-      smart_link_id: link.id,
-      offer_id: offer?.id ?? null,
       ref,
-      source_url: sourceUrl,
       request_url: url.toString(),
-      target_url: targetUrl,
       ip,
       ua,
       fbc,
       fbp,
-      fbclid,
-      gclid: param(url, "gclid"),
-      ttclid: param(url, "ttclid"),
       utm_source,
       utm_medium,
       utm_campaign,
       utm_content,
       utm_term,
-      clicked_at: now,
-      redirected_at: now,
-    })
-    .select("id")
-    .single();
-
-  if (sessionError || !session) {
-    return Response.redirect(targetUrl, 302);
-  }
-
-  // Redirect 302 direto: instantâneo e 100% confiável. Páginas HTML servidas
-  // pelo domínio functions.supabase.co são forçadas a text/plain pelo gateway
-  // e não renderizam, então a confirmação por beacon é feita fora deste caminho.
-  // O Lead vai em background para não segurar o redirect.
-  runBackground(sendLeadForSession({
-    id: session.id,
-    tenant_id: tenant.id,
-    ref,
-    request_url: url.toString(),
-    ip,
-    ua,
-    fbc,
-    fbp,
-    utm_source,
-    utm_medium,
-    utm_campaign,
-    utm_content,
-    utm_term,
-    offer,
-    smart_link: link,
-  }));
+      offer,
+      smart_link: link,
+    });
+  })());
 
   return Response.redirect(targetUrl, 302);
 });
