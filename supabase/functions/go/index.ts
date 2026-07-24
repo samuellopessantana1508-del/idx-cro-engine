@@ -6,6 +6,9 @@ const supa = createClient(
 );
 
 const invalidLinkFallbackUrl = Deno.env.get("FALLBACK_URL") ?? "";
+// Pagina de passagem hospedada no dominio proprio (HTML renderiza normalmente la).
+const redirectPageUrl = Deno.env.get("REDIRECT_PAGE_URL") ?? "https://idxparasuaempresa.com.br/ir.html";
+const ENTERED_TAG = "entrou no whatsapp";
 const allowInvalidLinkFallback = Deno.env.get("ALLOW_INVALID_LINK_FALLBACK") === "true";
 
 type CapiResult = {
@@ -269,6 +272,17 @@ async function handleConfirm(req: Request, url: URL): Promise<Response> {
     .maybeSingle();
 
   if (session) {
+    // Marca visivel no CRM: o vendedor continua vendo TODOS os leads, e os que
+    // realmente entraram no WhatsApp ganham esta tag (o painel ja renderiza tags).
+    const currentTags = Array.isArray(session.tags) ? session.tags.map(String) : [];
+    if (!currentTags.includes(ENTERED_TAG)) {
+      runBackground((async () => {
+        await supa.from("tracking_sessions")
+          .update({ tags: [...currentTags, ENTERED_TAG].slice(0, 12) })
+          .eq("id", session.id);
+      })());
+    }
+    // Lead so vai para o Meta quando a entrada no WhatsApp e confirmada.
     runBackground(sendLeadForSession(session));
   }
 
@@ -435,24 +449,11 @@ Deno.serve(async (req: Request) => {
 
     if (sessionError || !session) return;
 
-    await sendLeadForSession({
-      id: session.id,
-      tenant_id: tenant.id,
-      ref,
-      request_url: url.toString(),
-      ip,
-      ua,
-      fbc,
-      fbp,
-      utm_source,
-      utm_medium,
-      utm_campaign,
-      utm_content,
-      utm_term,
-      offer,
-      smart_link: link,
-    });
   })());
 
-  return Response.redirect(targetUrl, 302);
+  // Redirect 302 para a pagina de passagem no dominio proprio: ela abre o
+  // WhatsApp na hora e confirma a entrada. Se algo falhar la, o link ainda
+  // leva o usuario ao WhatsApp (a pagina faz location.replace imediato).
+  const passUrl = `${redirectPageUrl}?u=${encodeURIComponent(targetUrl)}&r=${encodeURIComponent(ref)}`;
+  return Response.redirect(passUrl, 302);
 });
