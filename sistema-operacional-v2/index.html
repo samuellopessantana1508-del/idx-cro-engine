@@ -550,6 +550,160 @@ body {
 .notes-empty-state .icon { font-size: 40px; opacity: 0.3; }
 .notes-empty-state .text { font-size: 13px; }
 
+/* ===== STRUCTURED STRATEGY FORM ===== */
+.strat-canvas {
+  background: var(--surf-1);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+}
+.strat-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 28px 0 14px;
+}
+.strat-divider::after { content: ''; flex: 1; height: 1px; background: var(--border-light); }
+.strat-divider:first-child { margin-top: 0; }
+.strat-divider-icon { font-size: 14px; flex-shrink: 0; }
+.strat-divider-title { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--txt-secondary); white-space: nowrap; }
+.strat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.strat-full { grid-column: 1 / -1; }
+.strat-tip { font-size: 11px; color: var(--txt-muted); padding: 8px 12px; background: var(--bg-accent); border-radius: var(--radius); line-height: 1.5; margin-bottom: 10px; }
+.strat-row { display: flex; gap: 12px; align-items: flex-start; }
+.strat-row > * { flex: 1; }
+.strat-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--txt-muted);
+  margin-bottom: 5px;
+  letter-spacing: .3px;
+}
+.strat-input, .strat-select, .strat-textarea {
+  width: 100%;
+  background: var(--bg-base);
+  border: 1px solid var(--border-light);
+  color: var(--txt-primary);
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  font-family: var(--sans);
+  font-size: 13px;
+  outline: none;
+  transition: border-color .15s;
+}
+.strat-input:focus, .strat-select:focus, .strat-textarea:focus { border-color: var(--border-strong); }
+.strat-textarea { resize: vertical; min-height: 60px; line-height: 1.6; }
+.strat-hint { font-size: 10px; color: var(--txt-disabled); margin-top: 3px; }
+
+/* Segmentation chips */
+.seg-list { display: flex; flex-direction: column; gap: 10px; }
+.seg-card {
+  background: var(--bg-base);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.seg-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.seg-temp-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.seg-temp-badge.F { background: #E8F0FE; color: #3B6EC5; }
+.seg-temp-badge.M { background: #FEF3E2; color: #C07A1E; }
+.seg-temp-badge.Q { background: #FDECEC; color: #C54040; }
+.seg-card-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.seg-remove { background: none; border: none; color: var(--txt-disabled); cursor: pointer; font-size: 14px; margin-left: auto; padding: 2px 6px; }
+.seg-remove:hover { color: var(--red); }
+
+/* Test rows */
+.test-row {
+  background: var(--bg-base);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: 1fr 120px 120px 80px 32px;
+  gap: 8px;
+  align-items: center;
+}
+.test-status {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  text-align: center;
+}
+.test-status.planejado { background: var(--surf-2); color: var(--txt-muted); }
+.test-status.rodando { background: #E8F0FE; color: #3B6EC5; }
+.test-status.concluido { background: var(--green-bg); color: var(--green); }
+
+/* Structure indicator */
+.struct-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.struct-card {
+  background: var(--bg-base);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 16px;
+  text-align: center;
+}
+.struct-card-num {
+  font-family: var(--mono);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--txt-primary);
+}
+.struct-card-label { font-size: 10px; color: var(--txt-muted); margin-top: 4px; letter-spacing: .3px; }
+
+/* Diagnostic segmentation section */
+.diag-seg-section {
+  margin-top: 20px;
+  background: var(--surf-1);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+}
+.diag-seg-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--txt-secondary);
+  letter-spacing: .5px;
+  margin-bottom: 12px;
+}
+.diag-seg-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.diag-seg-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--txt-secondary);
+  padding: 8px 10px;
+  background: var(--bg-base);
+  border-radius: var(--radius);
+  border: 1px solid var(--border-light);
+}
+.diag-seg-item .seg-icon { flex-shrink: 0; font-size: 14px; margin-top: 1px; }
+.diag-seg-item.warn { border-color: var(--yellow); }
+.diag-seg-item.alert { border-color: var(--red); }
+.diag-seg-item.ok { border-color: var(--green); }
+.diag-seg-item.info { border-color: var(--border-mid); }
+
 /* ===== CHECKLIST SYSTEM ===== */
 .cl-section {
   background: var(--surf-1);
@@ -2367,8 +2521,8 @@ const RC_DIARIO = [
   { key: 'rd1',  sec: 'analise',     label: 'Validar período, fuso, objetivo e janela de atribuição antes de ler os dados' },
   { key: 'rd2',  sec: 'analise',     label: 'Comparar gasto do dia com o orçamento e classificar o pacing como adequado, lento ou acelerado' },
   { key: 'rd3',  sec: 'analise',     label: 'Comparar CPA, volume e investimento com a meta e com um período equivalente' },
-  { key: 'rd4',  sec: 'analise',     label: 'Analisar CPM, CTR, CPC e frequência para identificar entrega, fadiga ou criativo fraco' },
-  { key: 'rd5',  sec: 'analise',     label: 'Analisar clique → contato → lead → venda e localizar a maior perda do funil' },
+  { key: 'rd4',  sec: 'analise',     label: 'Analisar CPM, CTR, CPC e frequência — CPM alto: refinar segmentação/criativo; CTR baixo: mudar gancho; freq > 2,5: rotacionar' },
+  { key: 'rd5',  sec: 'analise',     label: 'Analisar Connect Rate (clique → contato → lead → venda) e localizar a maior perda do funil' },
   { key: 'rd6',  sec: 'operacional', label: 'Validar links, WhatsApp, página de destino, velocidade e eventos de conversão' },
   { key: 'rd7',  sec: 'operacional', label: 'Confirmar volume e qualidade dos contatos com o responsável pelo atendimento' },
   { key: 'rd8',  sec: 'operacional', label: 'Resolver reprovações, alertas de conta, limite de gasto e falhas de rastreamento' },
@@ -2376,6 +2530,9 @@ const RC_DIARIO = [
   { key: 'rd10', sec: 'otimizacao',  label: 'Executar no máximo uma mudança principal por teste e respeitar limites aprovados' },
   { key: 'rd11', sec: 'otimizacao',  label: 'Preservar vencedores, registrar antes/depois e definir a janela de observação' },
   { key: 'rd12', sec: 'doc',         label: 'Documentar análise, ação, responsável, horário, resultado esperado e próxima revisão' },
+  { key: 'rd13', sec: 'analise',     label: 'Verificar Hook Rate dos vídeos — se abaixo de 25%: reescrever os 3 primeiros segundos do criativo' },
+  { key: 'rd14', sec: 'analise',     label: 'Verificar ROAS das campanhas de venda — se < 2x: redistribuir verba nos conjuntos mais rentáveis' },
+  { key: 'rd15', sec: 'otimizacao',  label: 'Conferir estoque de criativos (regra 6+6) — se insuficiente: agendar produção imediata' },
 ];
 
 const RC_SEMANAL = [
@@ -2392,6 +2549,9 @@ const RC_SEMANAL = [
   { key: 'rs11', sec: 'otimizacao',  label: 'Definir até três prioridades com hipótese, responsável, prazo e métrica de sucesso' },
   { key: 'rs12', sec: 'comunicacao', label: 'Enviar relatório com resultado, leitura estratégica, ações e próximos passos' },
   { key: 'rs13', sec: 'comunicacao', label: 'Registrar alinhamentos, aprovações e pendências do cliente' },
+  { key: 'rs14', sec: 'analise',     label: 'Consolidar ROAS semanal e identificar campanhas e produtos mais e menos rentáveis' },
+  { key: 'rs15', sec: 'analise',     label: 'Comparar métricas com benchmarks do nicho — se divergência > 30%: recalibrar metas' },
+  { key: 'rs16', sec: 'otimizacao',  label: 'Auditar estoque de criativos: 6 rodando + 6 prontos por cliente (regra 6+6)' },
 ];
 
 const RC_MENSAL = [
@@ -2410,6 +2570,9 @@ const RC_MENSAL = [
   { key: 'rm13', sec: 'estrategia', label: 'Publicar o plano do próximo mês na área de estratégias do cliente' },
   { key: 'rm14', sec: 'financeiro', label: 'Confirmar cobrança, contrato, orçamento de mídia e limites aprovados' },
   { key: 'rm15', sec: 'financeiro', label: 'Classificar risco de churn e definir plano de recuperação quando necessário' },
+  { key: 'rm16', sec: 'fechamento', label: 'Calcular ROAS mensal por campanha — ranquear por rentabilidade e escalar os vencedores' },
+  { key: 'rm17', sec: 'fechamento', label: 'Atualizar benchmarks do cliente com médias do mês e revisar metas do próximo ciclo' },
+  { key: 'rm18', sec: 'estrategia', label: 'Revisar segmentação completa: temperaturas (F/M/Q), exclusões, sobreposição e novos públicos' },
 ];
 
 const ROTINA_MANHA = [
@@ -4759,6 +4922,22 @@ function renderMetaDiagnostico(data, client) {
                 'Verifique se não há restrições de aprovação pendentes no BM']});
   }
 
+  // ROAS baixo (e-commerce)
+  if (m.roas > 0 && m.roas < 1) {
+    issues.push({ sev: 'critical', icon: '📉', title: `ROAS ${m.roas.toFixed(2)}x — gastando mais do que faturando`,
+      desc: 'O retorno sobre o investimento em ads está negativo. Cada R$1 gasto gera menos de R$1 em receita.',
+      actions: ['Concentre investimento nos produtos e públicos mais rentáveis',
+                'Aumente ticket médio: upsell, cross-sell, frete grátis acima de valor mínimo',
+                'Reduza CPA melhorando o funil de conversão',
+                'Avalie se o público está alinhado com quem realmente compra']});
+  } else if (m.roas > 0 && m.roas < 2) {
+    issues.push({ sev: 'warning', icon: '💎', title: `ROAS ${m.roas.toFixed(2)}x — abaixo do ideal`,
+      desc: 'O retorno existe mas está baixo. Meta recomendada: ROAS >2x para operação sustentável.',
+      actions: ['Concentre verba nos conjuntos com melhor ROAS',
+                'Teste ofertas com maior margem ou combos',
+                'Ative remarketing para carrinho abandonado e visitantes recentes']});
+  }
+
   // Tudo ok
   if (issues.length === 0) {
     issues.push({ sev: 'ok', icon: '✅', title: 'Métricas dentro dos parâmetros esperados',
@@ -4781,6 +4960,9 @@ function renderMetaDiagnostico(data, client) {
       </div>
     </div>`).join('');
 
+  // ── ANÁLISE DE SEGMENTAÇÃO (obrigatória em todo diagnóstico) ──
+  const segAnalysis = buildSegmentationAnalysis(camps, client, m);
+
   return `
     <div class="section" style="margin-top:0;">
       <div class="section-title" style="margin-bottom:4px;">🔍 DIAGNÓSTICO AUTOMÁTICO</div>
@@ -4788,6 +4970,11 @@ function renderMetaDiagnostico(data, client) {
         Baseado nas métricas do período. ${issues.filter(i=>i.sev==='critical').length} problema(s) crítico(s) · ${issues.filter(i=>i.sev==='warning').length} atenção · ${issues.filter(i=>i.sev==='ok').length} ok.
       </div>
       ${diagCards}
+
+      <!-- ANÁLISE DE SEGMENTAÇÃO -->
+      ${segAnalysis}
+
+      <!-- FRAMEWORK DE OTIMIZAÇÃO -->
       <div style="margin-top:20px;background:var(--surf-1);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:16px;">
         <div style="font-size:11px;font-weight:700;color:var(--txt-secondary);margin-bottom:10px;letter-spacing:.5px;">📋 FRAMEWORK DE OTIMIZAÇÃO — ORDEM PRIORITÁRIA</div>
         <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;font-size:11px;">
@@ -4799,6 +4986,213 @@ function renderMetaDiagnostico(data, client) {
           <div style="display:flex;gap:8px;"><span style="color:var(--accent);font-weight:700;min-width:20px;">6.</span><span>Documente TODAS as ações com data, motivo e resultado esperado</span></div>
         </div>
       </div>
+
+      <!-- MÉTRICAS: O QUE CADA UMA SIGNIFICA E COMO RESOLVER -->
+      ${buildMetricGuide(m, client)}
+
+    </div>`;
+}
+
+// ─── SEGMENTATION ANALYSIS (obrigatório em todo diagnóstico) ──────────────────
+function buildSegmentationAnalysis(camps, client, m) {
+  const items = [];
+  const activeCamps = camps.filter(c => c.status === 'ACTIVE');
+
+  // 1. Detect temperature from campaign names and strategy data
+  const temps = { F: [], M: [], Q: [], unknown: [] };
+  for (const c of activeCamps) {
+    const name = (c.campaign_name || '').toUpperCase();
+    const t = c.temp || (name.match(/\[Q\]/) ? 'Q' : name.match(/\[M\]/) ? 'M' : name.match(/\[F\]/) ? 'F' : null);
+    if (t) temps[t].push(c.campaign_name);
+    else temps.unknown.push(c.campaign_name);
+  }
+
+  const hasTemp = temps.F.length + temps.M.length + temps.Q.length > 0;
+  const totalTagged = temps.F.length + temps.M.length + temps.Q.length;
+
+  // Temperature distribution
+  if (hasTemp) {
+    const parts = [];
+    if (temps.F.length) parts.push(`<strong>${temps.F.length}</strong> fria${temps.F.length>1?'s':''}`);
+    if (temps.M.length) parts.push(`<strong>${temps.M.length}</strong> morna${temps.M.length>1?'s':''}`);
+    if (temps.Q.length) parts.push(`<strong>${temps.Q.length}</strong> quente${temps.Q.length>1?'s':''}`);
+    items.push({ cls: 'info', icon: '🌡️', text: `Públicos identificados: ${parts.join(', ')}` });
+  }
+
+  if (temps.unknown.length > 0 && activeCamps.length > 0) {
+    items.push({ cls: 'warn', icon: '❓', text: `${temps.unknown.length} campanha${temps.unknown.length>1?'s':''} sem temperatura definida na nomenclatura. Use [F], [M] ou [Q] no nome ou defina na aba Estratégias.` });
+  }
+
+  // 2. Check if cold and hot audiences might be mixed
+  if (temps.F.length > 0 && temps.Q.length > 0 && activeCamps.length <= 3) {
+    items.push({ cls: 'alert', icon: '⚠️', text: 'Públicos frios e quentes ativos ao mesmo tempo com poucas campanhas. Garanta que estão em conjuntos separados — nunca misture F e Q no mesmo conjunto.' });
+  }
+
+  // 3. No remarketing detected
+  if (temps.Q.length === 0 && temps.M.length === 0 && activeCamps.length > 0) {
+    items.push({ cls: 'warn', icon: '🔥', text: 'Nenhuma campanha de remarketing (M/Q) detectada. Públicos quentes convertem mais barato — crie remarketing para: visitantes do site 30d, envolvimento IG 90d, lista de clientes.' });
+  }
+
+  // 4. Frequency → audience size problem
+  if (m.freq > 2.5) {
+    items.push({ cls: m.freq > 3.5 ? 'alert' : 'warn', icon: '📏', text: `Frequência ${m.freq.toFixed(1)}x sugere público pequeno ou saturação. ${m.freq > 3.5 ? 'Ação urgente: amplie a segmentação, adicione novos interesses ou expanda o raio geográfico.' : 'Monitore — se subir mais, amplie o público.'}` });
+  }
+
+  // 5. CPM high → possible audience issue
+  const cpmMeta = parseFloat(client.cpm_meta || 0);
+  if (cpmMeta > 0 && m.cpm > cpmMeta * 1.3) {
+    items.push({ cls: 'warn', icon: '💰', text: `CPM ${((m.cpm/cpmMeta-1)*100).toFixed(0)}% acima da meta pode indicar público muito pequeno, concorrência alta no leilão, ou baixa relevância do anúncio para a segmentação escolhida.` });
+  }
+
+  // 6. Strategy data check
+  let stratData = null;
+  if (CURRENT_CLIENT) {
+    const strats = ESTRATEGIAS_DATA || [];
+    const activeStrat = strats.find(s => s.status === 'ativa');
+    if (activeStrat) {
+      const sd = parseStratData(activeStrat);
+      if (sd.publicos && sd.publicos.length > 0) {
+        stratData = sd;
+        const coldHotMix = sd.publicos.some(p => p.temperatura === 'F') && sd.publicos.some(p => p.temperatura === 'Q');
+        if (coldHotMix) {
+          items.push({ cls: 'alert', icon: '🚫', text: 'A estratégia ativa mistura público frio (F) e quente (Q). Separe em conjuntos diferentes para controlar verba e analisar isoladamente.' });
+        }
+        const smallPubs = sd.publicos.filter(p => p.tamanho === 'pequeno');
+        if (smallPubs.length > 0) {
+          items.push({ cls: 'warn', icon: '📍', text: `${smallPubs.length} público${smallPubs.length>1?'s':''} marcado${smallPubs.length>1?'s':''} como pequeno${smallPubs.length>1?'s':''} (<50k). Normal para clientes locais, mas monitore CPM e frequência.` });
+        }
+        const noExclusions = sd.publicos.filter(p => !p.exclusoes || p.exclusoes.trim() === '');
+        if (noExclusions.length > 0 && sd.publicos.length > 1) {
+          items.push({ cls: 'info', icon: '🔄', text: `${noExclusions.length} público${noExclusions.length>1?'s':''} sem exclusões definidas. Configure exclusões para evitar sobreposição e gastar verba em quem já converteu.` });
+        }
+      }
+    }
+  }
+
+  if (!stratData && activeCamps.length > 0) {
+    items.push({ cls: 'warn', icon: '📋', text: 'Nenhuma estratégia ativa com públicos definidos. Vá na aba <strong>Estratégias</strong> e configure os públicos-alvo com temperatura (F/M/Q), tamanho e exclusões.' });
+  }
+
+  // 7. Recommendations by client niche
+  const nicho = client.nicho_ref || '';
+  const bmRef = typeof INDUSTRY_BENCHMARKS !== 'undefined' ? INDUSTRY_BENCHMARKS[nicho] : null;
+  if (bmRef) {
+    items.push({ cls: 'ok', icon: '📊', text: `Benchmark do nicho <strong>${bmRef.label}</strong>: CPM R$ ${bmRef.cpm} · CPC R$ ${bmRef.cpc} · CTR ${bmRef.ctr}% · Hook Rate ${bmRef.hook_rate}% · Connect Rate ${bmRef.connect_rate}%` });
+  }
+
+  if (items.length === 0) {
+    items.push({ cls: 'ok', icon: '✅', text: 'Segmentação sem alertas identificados. Continue monitorando temperatura, tamanho e exclusões dos públicos.' });
+  }
+
+  return `
+    <div class="diag-seg-section">
+      <div class="diag-seg-title">👥 ANÁLISE DE SEGMENTAÇÃO (obrigatória em todo diagnóstico)</div>
+      <div class="diag-seg-grid">
+        ${items.map(it => `
+          <div class="diag-seg-item ${it.cls}">
+            <span class="seg-icon">${it.icon}</span>
+            <span>${it.text}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>`;
+}
+
+// ─── GUIA DE MÉTRICAS: o que significa, onde está o erro, como resolver ───────
+function buildMetricGuide(m, client) {
+  const cpaMeta = parseFloat(client.cpa_meta || 0);
+  const cpmMeta = parseFloat(client.cpm_meta || 0);
+  const ctrMeta = parseFloat(client.ctr_meta || 0);
+  const cpcMeta = parseFloat(client.cpc_meta || 0);
+
+  const metrics = [
+    {
+      key: 'cpm', label: 'CPM', value: `R$ ${m.cpm.toFixed(2)}`, meta: cpmMeta > 0 ? `R$ ${cpmMeta}` : '—',
+      status: cpmMeta > 0 ? (m.cpm <= cpmMeta ? 'ok' : m.cpm <= cpmMeta*1.3 ? 'warn' : 'alert') : 'neutral',
+      meaning: 'Custo por 1.000 impressões. Mede quanto você paga para aparecer.',
+      ifHigh: 'O algoritmo está cobrando caro para exibir seu anúncio. Pode ser público pequeno, baixa relevância ou muita concorrência.',
+      actions: ['Melhore a qualidade do criativo (relevância sobe, CPM cai)', 'Expanda o público se <50k pessoas', 'Combine interesses para audiência mais ampla', 'Rotacione criativos — saturação sobe CPM']
+    },
+    {
+      key: 'ctr', label: 'CTR', value: `${m.ctr.toFixed(2)}%`, meta: ctrMeta > 0 ? `${ctrMeta}%` : '—',
+      status: m.ctr >= (ctrMeta > 0 ? ctrMeta : 1.0) ? 'ok' : m.ctr >= (ctrMeta > 0 ? ctrMeta*0.7 : 0.7) ? 'warn' : 'alert',
+      meaning: 'Taxa de cliques. Mede se o anúncio gera interesse suficiente para a pessoa clicar.',
+      ifHigh: '',
+      ifLow: 'O anúncio aparece mas não convence o clique. Problema no criativo ou no público errado.',
+      actions: ['Reescreva o gancho — primeiros 3s do vídeo ou primeira linha do texto', 'Teste 3+ variações de copy com dores/benefícios distintos', 'Troque o formato (vídeo vs. imagem vs. carrossel)', 'Revise a segmentação — público errado = CTR sempre baixo']
+    },
+    {
+      key: 'cpc', label: 'CPC', value: `R$ ${m.cpc.toFixed(2)}`, meta: cpcMeta > 0 ? `R$ ${cpcMeta}` : '—',
+      status: cpcMeta > 0 ? (m.cpc <= cpcMeta ? 'ok' : m.cpc <= cpcMeta*1.3 ? 'warn' : 'alert') : 'neutral',
+      meaning: 'Custo por clique. Resultado direto de CPM ÷ CTR × 10. Se CPM sobe ou CTR cai, CPC sobe.',
+      ifHigh: 'Está pagando caro por cada clique. O problema está no CTR (criativo fraco) ou no CPM (público caro).',
+      actions: ['Aumente o CTR — copy mais atrativa e criativo competitivo', 'Refine ou amplie a audiência', 'Melhore a oferta mostrada no anúncio', 'Teste formatos diferentes']
+    },
+    {
+      key: 'hook', label: 'Hook Rate', value: m.hookRate > 0 ? `${m.hookRate.toFixed(1)}%` : '—', meta: '>30%',
+      status: m.hookRate > 30 ? 'ok' : m.hookRate > 20 ? 'warn' : m.hookRate > 0 ? 'alert' : 'neutral',
+      meaning: 'Retenção dos primeiros segundos do vídeo. Mede se o gancho prende atenção.',
+      ifLow: 'As pessoas não ficam para ver o vídeo. Os primeiros 3 segundos não estão funcionando.',
+      actions: ['Reescreva a abertura — pergunta direta, dado impactante, demonstração imediata', 'Corte silêncio inicial — comece com energia', 'Teste legendas em movimento nos primeiros 3s', 'Experimente diferentes tipos de abertura']
+    },
+    {
+      key: 'connect', label: 'Connect Rate', value: m.connectRate > 0 ? `${m.connectRate.toFixed(1)}%` : '—', meta: '>25%',
+      status: m.connectRate > 25 ? 'ok' : m.connectRate > 15 ? 'warn' : m.connectRate > 0 ? 'alert' : 'neutral',
+      meaning: '% de cliques que viraram contato (WhatsApp, DM, formulário). Mede a qualidade do destino.',
+      ifLow: 'Pessoas clicam mas não chegam a entrar em contato. Problema fora do gerenciador — no destino.',
+      actions: ['Verifique se o link de WhatsApp está funcionando', 'Revise a mensagem pré-preenchida — clara e natural', 'Alinhe promessa do anúncio com o que o usuário encontra', 'Reduza fricção — botão de contato visível no início']
+    },
+    {
+      key: 'freq', label: 'Frequência', value: `${m.freq.toFixed(2)}x`, meta: '<3.5x',
+      status: m.freq <= 2.5 ? 'ok' : m.freq <= 3.5 ? 'warn' : 'alert',
+      meaning: 'Quantas vezes a mesma pessoa viu o anúncio. Alta frequência = saturação → custos sobem.',
+      ifHigh: 'As mesmas pessoas estão vendo os mesmos anúncios repetidamente. O rendimento cai e o CPM sobe.',
+      actions: ['Suba novos criativos — pelo menos 3 variações', 'Amplie o público (segmentação mais aberta ou novo lookalike)', 'Considere pausar e reativar após 7 dias', 'Exclua quem já converteu do público ativo']
+    },
+    {
+      key: 'cpa', label: 'CPA', value: m.cpa > 0 ? `R$ ${m.cpa.toFixed(2)}` : '—', meta: cpaMeta > 0 ? `R$ ${cpaMeta}` : '—',
+      status: cpaMeta > 0 ? (m.cpa <= cpaMeta ? 'ok' : m.cpa <= cpaMeta*1.2 ? 'warn' : 'alert') : 'neutral',
+      meaning: 'Custo por resultado. A métrica mais importante — quanto custa cada contato, lead ou venda.',
+      ifHigh: 'Está pagando caro demais por cada resultado. Desenhe o funil para identificar onde está perdendo.',
+      actions: ['Mapeie o funil — CPM → CTR → Connect → Conversão', 'Verifique o destino ANTES de mexer no gerenciador', 'Melhore a oferta (mais clara, mais atrativa)', 'Teste criativos e copies novos', 'Ajuste segmentação para públicos mais alinhados']
+    }
+  ];
+
+  if (m.roas > 0) {
+    metrics.push({
+      key: 'roas', label: 'ROAS', value: `${m.roas.toFixed(2)}x`, meta: '>2x',
+      status: m.roas >= 2 ? 'ok' : m.roas >= 1 ? 'warn' : 'alert',
+      meaning: 'Retorno sobre investimento em ads. ROAS 2x = cada R$1 gasto gerou R$2 em receita.',
+      ifLow: m.roas < 1 ? 'Gastando mais do que faturando. Alerta crítico — prioridade máxima.' : 'ROAS abaixo do ideal. Concentre em produtos e públicos mais rentáveis.',
+      actions: ['Concentre investimento em públicos e produtos mais rentáveis', 'Aumente ticket médio (upsell, cross-sell, pacotes)', 'Reduza CPA melhorando funil', 'Pós-conversão: ofereça upgrades e recompra']
+    });
+  }
+
+  const statusIcon = { ok: '✅', warn: '⚠️', alert: '🔴', neutral: '⚪' };
+  const statusLabel = { ok: 'Dentro da meta', warn: 'Atenção', alert: 'Problema', neutral: 'Sem meta' };
+
+  const rows = metrics.map(mt => {
+    const problem = mt.ifHigh || mt.ifLow || '';
+    const showActions = mt.status === 'warn' || mt.status === 'alert';
+    return `
+      <div style="background:var(--surf-1);border:1px solid ${mt.status==='alert'?'rgba(193,84,80,.3)':mt.status==='warn'?'rgba(212,136,15,.3)':'var(--border-light)'};border-radius:var(--radius-lg);padding:16px;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+          <span style="font-size:14px;">${statusIcon[mt.status]}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--txt-primary);">${mt.label}</span>
+          <span style="font-family:var(--mono);font-size:14px;font-weight:600;color:var(--txt-primary);">${mt.value}</span>
+          <span style="font-size:10px;color:var(--txt-muted);">meta: ${mt.meta}</span>
+          <span style="margin-left:auto;font-size:10px;font-weight:600;color:${mt.status==='ok'?'var(--green)':mt.status==='warn'?'var(--yellow)':mt.status==='alert'?'var(--red)':'var(--txt-muted)'};">${statusLabel[mt.status]}</span>
+        </div>
+        <div style="font-size:11px;color:var(--txt-muted);margin-bottom:${showActions?'8':'0'}px;">${mt.meaning}</div>
+        ${showActions && problem ? `<div style="font-size:11px;color:${mt.status==='alert'?'var(--red)':'var(--yellow)'};margin-bottom:8px;font-weight:500;">${problem}</div>` : ''}
+        ${showActions ? `<div style="display:flex;flex-direction:column;gap:3px;">${mt.actions.map((a,i) => `<div style="font-size:11px;color:var(--txt-secondary);display:flex;gap:6px;"><span style="color:var(--accent);font-weight:700;flex-shrink:0;">${i+1}.</span><span>${a}</span></div>`).join('')}</div>` : ''}
+      </div>`;
+  }).join('');
+
+  return `
+    <div style="margin-top:20px;">
+      <div style="font-size:11px;font-weight:700;color:var(--txt-secondary);margin-bottom:12px;letter-spacing:.5px;">📐 MÉTRICAS — STATUS, DIAGNÓSTICO E AÇÕES POR MÉTRICA</div>
+      ${rows}
     </div>`;
 }
 
@@ -5666,7 +6060,10 @@ function renderEstrategiasList() {
   let html = '';
   for (const s of ESTRATEGIAS_DATA) {
     const active = s.id === ESTRATEGIA_CURRENT_ID ? ' active' : '';
-    const preview = (s.conteudo || '').replace(/\n/g, ' ').slice(0, 60) || 'Sem conteúdo...';
+    const d = parseStratData(s);
+    const objLabel = d.objetivo?.tipo ? d.objetivo.tipo.charAt(0).toUpperCase()+d.objetivo.tipo.slice(1) : '';
+    const segCount = (d.publicos||[]).length;
+    const preview = [objLabel, segCount > 0 ? `${segCount} público${segCount>1?'s':''}` : '', d.orcamento?.cpa_meta ? `CPA R$ ${d.orcamento.cpa_meta}` : ''].filter(Boolean).join(' · ') || 'Configurar estratégia...';
     const dateStr = s.updated_at ? new Date(s.updated_at).toLocaleDateString('pt-BR') : '';
     const statusDot = s.status === 'ativa' ? '🟢' : s.status === 'pausada' ? '🟡' : '⚫';
     html += `
@@ -5680,56 +6077,359 @@ function renderEstrategiasList() {
   list.innerHTML = html;
 }
 
+function parseStratData(s) {
+  const def = { objetivo:{tipo:'',detalhe:''}, publicos:[], estrutura:{campanhas:1,conjuntos:5,anuncios:6,nomenclatura:''}, criativos:{ativos:0,prontos:0,calendario:''}, testes:[], orcamento:{diario:'',cpa_meta:'',meta_mensal:''}, oferta:{proposta:'',diferencial:''}, destino:{tipo:'',url:'',mensagem:''}, notas:'' };
+  if (!s.conteudo) return def;
+  try {
+    const d = JSON.parse(s.conteudo);
+    if (d && typeof d === 'object' && !Array.isArray(d)) {
+      d.oferta = d.oferta || {proposta:'',diferencial:''};
+      d.destino = d.destino || {tipo:'',url:'',mensagem:''};
+      return d;
+    }
+  } catch {}
+  return { ...def, notas: s.conteudo || '' };
+}
+
 function selectEstrategia(id) {
   ESTRATEGIA_CURRENT_ID = id;
   const s = ESTRATEGIAS_DATA.find(x => x.id === id);
   if (!s) return;
 
-  renderEstrategiasList(); // update active state
+  renderEstrategiasList();
 
   const editor = document.getElementById('notes-editor');
   if (!editor) return;
 
-  const statusOptions = ['ativa', 'pausada', 'arquivada'];
   const statusLabels = { ativa: 'Ativa', pausada: 'Pausada', arquivada: 'Arquivada' };
   const dateStr = s.updated_at ? new Date(s.updated_at).toLocaleString('pt-BR') : 'Agora';
+  const d = parseStratData(s);
+  const escId = s.id.replace(/'/g, "\\'");
+
+  const pubRows = (d.publicos || []).map((p, i) => stratSegCard(i, p, escId)).join('');
+  const testRows = (d.testes || []).map((t, i) => stratTestRow(i, t, escId)).join('');
+
+  const objOptions = [
+    {v:'conversao',l:'Conversão (WhatsApp/Lead/Formulário)'},
+    {v:'mensagens',l:'Mensagens (Meta Messaging)'},
+    {v:'trafego',l:'Tráfego (Cliques no link)'},
+    {v:'leads',l:'Geração de Cadastros (Lead Ads)'},
+    {v:'alcance',l:'Alcance / Reconhecimento'},
+    {v:'vendas',l:'Vendas (E-commerce / ROAS)'}
+  ];
+
+  const destinoOptions = [
+    {v:'whatsapp',l:'WhatsApp'},
+    {v:'landing_page',l:'Landing Page'},
+    {v:'site',l:'Site / Loja'},
+    {v:'formulario',l:'Formulário (Lead Ad)'},
+    {v:'ligacao',l:'Ligação telefônica'},
+    {v:'dm',l:'Direct Message (Instagram)'}
+  ];
 
   editor.innerHTML = `
     <div class="notes-editor-toolbar">
-      <button class="note-status-badge ${s.status || 'ativa'}" id="note-status-btn" onclick="cycleEstrategiaStatus('${s.id}')">
+      <button class="note-status-badge ${s.status || 'ativa'}" id="note-status-btn" onclick="cycleEstrategiaStatus('${escId}')">
         ${s.status === 'ativa' ? '🟢' : s.status === 'pausada' ? '🟡' : '⚫'} ${statusLabels[s.status || 'ativa']}
       </button>
+      <span class="note-date-display" style="margin-left:8px;">Atualizado em ${dateStr}</span>
       <span style="flex:1;"></span>
-      <button class="btn-small" style="background:transparent; color:var(--red); border-color:var(--red); font-size:11px;" onclick="deleteEstrategia('${s.id}')">🗑 Excluir</button>
+      <button class="btn-small" style="background:transparent;color:var(--red);border-color:var(--red);font-size:11px;" onclick="deleteEstrategia('${escId}')">Excluir</button>
     </div>
     <div class="notes-editor-body">
-      <input
-        class="note-title-input"
-        id="note-title"
-        placeholder="Título da estratégia..."
-        value="${(s.titulo || '').replace(/"/g, '&quot;')}"
-        oninput="scheduleEstrategiaAutosave('${s.id}')"
-      />
-      <div class="note-meta-row">
-        <span class="note-date-display">Atualizado em ${dateStr}</span>
-      </div>
-      <textarea
-        class="note-content-input"
-        id="note-content"
-        placeholder="Escreva aqui sua estratégia...
+      <input class="note-title-input" id="note-title" placeholder="Nome da estratégia..." value="${(s.titulo||'').replace(/"/g,'&quot;')}" oninput="scheduleEstrategiaAutosave('${escId}')"/>
 
-Ex: Objetivo da campanha, público-alvo, criativos planejados, copy usada, orçamento diário, resultados esperados, próximos testes..."
-        oninput="scheduleEstrategiaAutosave('${s.id}')"
-      >${s.conteudo || ''}</textarea>
+      <div class="strat-canvas" id="strat-form">
+
+        <!-- ─── OBJETIVO ─── -->
+        <div class="strat-divider"><span class="strat-divider-icon">🎯</span><span class="strat-divider-title">Objetivo</span></div>
+        <div class="strat-grid">
+          <div>
+            <div class="strat-label">Tipo de objetivo</div>
+            <select class="strat-select" id="strat-obj-tipo" onchange="scheduleEstrategiaAutosave('${escId}')">
+              <option value="">Selecione...</option>
+              ${objOptions.map(o => `<option value="${o.v}" ${d.objetivo?.tipo===o.v?'selected':''}>${o.l}</option>`).join('')}
+            </select>
+          </div>
+          <div class="strat-full">
+            <div class="strat-label">Detalhamento</div>
+            <textarea class="strat-textarea" id="strat-obj-detalhe" placeholder="Ex: Gerar 80 contatos qualificados/mês via WhatsApp para agendamento. CPA máximo R$ 18." oninput="scheduleEstrategiaAutosave('${escId}')">${d.objetivo?.detalhe||''}</textarea>
+          </div>
+        </div>
+
+        <!-- ─── PÚBLICO-ALVO & SEGMENTAÇÃO ─── -->
+        <div class="strat-divider"><span class="strat-divider-icon">👥</span><span class="strat-divider-title">Público-Alvo & Segmentação</span></div>
+        <div class="strat-tip">
+          Nunca misture <strong>frio [F]</strong> com <strong>quente [Q]</strong> no mesmo conjunto. Públicos quentes convertem mais barato — isole-os. Cada público precisa de temperatura, tamanho e exclusões.
+        </div>
+        <div class="seg-list" id="seg-list">
+          ${pubRows || '<div style="font-size:12px;color:var(--txt-muted);text-align:center;padding:16px;">Nenhum público definido — adicione pelo menos um frio [F] e um morno/quente [M/Q]</div>'}
+        </div>
+        <button class="btn-small" onclick="addSegmento('${escId}')" style="align-self:flex-start;margin-top:6px;">+ Adicionar público</button>
+
+        <!-- ─── OFERTA & DESTINO ─── -->
+        <div class="strat-divider"><span class="strat-divider-icon">🔗</span><span class="strat-divider-title">Oferta & Destino</span></div>
+        <div class="strat-tip">
+          Antes de otimizar no gerenciador, <strong>verifique o destino</strong>. Promessa do anúncio diferente da entrega = abandono. A oferta é o que faz a pessoa agir.
+        </div>
+        <div class="strat-grid">
+          <div>
+            <div class="strat-label">Oferta principal</div>
+            <input class="strat-input" id="strat-oferta-proposta" value="${(d.oferta?.proposta||'').replace(/"/g,'&quot;')}" placeholder="Ex: Avaliação gratuita, desconto 1a compra, orçamento sem compromisso" oninput="scheduleEstrategiaAutosave('${escId}')">
+          </div>
+          <div>
+            <div class="strat-label">Diferencial do cliente</div>
+            <input class="strat-input" id="strat-oferta-diferencial" value="${(d.oferta?.diferencial||'').replace(/"/g,'&quot;')}" placeholder="Ex: Única clínica com laser na região, 15 anos de experiência" oninput="scheduleEstrategiaAutosave('${escId}')">
+          </div>
+          <div>
+            <div class="strat-label">Tipo de destino</div>
+            <select class="strat-select" id="strat-destino-tipo" onchange="scheduleEstrategiaAutosave('${escId}')">
+              <option value="">Selecione...</option>
+              ${destinoOptions.map(o => `<option value="${o.v}" ${d.destino?.tipo===o.v?'selected':''}>${o.l}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <div class="strat-label">URL / Link de destino</div>
+            <input class="strat-input" id="strat-destino-url" value="${(d.destino?.url||'').replace(/"/g,'&quot;')}" placeholder="https://wa.me/5511999999999 ou URL da LP" oninput="scheduleEstrategiaAutosave('${escId}')">
+          </div>
+          <div class="strat-full">
+            <div class="strat-label">Mensagem pré-preenchida (WhatsApp) ou headline do destino</div>
+            <input class="strat-input" id="strat-destino-msg" value="${(d.destino?.mensagem||'').replace(/"/g,'&quot;')}" placeholder="Ex: Olá! Vi o anúncio e gostaria de agendar minha avaliação gratuita." oninput="scheduleEstrategiaAutosave('${escId}')">
+          </div>
+        </div>
+
+        <!-- ─── ESTRUTURA DE CAMPANHA ─── -->
+        <div class="strat-divider"><span class="strat-divider-icon">🏗️</span><span class="strat-divider-title">Estrutura de Campanha</span></div>
+        <div class="strat-tip">
+          Estrutura recomendada: <strong>1 campanha → 5 conjuntos → 6 anúncios</strong> (1-5-6). Nomenclatura traz ROI: dados extraídos rápido = otimizações rápidas.
+        </div>
+        <div class="struct-grid">
+          <div class="struct-card">
+            <div class="strat-label" style="margin-bottom:8px;">Campanhas</div>
+            <input type="number" class="strat-input" id="strat-est-camp" value="${d.estrutura?.campanhas||1}" min="1" max="20" style="text-align:center;font-size:18px;font-weight:700;font-family:var(--mono);" oninput="scheduleEstrategiaAutosave('${escId}')">
+          </div>
+          <div class="struct-card">
+            <div class="strat-label" style="margin-bottom:8px;">Conjuntos / campanha</div>
+            <input type="number" class="strat-input" id="strat-est-conj" value="${d.estrutura?.conjuntos||5}" min="1" max="50" style="text-align:center;font-size:18px;font-weight:700;font-family:var(--mono);" oninput="scheduleEstrategiaAutosave('${escId}')">
+          </div>
+          <div class="struct-card">
+            <div class="strat-label" style="margin-bottom:8px;">Anúncios / conjunto</div>
+            <input type="number" class="strat-input" id="strat-est-ads" value="${d.estrutura?.anuncios||6}" min="1" max="50" style="text-align:center;font-size:18px;font-weight:700;font-family:var(--mono);" oninput="scheduleEstrategiaAutosave('${escId}')">
+          </div>
+        </div>
+        <div style="margin-top:12px;">
+          <div class="strat-label">Padrão de nomenclatura</div>
+          <input class="strat-input" id="strat-est-nome" placeholder="Ex: [CONV] [F] [FEED] Campanha Agosto — Dentista" value="${(d.estrutura?.nomenclatura||'').replace(/"/g,'&quot;')}" oninput="scheduleEstrategiaAutosave('${escId}')">
+          <div class="strat-hint">[OBJETIVO] [TEMPERATURA F/M/Q] [POSICIONAMENTO] [TAG] Descrição</div>
+        </div>
+
+        <!-- ─── CRIATIVOS ─── -->
+        <div class="strat-divider"><span class="strat-divider-icon">🎨</span><span class="strat-divider-title">Criativos</span></div>
+        <div class="strat-grid">
+          <div>
+            <div class="strat-label">Criativos ativos</div>
+            <input type="number" class="strat-input" id="strat-cri-ativos" value="${d.criativos?.ativos||0}" min="0" oninput="scheduleEstrategiaAutosave('${escId}')">
+            <div class="strat-hint">${(d.criativos?.ativos||0) < 6 ? '⚠ Meta mínima: 6 ativos' : '✓ Dentro da meta'}</div>
+          </div>
+          <div>
+            <div class="strat-label">Prontos para ativar</div>
+            <input type="number" class="strat-input" id="strat-cri-prontos" value="${d.criativos?.prontos||0}" min="0" oninput="scheduleEstrategiaAutosave('${escId}')">
+            <div class="strat-hint">${(d.criativos?.prontos||0) < 6 ? '⚠ Meta mínima: 6 prontos' : '✓ Dentro da meta'}</div>
+          </div>
+          <div class="strat-full">
+            <div class="strat-label">Calendário de criativos</div>
+            <textarea class="strat-textarea" id="strat-cri-cal" placeholder="Ex: Sem 1 — 2 vídeos 15s gancho novo. Sem 2 — 3 carrosséis. Sem 3 — regravar vencedor com final diferente." oninput="scheduleEstrategiaAutosave('${escId}')">${d.criativos?.calendario||''}</textarea>
+          </div>
+        </div>
+
+        <!-- ─── TESTES ─── -->
+        <div class="strat-divider"><span class="strat-divider-icon">🧪</span><span class="strat-divider-title">Testes</span></div>
+        <div class="strat-tip">
+          Cada teste: <strong>hipótese explícita</strong> + <strong>critério de decisão</strong>. Uma variável por teste para preservar causalidade. Defina janela de observação antes de iniciar.
+        </div>
+        <div id="test-list" style="display:flex;flex-direction:column;gap:8px;">
+          ${testRows || '<div style="font-size:12px;color:var(--txt-muted);text-align:center;padding:12px;">Nenhum teste planejado</div>'}
+        </div>
+        <button class="btn-small" onclick="addTeste('${escId}')" style="align-self:flex-start;margin-top:6px;">+ Novo teste</button>
+
+        <!-- ─── ORÇAMENTO & METAS ─── -->
+        <div class="strat-divider"><span class="strat-divider-icon">💰</span><span class="strat-divider-title">Orçamento & Metas</span></div>
+        <div class="strat-grid">
+          <div>
+            <div class="strat-label">Orçamento diário (R$)</div>
+            <input type="number" class="strat-input" id="strat-orc-diario" value="${d.orcamento?.diario||''}" step="0.01" placeholder="50.00" oninput="scheduleEstrategiaAutosave('${escId}')">
+          </div>
+          <div>
+            <div class="strat-label">CPA Meta (R$)</div>
+            <input type="number" class="strat-input" id="strat-orc-cpa" value="${d.orcamento?.cpa_meta||''}" step="0.01" placeholder="25.00" oninput="scheduleEstrategiaAutosave('${escId}')">
+          </div>
+          <div class="strat-full">
+            <div class="strat-label">Meta mensal</div>
+            <input class="strat-input" id="strat-orc-meta" value="${(d.orcamento?.meta_mensal||'').replace(/"/g,'&quot;')}" placeholder="Ex: 150 leads qualificados via WhatsApp com CPA ≤ R$ 18" oninput="scheduleEstrategiaAutosave('${escId}')">
+          </div>
+        </div>
+
+        <!-- ─── NOTAS ─── -->
+        <div class="strat-divider"><span class="strat-divider-icon">📝</span><span class="strat-divider-title">Notas</span></div>
+        <textarea class="strat-textarea" id="strat-notas" style="min-height:80px;" placeholder="Contexto do cliente, sazonalidade, particularidades, alinhamentos pendentes..." oninput="scheduleEstrategiaAutosave('${escId}')">${d.notas||''}</textarea>
+
+      </div>
     </div>
   `;
 
-  // Focus on content if title is already filled
-  if (s.titulo) {
-    setTimeout(() => document.getElementById('note-content')?.focus(), 50);
-  } else {
-    setTimeout(() => document.getElementById('note-title')?.focus(), 50);
-  }
+  if (!s.titulo) setTimeout(() => document.getElementById('note-title')?.focus(), 50);
+}
+
+function toggleStratSection(secId) {
+  document.getElementById(secId)?.classList.toggle('collapsed');
+}
+
+function stratSegCard(i, p, escId) {
+  const temps = [{v:'F',l:'Frio'},{v:'M',l:'Morno'},{v:'Q',l:'Quente'}];
+  const sizes = [{v:'pequeno',l:'Pequeno (<50k)'},{v:'medio',l:'Médio (50k–500k)'},{v:'grande',l:'Grande (>500k)'}];
+  return `
+    <div class="seg-card" data-seg-idx="${i}">
+      <div class="seg-card-header">
+        <span class="seg-temp-badge ${p.temperatura||'F'}">${p.temperatura||'F'}</span>
+        <input class="strat-input" style="flex:1;" data-seg-field="nome" value="${(p.nome||'').replace(/"/g,'&quot;')}" placeholder="Nome do público (ex: Lookalike 1% compradores)" oninput="scheduleEstrategiaAutosave('${escId}')">
+        <button class="seg-remove" onclick="removeSegmento(${i},'${escId}')">✕</button>
+      </div>
+      <div class="seg-card-fields">
+        <div>
+          <div class="strat-label">Temperatura</div>
+          <select class="strat-select" data-seg-field="temperatura" onchange="updateSegBadge(this,${i});scheduleEstrategiaAutosave('${escId}')">
+            ${temps.map(t => `<option value="${t.v}" ${(p.temperatura||'F')===t.v?'selected':''}>${t.v} — ${t.l}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <div class="strat-label">Tamanho estimado</div>
+          <select class="strat-select" data-seg-field="tamanho" onchange="scheduleEstrategiaAutosave('${escId}')">
+            ${sizes.map(sz => `<option value="${sz.v}" ${(p.tamanho||'medio')===sz.v?'selected':''}>${sz.l}</option>`).join('')}
+          </select>
+        </div>
+        <div style="grid-column:1/-1;">
+          <div class="strat-label">Descrição (interesses, comportamentos, segmentação)</div>
+          <input class="strat-input" data-seg-field="descricao" value="${(p.descricao||'').replace(/"/g,'&quot;')}" placeholder="Ex: Mulheres 25-45, interesse em estética, raio 15km" oninput="scheduleEstrategiaAutosave('${escId}')">
+        </div>
+        <div style="grid-column:1/-1;">
+          <div class="strat-label">Exclusões</div>
+          <input class="strat-input" data-seg-field="exclusoes" value="${(p.exclusoes||'').replace(/"/g,'&quot;')}" placeholder="Ex: Clientes atuais, quem já converteu nos últimos 30d" oninput="scheduleEstrategiaAutosave('${escId}')">
+        </div>
+      </div>
+    </div>`;
+}
+
+function updateSegBadge(sel, idx) {
+  const card = sel.closest('.seg-card');
+  if (!card) return;
+  const badge = card.querySelector('.seg-temp-badge');
+  if (badge) { badge.textContent = sel.value; badge.className = `seg-temp-badge ${sel.value}`; }
+}
+
+function addSegmento(escId) {
+  const d = collectStratData();
+  d.publicos = d.publicos || [];
+  d.publicos.push({ nome:'', temperatura:'F', tamanho:'medio', descricao:'', exclusoes:'' });
+  applyStratDataToForm(d, escId);
+}
+
+function removeSegmento(idx, escId) {
+  const d = collectStratData();
+  d.publicos.splice(idx, 1);
+  applyStratDataToForm(d, escId);
+}
+
+function stratTestRow(i, t, escId) {
+  const statuses = ['planejado','rodando','concluido'];
+  return `
+    <div class="test-row" data-test-idx="${i}">
+      <input class="strat-input" data-test-field="hipotese" value="${(t.hipotese||'').replace(/"/g,'&quot;')}" placeholder="Hipótese: se trocar o gancho para pergunta, CTR sobe >2%" oninput="scheduleEstrategiaAutosave('${escId}')">
+      <input class="strat-input" data-test-field="variavel" value="${(t.variavel||'').replace(/"/g,'&quot;')}" placeholder="Variável" oninput="scheduleEstrategiaAutosave('${escId}')">
+      <input class="strat-input" data-test-field="metrica" value="${(t.metrica||'').replace(/"/g,'&quot;')}" placeholder="Métrica" oninput="scheduleEstrategiaAutosave('${escId}')">
+      <select class="strat-select test-status ${t.status||'planejado'}" data-test-field="status" onchange="this.className='strat-select test-status '+this.value;scheduleEstrategiaAutosave('${escId}')">
+        ${statuses.map(st => `<option value="${st}" ${(t.status||'planejado')===st?'selected':''}>${st[0].toUpperCase()+st.slice(1)}</option>`).join('')}
+      </select>
+      <button class="seg-remove" onclick="removeTeste(${i},'${escId}')">✕</button>
+    </div>`;
+}
+
+function addTeste(escId) {
+  const d = collectStratData();
+  d.testes = d.testes || [];
+  d.testes.push({ hipotese:'', variavel:'', metrica:'', status:'planejado' });
+  applyStratDataToForm(d, escId);
+}
+
+function removeTeste(idx, escId) {
+  const d = collectStratData();
+  d.testes.splice(idx, 1);
+  applyStratDataToForm(d, escId);
+}
+
+function applyStratDataToForm(d, escId) {
+  const s = ESTRATEGIAS_DATA.find(x => x.id === ESTRATEGIA_CURRENT_ID);
+  if (!s) return;
+  s.conteudo = JSON.stringify(d);
+  s.updated_at = new Date().toISOString();
+  if (CURRENT_CLIENT) localStorage.setItem(`estrategias_${CURRENT_CLIENT.id}`, JSON.stringify(ESTRATEGIAS_DATA));
+  try { SB.from('estrategias_cliente').update({ conteudo: s.conteudo, updated_at: s.updated_at }).eq('id', s.id); } catch(e) {}
+  selectEstrategia(s.id);
+}
+
+function collectStratData() {
+  const form = document.getElementById('strat-form');
+  if (!form) return parseStratData({});
+
+  const segCards = form.querySelectorAll('.seg-card');
+  const publicos = [];
+  segCards.forEach(card => {
+    const p = {};
+    card.querySelectorAll('[data-seg-field]').forEach(el => { p[el.dataset.segField] = el.value; });
+    publicos.push(p);
+  });
+
+  const testRows = form.querySelectorAll('.test-row');
+  const testes = [];
+  testRows.forEach(row => {
+    const t = {};
+    row.querySelectorAll('[data-test-field]').forEach(el => { t[el.dataset.testField] = el.value; });
+    testes.push(t);
+  });
+
+  return {
+    objetivo: {
+      tipo: form.querySelector('#strat-obj-tipo')?.value || '',
+      detalhe: form.querySelector('#strat-obj-detalhe')?.value || ''
+    },
+    publicos,
+    estrutura: {
+      campanhas: parseInt(form.querySelector('#strat-est-camp')?.value) || 1,
+      conjuntos: parseInt(form.querySelector('#strat-est-conj')?.value) || 5,
+      anuncios: parseInt(form.querySelector('#strat-est-ads')?.value) || 6,
+      nomenclatura: form.querySelector('#strat-est-nome')?.value || ''
+    },
+    criativos: {
+      ativos: parseInt(form.querySelector('#strat-cri-ativos')?.value) || 0,
+      prontos: parseInt(form.querySelector('#strat-cri-prontos')?.value) || 0,
+      calendario: form.querySelector('#strat-cri-cal')?.value || ''
+    },
+    testes,
+    orcamento: {
+      diario: form.querySelector('#strat-orc-diario')?.value || '',
+      cpa_meta: form.querySelector('#strat-orc-cpa')?.value || '',
+      meta_mensal: form.querySelector('#strat-orc-meta')?.value || ''
+    },
+    oferta: {
+      proposta: form.querySelector('#strat-oferta-proposta')?.value || '',
+      diferencial: form.querySelector('#strat-oferta-diferencial')?.value || ''
+    },
+    destino: {
+      tipo: form.querySelector('#strat-destino-tipo')?.value || '',
+      url: form.querySelector('#strat-destino-url')?.value || '',
+      mensagem: form.querySelector('#strat-destino-msg')?.value || ''
+    },
+    notas: form.querySelector('#strat-notas')?.value || ''
+  };
 }
 
 function scheduleEstrategiaAutosave(id) {
@@ -5739,7 +6439,8 @@ function scheduleEstrategiaAutosave(id) {
 
 async function saveEstrategiaInline(id) {
   const titulo = document.getElementById('note-title')?.value || '';
-  const conteudo = document.getElementById('note-content')?.value || '';
+  const structData = collectStratData();
+  const conteudo = JSON.stringify(structData);
   const idx = ESTRATEGIAS_DATA.findIndex(x => x.id === id);
   if (idx < 0) return;
 
@@ -5747,12 +6448,10 @@ async function saveEstrategiaInline(id) {
   ESTRATEGIAS_DATA[idx].conteudo = conteudo;
   ESTRATEGIAS_DATA[idx].updated_at = new Date().toISOString();
 
-  // Try Supabase
   try {
     await SB.from('estrategias_cliente').update({ titulo, conteudo, updated_at: new Date().toISOString() }).eq('id', id);
   } catch(e) {}
 
-  // Always save to localStorage as backup
   if (CURRENT_CLIENT) {
     localStorage.setItem(`estrategias_${CURRENT_CLIENT.id}`, JSON.stringify(ESTRATEGIAS_DATA));
   }
@@ -7057,12 +7756,13 @@ const CL_DIARIO = [
     items: [
       { key: 'a1', label: '📊 Abrir Meta Ads: checar gasto total de cada cliente vs. orçamento diário (pacing)' },
       { key: 'a2', label: '🎯 Verificar CPA de todas as campanhas ativas vs. meta de cada cliente' },
-      { key: 'a3', label: '📉 Checar CPM e CTR das principais campanhas (identificar quedas repentinas)' },
+      { key: 'a3', label: '📉 Checar CPM e CTR — CPM subiu: público saturado ou criativo fraco; CTR caiu: testar novo gancho ou copy' },
       { key: 'a4', label: '⏱️ Pacing acelerado? (campanha gastando tudo antes das 23h → diminuir orçamento/lance)' },
       { key: 'a5', label: '🔔 Verificar notificações e alertas críticos no BM (Meta) e Google Ads' },
       { key: 'a6', label: '📈 Checar leads, conversões e contatos gerados pelo dia anterior (por cliente)' },
       { key: 'a7', label: '🔍 Google Ads: verificar Quality Score, palavras com maior gasto e anúncios em reprovação' },
       { key: 'a8', label: '💬 Responder mensagens urgentes de clientes (WhatsApp / e-mail)' },
+      { key: 'a9', label: '💰 Verificar ROAS de campanhas de venda — se < 2x: avaliar funil e redistribuir verba' },
     ]
   },
   {
@@ -7075,6 +7775,8 @@ const CL_DIARIO = [
       { key: 'g5', label: '💰 Ajustar orçamentos: aumentar em conjuntos com CPA dentro da meta, diminuir nos acima' },
       { key: 'g6', label: '🎨 Subir criativos novos ou variações se identificou saturação ou CTR baixo' },
       { key: 'g7', label: '📝 Documentar TODAS as ações realizadas: data, o que foi feito, e por quê (diário do sistema)' },
+      { key: 'g8', label: '🎬 Checar Hook Rate dos vídeos — se < 25%: reescrever abertura (pergunta, dado chocante, demo)' },
+      { key: 'g9', label: '📦 Conferir estoque de criativos por cliente (regra 6+6) — se abaixo: agendar produção' },
     ]
   },
   {
@@ -7097,6 +7799,7 @@ const CL_SEMANAL = [
       { key: 's4', label: '🔗 Verificar Connect Rate: % de cliques que viraram contatos vs. meta (problema = destino fraco)' },
       { key: 's5', label: '🗺️ Mapear funil completo de cada cliente e localizar o principal gargalo da semana' },
       { key: 's6', label: '👥 Analisar qualidade dos leads gerados: perfil correto? segmentação precisa de ajuste?' },
+      { key: 's7', label: '💰 Analisar ROAS semanal por cliente — identificar campanhas rentáveis para escalar' },
     ]
   },
   {
@@ -7108,6 +7811,8 @@ const CL_SEMANAL = [
       { key: 'o4', label: '✅ Verificar pixels, eventos de conversão e rastreamento de todos os clientes' },
       { key: 'o5', label: '✏️ Testar nova copy ou ângulo para clientes com CTR abaixo do esperado' },
       { key: 'o6', label: '📐 Checar nomenclatura de campanhas/conjuntos/anúncios (padrão IDX: [OBJ][TEMP][POS] Descrição)' },
+      { key: 'o7', label: '📦 Auditar estoque de criativos: 6 rodando + 6 prontos por cliente (regra 6+6)' },
+      { key: 'o8', label: '📊 Comparar métricas da semana com benchmarks do nicho e recalibrar metas se necessário' },
     ]
   },
   {
@@ -7138,6 +7843,8 @@ const CL_MENSAL = [
       { key: 'm3', label: '🏆 Identificar o anúncio vencedor (melhor CPA + volume) de cada cliente no mês' },
       { key: 'm4', label: '🔎 Analisar padrão: o que os clientes com melhor resultado têm em comum? E os piores?' },
       { key: 'm5', label: '🗃️ Registrar métricas no histórico do sistema (aba Histórico de cada cliente)' },
+      { key: 'm6', label: '💰 Calcular ROAS mensal de cada cliente — ranquear campanhas por rentabilidade' },
+      { key: 'm7', label: '📐 Atualizar benchmarks de cada cliente com médias do mês para referência futura' },
     ]
   },
   {
