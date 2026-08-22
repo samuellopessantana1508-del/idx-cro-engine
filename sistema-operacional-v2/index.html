@@ -2005,7 +2005,7 @@ textarea:focus-visible {
         <label>Telefone / WhatsApp</label>
         <input type="text" id="mc-phone" placeholder="11 99999-9999">
       </div>
-      <div class="form-group" style="margin:0;">
+      <div class="form-group fee-admin-only" style="margin:0;">
         <label>Fee Mensal (R$)</label>
         <input type="number" id="mc-fee" placeholder="1500" step="50">
       </div>
@@ -2285,7 +2285,7 @@ textarea:focus-visible {
       <label>Tempo (meses de relacionamento): <span id="peso-tempo-val">25</span>%</label>
       <input type="range" id="peso-tempo" min="0" max="100" value="25" oninput="updatePesoDisplay()">
     </div>
-    <div class="form-group">
+    <div class="form-group fee-admin-only">
       <label>Fee Mensal: <span id="peso-fee-val">40</span>%</label>
       <input type="range" id="peso-fee" min="0" max="100" value="40" oninput="updatePesoDisplay()">
     </div>
@@ -2463,6 +2463,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 let SB = null;
 let SESSION = null;
 let USER_ROLE = 'colaborador';
+function isAdmin() { return USER_ROLE === 'admin'; }
 let USER_EMAIL = '';
 let CLIENTES = [];
 let TAREFAS_CACHE = [];
@@ -2850,7 +2851,7 @@ async function loadDashboard() {
 
   try {
     const [{ data: clientes, error: errC }, { data: tarefas }] = await Promise.all([
-      SB.from('clientes').select('*').neq('ativo', false),
+      SB.from('clientes_v').select('*').neq('ativo', false),
       SB.from('client_tasks').select('*, clientes(nome)').eq('concluida', false)
     ]);
     if (errC) throw errC;
@@ -2927,6 +2928,9 @@ async function loadDashboard() {
 
   if (USER_ROLE === 'admin') {
     document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'block');
+    document.querySelectorAll('.fee-admin-only').forEach(el => el.style.display = '');
+  } else {
+    document.querySelectorAll('.fee-admin-only').forEach(el => el.style.display = 'none');
   }
 }
 
@@ -3057,15 +3061,15 @@ function dbRenderKpis() {
 
   dbSetBody('kpis', `
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;">
-      <div class="card" style="text-align:center;">
+      ${isAdmin() ? `<div class="card" style="text-align:center;">
         <div class="card-label">💰 RECEITA MRR</div>
         <div class="card-value" style="color:var(--green);">${fmtR(totalFee)}</div>
         <div style="font-size:10px;color:var(--txt-muted);margin-top:4px;">Projeção 90d: ${fmtR(mrr90)}</div>
-      </div>
+      </div>` : ''}
       <div class="card" style="text-align:center;">
         <div class="card-label">👥 CLIENTES ATIVOS</div>
         <div class="card-value">${ativos}</div>
-        <div style="font-size:10px;color:var(--txt-muted);margin-top:4px;">Ticket médio: ${fmtR(ativos > 0 ? totalFee/ativos : 0)}</div>
+        ${isAdmin() ? `<div style="font-size:10px;color:var(--txt-muted);margin-top:4px;">Ticket médio: ${fmtR(ativos > 0 ? totalFee/ativos : 0)}</div>` : ''}
       </div>
       <div class="card" style="text-align:center;">
         <div class="card-label">⚠️ EM RISCO</div>
@@ -3077,7 +3081,7 @@ function dbRenderKpis() {
         <div class="card-value" style="font-size:18px;">${fmtR(avgCPA)}</div>
         <div style="font-size:10px;color:var(--txt-muted);margin-top:4px;">Média entre clientes</div>
       </div>
-      ${topClient ? `
+      ${topClient && isAdmin() ? `
       <div class="card" style="text-align:center;">
         <div class="card-label">⭐ MAIOR FEE</div>
         <div class="card-value" style="font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${topClient.nome}</div>
@@ -3144,7 +3148,7 @@ function dbRenderFocus() {
           <div style="font-weight:700;font-size:13px;">${c.nome}</div>
           <div style="font-family:var(--mono);font-size:18px;font-weight:800;color:${scoreColor};">${c.score.toFixed(1)}</div>
         </div>
-        <div style="font-size:11px;color:var(--txt-muted);">${c.nicho||'—'} • ${fmtR(parseFloat(c.fee_mensal||0))}/mês</div>
+        <div style="font-size:11px;color:var(--txt-muted);">${c.nicho||'—'}${isAdmin() ? ' • '+fmtR(parseFloat(c.fee_mensal||0))+'/mês' : ''}</div>
         ${tasks.length > 0 ? `<div style="margin-top:8px;font-size:11px;color:var(--yellow);">⚠ ${tasks.length} tarefa${tasks.length>1?'s':''} em atraso</div>` : ''}
       </div>`;
   }
@@ -3161,11 +3165,11 @@ function dbRenderCharts() {
   }
 
   dbSetBody('charts', `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
-      <div>
+    <div style="display:grid;grid-template-columns:${isAdmin() ? '1fr 1fr' : '1fr'};gap:20px;">
+      ${isAdmin() ? `<div>
         <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--txt-muted);margin-bottom:10px;">FEE POR CLIENTE (R$)</div>
         <canvas id="chart-fee" height="200"></canvas>
-      </div>
+      </div>` : ''}
       <div>
         <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--txt-muted);margin-bottom:10px;">CPA REAL vs META</div>
         <canvas id="chart-cpa" height="200"></canvas>
@@ -3184,17 +3188,19 @@ function dbRenderCharts() {
       y: { ticks: { color: '#7D8794', font: { size: 10 }, callback: v => 'R$'+v.toLocaleString('pt-BR') }, grid: { color: '#1B2430' } }
     }};
 
-    const ctxFee = document.getElementById('chart-fee');
-    if (ctxFee) {
-      if (ctxFee._ci) ctxFee._ci.destroy();
-      ctxFee._ci = new Chart(ctxFee, {
-        type: 'bar',
-        data: {
-          labels,
-          datasets: [{ data: fees, backgroundColor: fees.map((_,i) => i===0?'#3FAE6B':'#4B5C73'), borderRadius: 4 }]
-        },
-        options: { ...chartCfg }
-      });
+    if (isAdmin()) {
+      const ctxFee = document.getElementById('chart-fee');
+      if (ctxFee) {
+        if (ctxFee._ci) ctxFee._ci.destroy();
+        ctxFee._ci = new Chart(ctxFee, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{ data: fees, backgroundColor: fees.map((_,i) => i===0?'#3FAE6B':'#4B5C73'), borderRadius: 4 }]
+          },
+          options: { ...chartCfg }
+        });
+      }
     }
 
     const cpaClientes = sorted.filter(c => parseFloat(c.cpa_real||0) > 0 || parseFloat(c.cpa_meta||0) > 0);
@@ -3254,7 +3260,7 @@ function dbRenderComparativo() {
           <div style="font-weight:600;">${c.nome}</div>
           <div style="font-size:10px;color:var(--txt-muted);">${c.nicho||'—'}</div>
         </td>
-        <td style="font-family:var(--mono);color:var(--green);font-weight:600;">${fmtR(fee)}</td>
+        ${isAdmin() ? `<td style="font-family:var(--mono);color:var(--green);font-weight:600;">${fmtR(fee)}</td>` : ''}
         <td style="font-family:var(--mono);">${cpaStatus} ${cpaReal > 0 ? fmtR(cpaReal) : '—'}</td>
         <td style="font-family:var(--mono);font-size:11px;color:var(--txt-muted);">${cpaMeta > 0 ? fmtR(cpaMeta) : '—'}</td>
         <td style="font-family:var(--mono);">${ctr > 0 ? fmtP(ctr) : '—'}</td>
@@ -3273,7 +3279,7 @@ function dbRenderComparativo() {
         <thead>
           <tr>
             <th>CLIENTE</th>
-            <th>FEE</th>
+            ${isAdmin() ? '<th>FEE</th>' : ''}
             <th>CPA REAL</th>
             <th>CPA META</th>
             <th>CTR</th>
@@ -3387,9 +3393,9 @@ function dbRenderRanking() {
         <div style="background:var(--bg-accent);border-radius:3px;height:3px;margin-bottom:8px;overflow:hidden;">
           <div style="width:${pct}%;background:${sc};height:100%;border-radius:3px;"></div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;font-size:10px;color:var(--txt-muted);">
+        <div style="display:grid;grid-template-columns:${isAdmin() ? '1fr 1fr 1fr' : '1fr 1fr'};gap:4px;font-size:10px;color:var(--txt-muted);">
           <div>Tempo: <strong style="color:var(--txt-secondary);">${(nT*SCORE_PESOS.tempo/100).toFixed(2)}</strong></div>
-          <div>Fee: <strong style="color:var(--txt-secondary);">${(nF*SCORE_PESOS.fee/100).toFixed(2)}</strong></div>
+          ${isAdmin() ? `<div>Fee: <strong style="color:var(--txt-secondary);">${(nF*SCORE_PESOS.fee/100).toFixed(2)}</strong></div>` : ''}
           <div>Resultado: <strong style="color:var(--txt-secondary);">${(nR*SCORE_PESOS.resultado/100).toFixed(2)}</strong></div>
         </div>
       </div>`;
@@ -3429,7 +3435,7 @@ async function loadClientes() {
   content.innerHTML = '<div class="meta-loading"><div class="loader"></div><div>Carregando clientes...</div></div>';
 
   try {
-    const { data, error } = await SB.from('clientes').select('*').neq('ativo', false).order('nome', { ascending: true });
+    const { data, error } = await SB.from('clientes_v').select('*').neq('ativo', false).order('nome', { ascending: true });
     if (error) throw error;
     CLIENTES = data || [];
 
@@ -3486,10 +3492,10 @@ function renderClienteGrid() {
           </div>
           <div class="client-badge">${badge}</div>
         </div>
-        <div class="client-info-row">
+        ${isAdmin() ? `<div class="client-info-row">
           <span class="client-info-label">Fee:</span>
           <span class="client-info-value">${fmtR(c.fee_mensal)}</span>
-        </div>
+        </div>` : ''}
         <div class="client-info-row">
           <span class="client-info-label">Atividades abertas:</span>
           <span class="client-info-value">${openTasks.length}${overdueTasks ? ` · ${overdueTasks} em atraso` : ''}</span>
@@ -3707,10 +3713,10 @@ function renderClientGeral(content) {
           <div class="card-label">DATA INÍCIO</div>
           <div style="font-weight:500;">${fmtDate(c.data_inicio) || '—'}</div>
         </div>
-        <div class="card">
+        ${isAdmin() ? `<div class="card">
           <div class="card-label">FEE MENSAL</div>
           <div style="font-weight:500;">${fmtR(c.fee_mensal)}</div>
-        </div>
+        </div>` : ''}
         <div class="card">
           <div class="card-label">SCORE GERAL</div>
           <div style="font-weight:500; color:var(--accent);">${calcScore(c, Math.max(...CLIENTES.map(x => parseFloat(x.fee_mensal || 0))), SCORE_PESOS).toFixed(1)}</div>
