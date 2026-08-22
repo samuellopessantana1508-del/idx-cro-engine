@@ -2303,8 +2303,8 @@ textarea:focus-visible {
 
 <script>
 // ===== CONFIG & GLOBALS =====
-const SUPABASE_URL = 'https://skkagtyesvtiujjszktu.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNra2FndHllc3Z0aXVqanN6a3R1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3MDAwMDgsImV4cCI6MjA5MTI3NjAwOH0.ndrbz9fnHEbPidqWK5NPMsFpiUhOKusDCiKzioxXItY';
+const SUPABASE_URL = 'https://qrguvaajioqndrruxkpi.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFyZ3V2YWFqaW9xbmRycnV4a3BpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODczNjIzNjIsImV4cCI6MjEwMjkzODM2Mn0.h3blXP_ArVYi8rl_cMdeXcAgzZVyGIF2rQZ4KZ0OG_w';
 
 let SB = null;
 let SESSION = null;
@@ -2521,28 +2521,21 @@ async function initApp() {
 
 async function loadUserRole() {
   try {
-    const { data } = await SB.from('user_profiles')
+    const { data, error } = await SB.from('user_profiles')
       .select('role, configuracoes')
       .eq('id', SESSION.user.id)
       .single();
-    if (data) {
-      USER_ROLE = data.role || 'admin';
-      if (data.configuracoes?.score_pesos) {
-        SCORE_PESOS = data.configuracoes.score_pesos;
-      }
-    } else {
-      // Se não tem perfil ainda, cria como admin
-      USER_ROLE = 'admin';
-      await SB.from('user_profiles').upsert({
-        id: SESSION.user.id,
-        email: SESSION.user.email,
-        nome: SESSION.user.email.split('@')[0],
-        role: 'admin'
-      });
+    if (error || !data) {
+      throw new Error('Este usuário não foi autorizado na equipe IDX.');
+    }
+    USER_ROLE = data.role || 'colaborador';
+    if (data.configuracoes?.score_pesos) {
+      SCORE_PESOS = data.configuracoes.score_pesos;
     }
   } catch(e) {
-    console.warn('Perfil não encontrado, usando admin padrão:', e.message);
-    USER_ROLE = 'admin';
+    USER_ROLE = 'colaborador';
+    await SB.auth.signOut();
+    throw e;
   }
 }
 
@@ -3746,7 +3739,7 @@ async function loadMetaDashboard(clientId) {
   try {
     const { data: metaAccount, error: metaAccountError } = await SB
       .from('client_meta_accounts')
-      .select('ad_account_id, access_token')
+      .select('ad_account_id, ad_account_name')
       .eq('client_id', clientId)
       .eq('ativo', true)
       .single();
@@ -3755,7 +3748,7 @@ async function loadMetaDashboard(clientId) {
       throw new Error('Erro ao buscar conta Meta: ' + metaAccountError.message);
     }
 
-    if (!metaAccount?.ad_account_id || !metaAccount?.access_token) {
+    if (!metaAccount?.ad_account_id) {
       META_STATE.data = null;
       META_STATE.compareData = null;
       renderMetaEmptyState('Conta Meta não configurada', 'Abra Configurar, informe o Ad Account ID e um token com permissão ads_read para carregar dados reais.');
@@ -3763,18 +3756,9 @@ async function loadMetaDashboard(clientId) {
     }
 
     META_STATE.accountId = metaAccount.ad_account_id;
-    META_STATE.token = metaAccount.access_token;
-
-    try {
-      META_STATE.data = await loadMetaViaProxy(clientId, startDate, endDate, compareStart, compareEnd);
-      META_STATE.compareData = compareStart ? { insights: META_STATE.data.compare_insights || [], campaigns: [] } : null;
-    } catch(proxyError) {
-      console.warn('[IDX] meta-proxy falhou, tentando Graph API direta:', proxyError.message);
-      META_STATE.data = await loadMetaDirect(metaAccount, startDate, endDate);
-      META_STATE.compareData = compareStart && compareEnd
-        ? { insights: (await loadMetaDirect(metaAccount, compareStart, compareEnd, { summaryOnly: true })).insights || [], campaigns: [] }
-        : null;
-    }
+    META_STATE.token = null;
+    META_STATE.data = await loadMetaViaProxy(clientId, startDate, endDate, compareStart, compareEnd);
+    META_STATE.compareData = compareStart ? { insights: META_STATE.data.compare_insights || [], campaigns: [] } : null;
 
     renderMetaDashboard(clientId);
   } catch(e) {
@@ -8507,28 +8491,12 @@ async function saveMetaAccount() {
   const adAccountId = accountId.startsWith('act_') ? accountId : 'act_' + accountId;
 
   try {
-    // Verificar se já existe conta para este cliente
-    const { data: existing } = await SB.from('client_meta_accounts')
-      .select('id').eq('client_id', CURRENT_CLIENT.id).single();
-
-    let error;
-    if (existing) {
-      ({ error } = await SB.from('client_meta_accounts').update({
-        ad_account_id: adAccountId,
-        ad_account_name: name || adAccountId,
-        access_token: token,
-        ativo: true,
-        updated_at: new Date().toISOString()
-      }).eq('id', existing.id));
-    } else {
-      ({ error } = await SB.from('client_meta_accounts').insert({
-        client_id: CURRENT_CLIENT.id,
-        ad_account_id: adAccountId,
-        ad_account_name: name || adAccountId,
-        access_token: token,
-        ativo: true
-      }));
-    }
+    const { error } = await SB.rpc('save_client_meta_account', {
+      p_client_id: CURRENT_CLIENT.id,
+      p_ad_account_id: adAccountId,
+      p_ad_account_name: name || adAccountId,
+      p_access_token: token
+    });
 
     if (error) throw error;
 
@@ -8742,7 +8710,9 @@ async function saveMetricsMonth() {
   };
 
   try {
-    const { error } = await SB.from('metricas_mensais').insert(record);
+    const { error } = await SB.from('metricas_mensais').upsert(record, {
+      onConflict: 'client_id,ano,mes'
+    });
     if (error) throw error;
     showToast(`✅ Métricas de ${mes.toString().padStart(2,'0')}/${ano} salvas`, 'success');
   } catch(e) {
@@ -8889,7 +8859,7 @@ const META_GUIDE_STEPS = [
       <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
         <div style="display:flex;gap:12px;align-items:flex-start;">
           <div style="background:var(--accent);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px;">1</div>
-          <div>Acesse <a href="https://supabase.com/dashboard/project/skkagtyesvtiujjszktu/settings/vault" target="_blank" style="color:var(--accent);">Supabase → Settings → Vault (Secrets)</a>.</div>
+          <div>Acesse <a href="https://supabase.com/dashboard/project/qrguvaajioqndrruxkpi/settings/vault" target="_blank" style="color:var(--accent);">Supabase → Settings → Vault (Secrets)</a>.</div>
         </div>
         <div style="display:flex;gap:12px;align-items:flex-start;">
           <div style="background:var(--accent);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px;">2</div>
@@ -8911,7 +8881,7 @@ const META_GUIDE_STEPS = [
       </div>
       <div style="display:flex;gap:12px;align-items:flex-start;">
         <div style="background:var(--accent);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px;">3</div>
-        <div>Após salvar os segredos, acesse <a href="https://supabase.com/dashboard/project/skkagtyesvtiujjszktu/functions" target="_blank" style="color:var(--accent);">Edge Functions</a> e <strong>faça redeploy</strong> das funções <code>meta-proxy</code> e <code>send-report</code> para que elas leiam os novos segredos.</div>
+        <div>Após salvar os segredos, acesse <a href="https://supabase.com/dashboard/project/qrguvaajioqndrruxkpi/functions" target="_blank" style="color:var(--accent);">Edge Functions</a> e <strong>faça redeploy</strong> das funções <code>meta-proxy</code> e <code>send-report</code> para que elas leiam os novos segredos.</div>
       </div>
     `
   },

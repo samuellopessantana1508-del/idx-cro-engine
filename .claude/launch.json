@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "idx-sistema-operacional",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "sistema-operacional-v2", "-l", "3333", "--no-clipboard"],
+      "port": 3333
+    }
+  ]
+}

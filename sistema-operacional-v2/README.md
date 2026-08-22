@@ -33,11 +33,21 @@ ao IDX CRO Engine hospedado no domínio principal.
 
 ## Banco de dados
 
-Esta melhoria não altera o esquema. Ela mantém as tabelas já consumidas pelo sistema,
-principalmente `clientes`, `client_tasks` e `rotina_cliente_execucoes`.
+O esquema completo reconstruído está em
+`supabase/migrations/20260822020000_create_idx_operational_database.sql`. Ele cria as
+10 tabelas consumidas pelo módulo, índices, relacionamentos, validações e políticas
+RLS para que apenas membros autorizados da equipe acessem os dados.
 
 Análises e otimizações exigem cliente e POP com os sete critérios mínimos antes do
 salvamento. Demais tipos de atividade continuam aceitando POP opcional.
+
+O primeiro usuário criado no Auth torna-se administrador. Usuários posteriores só
+recebem acesso quando o administrador registra previamente o e-mail pela função
+`invite_idx_member`; criar uma conta no Auth, por si só, não libera os dados.
+
+Tokens de acesso do Meta não ficam mais em tabela pública nem são enviados ao
+navegador. O sistema grava a credencial pela função `save_client_meta_account`, e a
+leitura fica restrita à integração server-side com papel `service_role`.
 
 ## Demonstração local
 
