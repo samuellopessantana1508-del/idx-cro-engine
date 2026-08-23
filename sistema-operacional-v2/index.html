@@ -2324,8 +2324,10 @@ textarea:focus-visible {
     <div style="background:var(--yellow-bg);border:1px solid var(--yellow);border-radius:var(--radius);padding:10px 12px;font-size:11px;color:var(--yellow);margin-bottom:16px;">
       ⚠ O token será salvo no banco de dados. Use sempre tokens de sistema ou de longa duração (60 dias). Nunca use tokens de sessão curta.
     </div>
+    <div id="meta-test-result" style="display:none;margin-bottom:16px;padding:10px 12px;border-radius:var(--radius);font-size:12px;"></div>
     <div class="modal-footer">
       <button class="btn-secondary" onclick="closeModal('mo-meta-account')">Cancelar</button>
+      <button class="btn-secondary" onclick="testMetaConnection()" style="border-color:var(--accent);color:var(--accent);">Testar Conexão</button>
       <button class="btn-primary" onclick="saveMetaAccount()">Salvar e Conectar</button>
     </div>
   </div>
@@ -2851,7 +2853,7 @@ async function loadDashboard() {
 
   try {
     const [{ data: clientes, error: errC }, { data: tarefas }] = await Promise.all([
-      SB.from('clientes_v').select('*').neq('ativo', false),
+      SB.from('clientes').select('*').neq('ativo', false),
       SB.from('client_tasks').select('*, clientes(nome)').eq('concluida', false)
     ]);
     if (errC) throw errC;
@@ -3435,7 +3437,7 @@ async function loadClientes() {
   content.innerHTML = '<div class="meta-loading"><div class="loader"></div><div>Carregando clientes...</div></div>';
 
   try {
-    const { data, error } = await SB.from('clientes_v').select('*').neq('ativo', false).order('nome', { ascending: true });
+    const { data, error } = await SB.from('clientes').select('*').neq('ativo', false).order('nome', { ascending: true });
     if (error) throw error;
     CLIENTES = data || [];
 
@@ -3924,10 +3926,27 @@ async function loadMetaDashboard(clientId) {
       return;
     }
 
+    const { data: creds, error: credsErr } = await SB.rpc('get_meta_token', { p_client_id: clientId });
+    if (credsErr || !creds?.[0]?.access_token) {
+      renderMetaEmptyState('Token não encontrado', 'Configure o Access Token na tela de Conectar Conta Meta Ads.');
+      return;
+    }
+
     META_STATE.accountId = metaAccount.ad_account_id;
-    META_STATE.token = null;
-    META_STATE.data = await loadMetaViaProxy(clientId, startDate, endDate, compareStart, compareEnd);
-    META_STATE.compareData = compareStart ? { insights: META_STATE.data.compare_insights || [], campaigns: [] } : null;
+    META_STATE.token = creds[0].access_token;
+    META_STATE.data = await loadMetaDirect(
+      { ad_account_id: metaAccount.ad_account_id, access_token: creds[0].access_token },
+      startDate, endDate
+    );
+    if (compareStart && compareEnd) {
+      const cmpData = await loadMetaDirect(
+        { ad_account_id: metaAccount.ad_account_id, access_token: creds[0].access_token },
+        compareStart, compareEnd, { summaryOnly: true }
+      );
+      META_STATE.compareData = { insights: cmpData.insights || [], campaigns: [] };
+    } else {
+      META_STATE.compareData = null;
+    }
 
     renderMetaDashboard(clientId);
   } catch(e) {
@@ -3972,15 +3991,22 @@ async function loadMetaDirect(metaAccount, startDate, endDate, options = {}) {
   const accountId = normalizeMetaAccountId(metaAccount.ad_account_id);
   const token = metaAccount.access_token;
 
-  const [insights, campaigns, campaignInsights, adsetInsights, adInsights] = await Promise.all([
+  const tr = JSON.stringify({ since: startDate, until: endDate });
+  const [insights, accountAggregate, campaigns, campaignInsights, adsetInsights, adInsights, ageGender, placements, devices] = await Promise.all([
     metaGraphGet(`${version}/${accountId}/insights`, {
       fields: 'date_start,date_stop,spend,impressions,reach,clicks,ctr,cpm,cpc,frequency,actions,action_values',
       level: 'account',
       time_increment: '1',
-      time_range: JSON.stringify({ since: startDate, until: endDate }),
+      time_range: tr,
       limit: '500',
       access_token: token
     }),
+    metaGraphGet(`${version}/${accountId}/insights`, {
+      fields: 'spend,impressions,reach,clicks,ctr,cpm,cpc,frequency,actions,action_values',
+      level: 'account',
+      time_range: tr,
+      access_token: token
+    }).catch(() => ({ data: [] })),
     options.summaryOnly ? Promise.resolve({ data: [] }) : metaGraphGet(`${version}/${accountId}/campaigns`, {
       fields: 'id,name,objective,status,effective_status,daily_budget,lifetime_budget',
       limit: '200',
@@ -3989,24 +4015,48 @@ async function loadMetaDirect(metaAccount, startDate, endDate, options = {}) {
     options.summaryOnly ? Promise.resolve({ data: [] }) : metaGraphGet(`${version}/${accountId}/insights`, {
       fields: 'campaign_id,campaign_name,objective,spend,impressions,reach,clicks,ctr,cpm,cpc,frequency,actions,action_values',
       level: 'campaign',
-      time_range: JSON.stringify({ since: startDate, until: endDate }),
+      time_range: tr,
       limit: '500',
       access_token: token
     }),
     options.summaryOnly ? Promise.resolve({ data: [] }) : metaGraphGet(`${version}/${accountId}/insights`, {
       fields: 'campaign_id,campaign_name,adset_id,adset_name,spend,impressions,reach,clicks,ctr,cpm,cpc,frequency,actions',
       level: 'adset',
-      time_range: JSON.stringify({ since: startDate, until: endDate }),
+      time_range: tr,
       limit: '500',
       access_token: token
     }),
     options.summaryOnly ? Promise.resolve({ data: [] }) : metaGraphGet(`${version}/${accountId}/insights`, {
       fields: 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,reach,clicks,ctr,cpm,cpc,frequency,actions',
       level: 'ad',
-      time_range: JSON.stringify({ since: startDate, until: endDate }),
+      time_range: tr,
       limit: '500',
       access_token: token
-    })
+    }),
+    options.summaryOnly ? Promise.resolve({ data: [] }) : metaGraphGet(`${version}/${accountId}/insights`, {
+      fields: 'spend,impressions,clicks,actions,ctr,cpm,cpc',
+      level: 'account',
+      time_range: tr,
+      breakdowns: 'age,gender',
+      limit: '200',
+      access_token: token
+    }).catch(() => ({ data: [] })),
+    options.summaryOnly ? Promise.resolve({ data: [] }) : metaGraphGet(`${version}/${accountId}/insights`, {
+      fields: 'spend,impressions,clicks,actions,ctr,cpm',
+      level: 'account',
+      time_range: tr,
+      breakdowns: 'publisher_platform,platform_position',
+      limit: '200',
+      access_token: token
+    }).catch(() => ({ data: [] })),
+    options.summaryOnly ? Promise.resolve({ data: [] }) : metaGraphGet(`${version}/${accountId}/insights`, {
+      fields: 'spend,impressions,clicks,actions',
+      level: 'account',
+      time_range: tr,
+      breakdowns: 'device_platform',
+      limit: '100',
+      access_token: token
+    }).catch(() => ({ data: [] }))
   ]);
 
   const campaignMap = new Map((campaigns.data || []).map(c => [c.id, c]));
@@ -4018,9 +4068,13 @@ async function loadMetaDirect(metaAccount, startDate, endDate, options = {}) {
     source: 'graph',
     account_id: accountId,
     insights: insights.data || [],
+    aggregate: (accountAggregate.data || [])[0] || null,
     campaigns: campaigns.data || [],
     campaign_insights: campaignRows,
-    pacing: buildMetaPacing(campaigns.data || [], insights.data || [], startDate, endDate)
+    pacing: buildMetaPacing(campaigns.data || [], insights.data || [], startDate, endDate),
+    age_gender: ageGender.data || [],
+    placements: placements.data || [],
+    devices: devices.data || []
   };
 }
 
@@ -4059,7 +4113,7 @@ function getMetaActionCount(row, matchers) {
   let total = 0;
   for (const action of (row.actions || [])) {
     const type = action.action_type || '';
-    if (matchers.some(m => type === m || type.includes(m))) {
+    if (matchers.some(m => type === m)) {
       total += parseFloat(action.value || 0);
     }
   }
@@ -4067,8 +4121,8 @@ function getMetaActionCount(row, matchers) {
 }
 
 function getMetaPrimaryConversion(row) {
-  const msgs = getMetaActionCount(row, ['messaging_conversation_started', 'onsite_conversion.messaging']);
-  const leads = getMetaActionCount(row, ['lead', 'onsite_conversion.lead_grouped']);
+  const msgs = getMetaActionCount(row, ['onsite_conversion.messaging_conversation_started_7d']);
+  const leads = getMetaActionCount(row, ['lead']);
   const purchases = getMetaActionCount(row, ['purchase', 'omni_purchase']);
   if (msgs > 0) return { count: msgs, type: 'MSG' };
   if (leads > 0) return { count: leads, type: 'LEAD' };
@@ -4080,7 +4134,7 @@ function normalizeMetaCampaignRow(row, campaign, adsets, ads) {
   const conv = getMetaPrimaryConversion(row);
   const spend = parseFloat(row.spend || 0);
   const clicks = parseFloat(row.clicks || 0);
-  const connectRate = clicks > 0 ? (getMetaActionCount(row, ['messaging_conversation_started', 'onsite_conversion.messaging']) / clicks) * 100 : 0;
+  const connectRate = clicks > 0 ? (getMetaActionCount(row, ['onsite_conversion.messaging_conversation_started_7d']) / clicks) * 100 : 0;
 
   return {
     campaign_id: row.campaign_id,
@@ -4160,6 +4214,121 @@ function inferMetaTemperature(name = '') {
   return 'F';
 }
 
+function inferFunnelStage(campaignName = '', objective = '') {
+  const n = (campaignName || '').toUpperCase();
+  const o = (objective || '').toUpperCase();
+  if (n.includes('[MOFU]') || n.includes('ENGAJAMENTO') || n.includes('[VV]') || n.includes('VIDEO_VIEW') || o === 'POST_ENGAGEMENT' || o === 'VIDEO_VIEWS') return 'MOFU';
+  if (n.includes('[CONVERSAS]') || n.includes('[LEADS]') || n.includes('[CONVERSÃO]') || n.includes('[BOFU]') || o === 'MESSAGES' || o === 'LEAD_GENERATION' || o === 'CONVERSIONS' || o === 'OUTCOME_SALES') return 'BOFU';
+  if (n.includes('[TRÁFEGO]') || n.includes('[TOFU]') || n.includes('BRANDING') || n.includes('[VISITA') || o === 'REACH' || o === 'BRAND_AWARENESS' || o === 'LINK_CLICKS') return 'TOFU';
+  if (o.includes('MESSAGE') || o.includes('LEAD') || o.includes('CONVER')) return 'BOFU';
+  return 'TOFU';
+}
+
+function calcCreativeScore(ad, cpaMeta) {
+  let score = 50;
+  const ctr = parseFloat(ad.ctr || 0);
+  const cpa = parseFloat(ad.cpa || 0);
+  const freq = parseFloat(ad.freq || 0);
+  const conv = parseInt(ad.conv || 0);
+  const hookRate = parseFloat(ad.hook_rate || 0);
+  if (ctr >= 2) score += 15; else if (ctr >= 1) score += 5; else if (ctr < 0.5) score -= 15;
+  if (cpaMeta > 0 && cpa > 0) { if (cpa <= cpaMeta) score += 20; else if (cpa <= cpaMeta * 1.3) score += 5; else score -= 15; }
+  else if (conv > 0) score += 10;
+  if (freq > 3.5) score -= 20; else if (freq > 2.5) score -= 5;
+  if (hookRate > 30) score += 10; else if (hookRate > 0 && hookRate < 15) score -= 10;
+  if (conv >= 10) score += 10; else if (conv >= 3) score += 5;
+  return Math.max(0, Math.min(100, score));
+}
+
+function creativeVerdict(score) {
+  if (score >= 75) return { label: 'ESCALAR', cls: 'good', icon: '🚀' };
+  if (score >= 55) return { label: 'MANTER', cls: '', icon: '✅' };
+  if (score >= 35) return { label: 'OTIMIZAR', cls: 'warn', icon: '⚠️' };
+  return { label: 'PAUSAR', cls: 'alert', icon: '🛑' };
+}
+
+const META_BI_FILTERS = {
+  criativos: { funnel: 'all', status: 'all', campaign: 'all', sort: 'score', sortDir: 'desc' },
+  campanhas: { funnel: 'all', status: 'all', temp: 'all', sort: 'score', sortDir: 'desc' },
+  conjuntos: { temp: 'all', status: 'all', campaign: 'all', sort: 'score', sortDir: 'desc' }
+};
+
+function setMetaBIFilter(tab, key, value) {
+  META_BI_FILTERS[tab][key] = value;
+  renderMetaSubTab(CURRENT_CLIENT?.id);
+}
+
+function toggleMetaSort(tab, col) {
+  const f = META_BI_FILTERS[tab];
+  if (f.sort === col) f.sortDir = f.sortDir === 'desc' ? 'asc' : 'desc';
+  else { f.sort = col; f.sortDir = 'desc'; }
+  renderMetaSubTab(CURRENT_CLIENT?.id);
+}
+
+function calcCampaignScore(c, cpaMeta) {
+  let score = 50;
+  const ctr = parseFloat(c.ctr || 0);
+  const cpa = parseFloat(c.cpa || 0);
+  const freq = parseFloat(c.frequency || 0);
+  const conv = parseInt(c.conversoes || 0);
+  const spend = parseFloat(c.spend || 0);
+  const connectRate = parseFloat(c.connect_rate || 0);
+  if (ctr >= 2) score += 12; else if (ctr >= 1) score += 5; else if (ctr < 0.5 && spend > 10) score -= 12;
+  if (cpaMeta > 0 && cpa > 0) { if (cpa <= cpaMeta) score += 18; else if (cpa <= cpaMeta * 1.3) score += 5; else score -= 15; }
+  else if (conv > 0) score += 8;
+  if (freq > 3.5) score -= 18; else if (freq > 2.5) score -= 5;
+  if (conv >= 20) score += 12; else if (conv >= 5) score += 5; else if (conv === 0 && spend > 20) score -= 10;
+  if (connectRate > 25) score += 8; else if (connectRate > 0 && connectRate < 10) score -= 8;
+  return Math.max(0, Math.min(100, score));
+}
+
+function calcAdsetScore(as, cpaMeta) {
+  let score = 50;
+  const ctr = parseFloat(as.ctr || 0);
+  const cpa = parseFloat(as.cpa || 0);
+  const freq = parseFloat(as.freq || 0);
+  const conv = parseInt(as.conv || 0);
+  const spend = parseFloat(as.spend || 0);
+  if (ctr >= 2) score += 12; else if (ctr >= 1) score += 5; else if (ctr < 0.5 && spend > 10) score -= 12;
+  if (cpaMeta > 0 && cpa > 0) { if (cpa <= cpaMeta) score += 18; else if (cpa <= cpaMeta * 1.3) score += 5; else score -= 15; }
+  else if (conv > 0) score += 8;
+  if (freq > 3.5) score -= 18; else if (freq > 2.5) score -= 5;
+  if (conv >= 10) score += 12; else if (conv >= 3) score += 5; else if (conv === 0 && spend > 15) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+function biSortHeader(tab, col, label, currentSort, currentDir) {
+  const icon = currentSort === col ? (currentDir === 'desc' ? ' ▼' : ' ▲') : '';
+  return `<th style="cursor:pointer;user-select:none;white-space:nowrap;" onclick="toggleMetaSort('${tab}','${col}')">${label}${icon}</th>`;
+}
+
+function biScoreBadge(score) {
+  const color = score >= 75 ? 'var(--green)' : score >= 55 ? 'var(--accent)' : score >= 35 ? 'var(--yellow)' : 'var(--red)';
+  const v = creativeVerdict(score);
+  return `<div style="display:flex;align-items:center;gap:6px;">
+    <div style="width:28px;height:28px;border-radius:50%;background:${color}22;border:2px solid ${color};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:${color};">${score}</div>
+    <span style="font-size:9px;font-weight:700;letter-spacing:.5px;color:${color};">${v.label}</span>
+  </div>`;
+}
+
+function biFilterBar(tab, filters, options) {
+  const selStyle = 'font-size:11px;padding:4px 8px;border-radius:4px;border:1px solid var(--border-light);background:var(--bg-primary);color:var(--txt-primary);';
+  let html = `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px;padding:10px 12px;background:var(--surf-2);border-radius:var(--radius);border:1px solid var(--border-light);">
+    <span style="font-size:10px;font-weight:700;color:var(--txt-muted);letter-spacing:.5px;margin-right:4px;">FILTROS</span>`;
+  for (const opt of options) {
+    html += `<select onchange="setMetaBIFilter('${tab}','${opt.key}',this.value)" style="${selStyle}${opt.maxW ? 'max-width:'+opt.maxW+';' : ''}">`;
+    for (const [val, label] of opt.choices) {
+      html += `<option value="${val}" ${filters[opt.key]===val?'selected':''}>${label}</option>`;
+    }
+    html += '</select>';
+  }
+  html += `<div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+    <span style="font-size:10px;color:var(--txt-muted);">${options._count || ''}</span>
+    <button class="btn-small" onclick="${options._clearFn}" style="font-size:10px;padding:3px 8px;">Limpar</button>
+  </div></div>`;
+  return html;
+}
+
 function buildMetaPacing(campaigns, insights, startDate, endDate) {
   const activeBudget = campaigns
     .filter(c => ['ACTIVE', 'PAUSED'].includes(c.effective_status || c.status))
@@ -4191,14 +4360,226 @@ function renderMetaEmptyState(title, message) {
 function renderMetaError(error) {
   const content = document.getElementById('meta-content');
   if (!content) return;
+  const msg = error.message || String(error);
+  let diagnosis = '';
+  let solutions = [];
+
+  if (msg.includes('190') || msg.toLowerCase().includes('expired') || msg.toLowerCase().includes('invalid') || msg.toLowerCase().includes('token')) {
+    diagnosis = 'O token de acesso está expirado ou inválido.';
+    solutions = [
+      'Acesse o <a href="https://business.facebook.com/settings/system-users" target="_blank" style="color:var(--accent);">Meta Business Settings</a> → Usuários do sistema',
+      'Selecione o System User e clique em "Gerar token"',
+      'Marque as permissões <code>ads_read</code> e <code>ads_management</code>',
+      'Copie o novo token e cole em ⚙️ Configurar → Token de Acesso',
+      'Use o botão "Testar Conexão" antes de salvar'
+    ];
+  } else if (msg.includes('200') || msg.includes('10') || msg.toLowerCase().includes('permission')) {
+    diagnosis = 'O token não tem permissão para acessar esta conta de anúncios.';
+    solutions = [
+      'Verifique se o System User tem a conta de anúncios atribuída',
+      'No BM: Configurações → Usuários do sistema → selecione o user → Atribuir ativos → Contas de anúncios',
+      'Marque as permissões: Gerenciar campanhas + Ver desempenho',
+      'Gere um novo token após atribuir os ativos'
+    ];
+  } else if (msg.includes('100') || msg.toLowerCase().includes('invalid parameter') || msg.toLowerCase().includes('account')) {
+    diagnosis = 'O ID da conta de anúncios pode estar incorreto.';
+    solutions = [
+      'O ID deve ser numérico (ex: 449617035141777), com ou sem o prefixo "act_"',
+      'Encontre o ID correto no <a href="https://business.facebook.com/settings/ad-accounts" target="_blank" style="color:var(--accent);">Business Manager → Contas de anúncios</a>',
+      'Corrija o ID em ⚙️ Configurar'
+    ];
+  } else if (msg.includes('Acesso negado') || msg.includes('42501')) {
+    diagnosis = 'Seu perfil não tem permissão no banco de dados.';
+    solutions = [
+      'Verifique se seu usuário existe na tabela user_profiles',
+      'Peça ao administrador do sistema para verificar suas permissões'
+    ];
+  } else {
+    diagnosis = 'Erro inesperado na comunicação com a API do Meta.';
+    solutions = [
+      'Verifique sua conexão com a internet',
+      'Tente novamente em alguns minutos',
+      'Se persistir, reconfigure a conta em ⚙️ Configurar e use "Testar Conexão"'
+    ];
+  }
+
   content.innerHTML = `
     <div class="card" style="border-color:var(--red);background:var(--red-bg);">
-      <div style="font-weight:700;color:var(--red);margin-bottom:8px;">Erro ao carregar dados reais do Meta Ads</div>
-      <div style="font-size:13px;color:var(--txt-secondary);line-height:1.6;">${escapeHtml(error.message || String(error))}</div>
-      <div style="font-size:12px;color:var(--txt-muted);margin-top:10px;line-height:1.6;">
-        Verifique se o token ainda está ativo, se tem permissão <code>ads_read</code> e se o usuário/token possui acesso à conta de anúncios configurada.
+      <div style="font-weight:700;color:var(--red);margin-bottom:8px;font-size:15px;">Erro ao carregar dados do Meta Ads</div>
+      <div style="font-size:13px;color:var(--txt-secondary);line-height:1.6;margin-bottom:12px;font-family:var(--mono);background:var(--bg-base);padding:8px 12px;border-radius:var(--radius);border:1px solid var(--border-light);">${escapeHtml(msg)}</div>
+      <div style="font-weight:600;color:var(--txt-primary);margin-bottom:8px;">🔍 ${diagnosis}</div>
+      <div style="font-size:12px;color:var(--txt-secondary);line-height:1.8;">
+        ${solutions.map((s, i) => `<div style="display:flex;gap:8px;margin-bottom:4px;"><span style="color:var(--accent);font-weight:700;min-width:16px;">${i+1}.</span><span>${s}</span></div>`).join('')}
       </div>
-      <button class="btn-small" onclick="loadMetaDashboard('${CURRENT_CLIENT?.id || ''}')" style="margin-top:14px;">Tentar novamente</button>
+      <div style="display:flex;gap:8px;margin-top:16px;">
+        <button class="btn-small" onclick="loadMetaDashboard('${CURRENT_CLIENT?.id || ''}')" style="border-color:var(--accent);color:var(--accent);">🔄 Tentar novamente</button>
+        <button class="btn-small" onclick="openModal('mo-meta-account')">⚙️ Configurar</button>
+        <button class="btn-small" onclick="diagnoseMeta()" style="border-color:var(--yellow);color:var(--yellow);">🩺 Diagnóstico completo</button>
+      </div>
+    </div>
+  `;
+}
+
+async function diagnoseMeta() {
+  const content = document.getElementById('meta-content');
+  if (!content || !CURRENT_CLIENT) return;
+
+  const steps = [];
+  const addStep = (name, status, detail) => steps.push({ name, status, detail });
+
+  content.innerHTML = '<div class="meta-loading"><div class="loader"></div><div>Executando diagnóstico completo...</div></div>';
+
+  // Step 1: Check session
+  try {
+    const { data: { session } } = await SB.auth.getSession();
+    if (session?.user) {
+      addStep('Sessão autenticada', 'ok', `Logado como ${session.user.email}`);
+    } else {
+      addStep('Sessão autenticada', 'fail', 'Nenhuma sessão ativa. Faça login novamente.');
+      return renderDiagResult(content, steps);
+    }
+  } catch(e) {
+    addStep('Sessão autenticada', 'fail', e.message);
+    return renderDiagResult(content, steps);
+  }
+
+  // Step 2: Check user_profiles
+  try {
+    const { data: profile, error } = await SB.from('user_profiles').select('role').single();
+    if (error) throw error;
+    addStep('Perfil de usuário', 'ok', `Role: ${profile.role}`);
+  } catch(e) {
+    addStep('Perfil de usuário', 'fail', `Sem perfil cadastrado. ${e.message}`);
+  }
+
+  // Step 3: Check client_meta_accounts
+  try {
+    const { data: meta, error } = await SB
+      .from('client_meta_accounts')
+      .select('ad_account_id, ad_account_name, ativo')
+      .eq('client_id', CURRENT_CLIENT.id)
+      .single();
+
+    if (error && error.code === 'PGRST116') {
+      addStep('Conta Meta configurada', 'fail', 'Nenhuma conta Meta configurada para este cliente. Clique em ⚙️ Configurar.');
+    } else if (error) {
+      addStep('Conta Meta configurada', 'fail', error.message);
+    } else if (!meta.ativo) {
+      addStep('Conta Meta configurada', 'warn', `Conta ${meta.ad_account_id} encontrada mas está INATIVA.`);
+    } else {
+      addStep('Conta Meta configurada', 'ok', `${meta.ad_account_name || meta.ad_account_id} (${meta.ad_account_id})`);
+    }
+  } catch(e) {
+    addStep('Conta Meta configurada', 'fail', e.message);
+  }
+
+  // Step 4: Check get_meta_token RPC
+  let tokenValue = null;
+  let adAccountId = null;
+  try {
+    const { data: creds, error } = await SB.rpc('get_meta_token', { p_client_id: CURRENT_CLIENT.id });
+    if (error) throw error;
+    if (!creds || creds.length === 0 || !creds[0]?.access_token) {
+      addStep('Token de acesso (RPC)', 'fail', 'Nenhum token encontrado. Configure em ⚙️ Configurar.');
+    } else {
+      tokenValue = creds[0].access_token;
+      adAccountId = creds[0].ad_account_id;
+      const masked = tokenValue.substring(0, 10) + '...' + tokenValue.substring(tokenValue.length - 6);
+      addStep('Token de acesso (RPC)', 'ok', `Token encontrado: ${masked}`);
+    }
+  } catch(e) {
+    addStep('Token de acesso (RPC)', 'fail', `Erro ao buscar token: ${e.message}`);
+  }
+
+  // Step 5: Test token against Meta API
+  if (tokenValue) {
+    try {
+      const resp = await fetch(`https://graph.facebook.com/v25.0/me?access_token=${tokenValue}`);
+      const data = await resp.json();
+      if (data.error) {
+        const code = data.error.code || '';
+        const msg = data.error.message || '';
+        if (code === 190) {
+          addStep('Token válido (API)', 'fail', 'Token EXPIRADO ou REVOGADO. Gere um novo token no Business Manager.');
+        } else {
+          addStep('Token válido (API)', 'fail', `Erro ${code}: ${msg}`);
+        }
+      } else {
+        addStep('Token válido (API)', 'ok', `Autenticado como: ${data.name || data.id} (ID: ${data.id})`);
+      }
+    } catch(e) {
+      addStep('Token válido (API)', 'fail', `Erro de rede: ${e.message}`);
+    }
+  }
+
+  // Step 6: Test ad account access
+  if (tokenValue && adAccountId) {
+    try {
+      const accId = adAccountId.startsWith('act_') ? adAccountId : 'act_' + adAccountId;
+      const resp = await fetch(`https://graph.facebook.com/v25.0/${accId}?fields=name,account_status,currency&access_token=${tokenValue}`);
+      const data = await resp.json();
+      if (data.error) {
+        addStep('Acesso à conta de anúncios', 'fail', `Sem acesso à ${accId}: ${data.error.message}`);
+      } else {
+        const statusMap = { 1: 'Ativa', 2: 'Desativada', 3: 'Não publicada', 7: 'Pendente', 9: 'Em análise', 101: 'Fechada' };
+        addStep('Acesso à conta de anúncios', 'ok', `${data.name} — Status: ${statusMap[data.account_status] || data.account_status} — Moeda: ${data.currency}`);
+      }
+    } catch(e) {
+      addStep('Acesso à conta de anúncios', 'fail', `Erro de rede: ${e.message}`);
+    }
+  }
+
+  // Step 7: Test insights read
+  if (tokenValue && adAccountId) {
+    try {
+      const accId = adAccountId.startsWith('act_') ? adAccountId : 'act_' + adAccountId;
+      const today = new Date().toISOString().split('T')[0];
+      const d7 = new Date(Date.now() - 7*86400000).toISOString().split('T')[0];
+      const tr = JSON.stringify({ since: d7, until: today });
+      const resp = await fetch(`https://graph.facebook.com/v25.0/${accId}/insights?fields=spend,impressions&time_range=${encodeURIComponent(tr)}&access_token=${tokenValue}`);
+      const data = await resp.json();
+      if (data.error) {
+        addStep('Leitura de insights', 'fail', data.error.message);
+      } else if (data.data && data.data.length > 0) {
+        const spend = parseFloat(data.data[0].spend || 0);
+        addStep('Leitura de insights', 'ok', `Últimos 7 dias: ${data.data.length} registro(s) — Gasto: R$ ${spend.toFixed(2)}`);
+      } else {
+        addStep('Leitura de insights', 'warn', 'Nenhum dado nos últimos 7 dias. A conta pode estar sem campanhas ativas.');
+      }
+    } catch(e) {
+      addStep('Leitura de insights', 'fail', `Erro de rede: ${e.message}`);
+    }
+  }
+
+  renderDiagResult(content, steps);
+}
+
+function renderDiagResult(container, steps) {
+  const icons = { ok: '✅', warn: '⚠️', fail: '❌' };
+  const colors = { ok: 'var(--green)', warn: 'var(--yellow)', fail: 'var(--red)' };
+  const okCount = steps.filter(s => s.status === 'ok').length;
+  const failCount = steps.filter(s => s.status === 'fail').length;
+
+  container.innerHTML = `
+    <div class="card" style="border-color:${failCount > 0 ? 'var(--red)' : 'var(--green)'};">
+      <div style="font-weight:700;font-size:16px;margin-bottom:4px;">🩺 Diagnóstico de Conexão Meta</div>
+      <div style="font-size:12px;color:var(--txt-muted);margin-bottom:16px;">${okCount}/${steps.length} verificações OK${failCount > 0 ? ` · ${failCount} problema(s) encontrado(s)` : ' · Tudo funcionando!'}</div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        ${steps.map((s, i) => `
+          <div style="display:flex;gap:12px;align-items:flex-start;padding:10px;background:var(--bg-base);border-radius:var(--radius);border-left:3px solid ${colors[s.status]};">
+            <div style="font-size:18px;flex-shrink:0;">${icons[s.status]}</div>
+            <div style="flex:1;">
+              <div style="font-weight:600;color:var(--txt-primary);margin-bottom:2px;">${i+1}. ${s.name}</div>
+              <div style="font-size:12px;color:${colors[s.status]};line-height:1.5;">${s.detail}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;">
+        <button class="btn-small" onclick="loadMetaDashboard('${CURRENT_CLIENT?.id || ''}')" style="border-color:var(--accent);color:var(--accent);">🔄 Carregar Dashboard</button>
+        <button class="btn-small" onclick="openModal('mo-meta-account')">⚙️ Configurar</button>
+        <button class="btn-small" onclick="diagnoseMeta()">🩺 Repetir diagnóstico</button>
+      </div>
     </div>
   `;
 }
@@ -4368,6 +4749,7 @@ function renderMetaDashboard(clientId) {
   const mc = document.getElementById('meta-content');
   const tabsList = [
     { id: 'geral',       label: '📊 Visão Geral' },
+    { id: 'breakdowns',  label: '📐 Breakdowns' },
     { id: 'campanhas',   label: '📋 Campanhas' },
     { id: 'conjuntos',   label: '👥 Conjuntos' },
     { id: 'criativos',   label: '🎨 Criativos' },
@@ -4408,6 +4790,7 @@ function renderMetaSubTab(clientId) {
 
   switch (META_CURRENT_SUBTAB) {
     case 'geral':       sub.innerHTML = renderMetaGeral(data, client); break;
+    case 'breakdowns':  sub.innerHTML = renderMetaBreakdowns(data, client); break;
     case 'campanhas':   sub.innerHTML = renderMetaCampanhas(data, client); break;
     case 'conjuntos':   sub.innerHTML = renderMetaConjuntos(data, client); break;
     case 'criativos':   sub.innerHTML = renderMetaCriativos(data, client); break;
@@ -4423,18 +4806,17 @@ function renderMetaSubTab(clientId) {
 // ─── helpers ─────────────────────────────────────────────────────────────────
 function metaAgg(data) {
   const insights = data.insights || [];
-  let spend=0, impr=0, reach=0, clks=0, freq=0, msgs=0, leads=0, purchases=0, revenue=0, hookSum=0, hookN=0, connectSum=0;
+  const agg = data.aggregate || null;
+  let spend=0, impr=0, clks=0, msgs=0, leads=0, purchases=0, revenue=0, hookSum=0, hookN=0, connectSum=0;
   for (const d of insights) {
     spend += parseFloat(d.spend||0);
     impr  += parseInt(d.impressions||0);
-    reach += parseInt(d.reach||0);
     clks  += parseInt(d.clicks||0);
-    freq  += parseFloat(d.frequency||0);
     if (d.hook_rate) { hookSum += parseFloat(d.hook_rate); hookN++; }
     if (d.connect_rate) connectSum += parseFloat(d.connect_rate);
     for (const a of (d.actions||[])) {
       const v = parseInt(a.value||0);
-      if (a.action_type?.includes('messaging')) msgs += v;
+      if (a.action_type === 'onsite_conversion.messaging_conversation_started_7d') msgs += v;
       if (a.action_type === 'lead') leads += v;
       if (a.action_type === 'purchase' || a.action_type === 'omni_purchase') purchases += v;
     }
@@ -4443,16 +4825,17 @@ function metaAgg(data) {
     }
   }
   const dias = Math.max(insights.length, 1);
+  const reach = agg ? parseInt(agg.reach||0) : impr;
+  const freq  = agg ? parseFloat(agg.frequency||0) : (impr > 0 && reach > 0 ? impr/reach : 0);
   const ctr  = impr > 0 ? (clks/impr)*100 : 0;
   const cpm  = impr > 0 ? (spend/impr)*1000 : 0;
   const cpc  = clks > 0 ? spend/clks : 0;
-  const avgFreq = freq/dias;
   const totalConv = msgs || leads || purchases;
   const cpa  = totalConv > 0 ? spend/totalConv : 0;
   const roas = spend > 0 ? revenue/spend : 0;
   const hookRate = hookN > 0 ? hookSum/hookN : 0;
   const connectRate = dias > 0 ? connectSum/dias : 0;
-  return { spend, impr, reach, clks, ctr, cpm, cpc, freq: avgFreq, msgs, leads, purchases, revenue, cpa, roas, hookRate, connectRate, dias };
+  return { spend, impr, reach, clks, ctr, cpm, cpc, freq, msgs, leads, purchases, revenue, cpa, roas, hookRate, connectRate, dias };
 }
 
 function metaBmClass(val, meta, lowerBetter) {
@@ -4631,63 +5014,158 @@ function renderMetaGeral(data, client) {
 // ─── ABA CAMPANHAS ───────────────────────────────────────────────────────────
 function renderMetaCampanhas(data, client) {
   const camps = data.campaign_insights || [];
-  const rows = camps.map(c => {
-    const st = c.status === 'ACTIVE';
+  const cpaMeta = parseFloat(client.cpa_meta || 0);
+  const f = META_BI_FILTERS.campanhas;
+
+  // Enrich campaigns
+  let allCamps = camps.map(c => {
+    const funnel = inferFunnelStage(c.campaign_name, c.objective);
+    const score = calcCampaignScore(c, cpaMeta);
+    return { ...c, funnel, score, verdict: creativeVerdict(score) };
+  });
+
+  // Apply filters
+  let filtered = allCamps;
+  if (f.funnel !== 'all') filtered = filtered.filter(c => c.funnel === f.funnel);
+  if (f.status !== 'all') filtered = filtered.filter(c => f.status === 'active' ? c.status === 'ACTIVE' : c.status !== 'ACTIVE');
+  if (f.temp !== 'all') filtered = filtered.filter(c => c.temp === f.temp);
+
+  // Sort
+  const sortKeys = { score: c => c.score, spend: c => parseFloat(c.spend||0), cpa: c => { const v = parseFloat(c.cpa||0); return v > 0 ? v : 99999; }, ctr: c => parseFloat(c.ctr||0), conv: c => parseInt(c.conversoes||0), freq: c => parseFloat(c.frequency||0), impr: c => parseInt(c.impressions||0), cpm: c => parseFloat(c.cpm||0), cpc: c => parseFloat(c.cpc||0) };
+  const sortFn = sortKeys[f.sort] || sortKeys.score;
+  filtered.sort((a, b) => f.sortDir === 'desc' ? sortFn(b) - sortFn(a) : sortFn(a) - sortFn(b));
+
+  // KPIs
+  const active = filtered.filter(c => c.status === 'ACTIVE');
+  const totalSpend = filtered.reduce((s, c) => s + parseFloat(c.spend||0), 0);
+  const totalConv = filtered.reduce((s, c) => s + parseInt(c.conversoes||0), 0);
+  const avgCPA = totalConv > 0 ? totalSpend / totalConv : 0;
+  const toScale = filtered.filter(c => c.verdict.label === 'ESCALAR').length;
+  const toPause = filtered.filter(c => c.verdict.label === 'PAUSAR').length;
+  const avgFreq = filtered.length > 0 ? filtered.reduce((s, c) => s + parseFloat(c.frequency||0), 0) / filtered.length : 0;
+
+  // Funnel distribution
+  const funnelColors = { TOFU: '#63B3ED', MOFU: '#F6AD55', BOFU: '#68D391' };
+  const funnelCounts = { TOFU: { n: 0, spend: 0, conv: 0 }, MOFU: { n: 0, spend: 0, conv: 0 }, BOFU: { n: 0, spend: 0, conv: 0 } };
+  for (const c of allCamps) { const fc = funnelCounts[c.funnel] || funnelCounts.TOFU; fc.n++; fc.spend += parseFloat(c.spend||0); fc.conv += parseInt(c.conversoes||0); }
+  const totalAllSpend = allCamps.reduce((s, c) => s + parseFloat(c.spend||0), 0);
+
+  const sh = (col, label) => biSortHeader('campanhas', col, label, f.sort, f.sortDir);
+
+  // Table rows
+  const rows = filtered.map(c => {
     const cpaNum = parseFloat(c.cpa||0);
-    const cpaMeta = parseFloat(client.cpa_meta||0);
-    const cpaClass = cpaMeta > 0 ? (cpaNum <= cpaMeta ? 'color:var(--green)' : cpaNum <= cpaMeta*1.3 ? 'color:var(--yellow)' : 'color:var(--red)') : '';
-    const convLabel = c.tipo_conv === 'MSG' ? 'Mensagens' : c.tipo_conv === 'LEAD' ? 'Leads' : c.tipo_conv === 'CONV' ? 'Compras' : '—';
-    return `
-      <tr style="${!st?'opacity:.55':''}">
-        <td style="max-width:240px;"><div style="font-size:11px;font-weight:600;color:var(--txt-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${c.campaign_name}">${c.campaign_name}</div></td>
-        <td>${statusDot(c.status)}</td>
-        <td>${objBadge(c.objective)}</td>
-        <td>${tempBadge(c.temp||'F')}</td>
-        <td style="font-family:var(--mono);">${fmtR(c.spend)}</td>
-        <td style="font-family:var(--mono);">${fmtN(c.impressions)}</td>
-        <td style="font-family:var(--mono);">${c.cpm}</td>
-        <td style="font-family:var(--mono);${parseFloat(c.ctr)<1?'color:var(--red)':''}">${c.ctr}%</td>
-        <td style="font-family:var(--mono);">${c.cpc}</td>
-        <td style="font-family:var(--mono);">${c.frequency}x${parseFloat(c.frequency)>3?'<span style="color:var(--red);margin-left:4px;font-size:9px;">⚠</span>':''}</td>
-        <td style="font-family:var(--mono);">${c.hook_rate !== '—' ? c.hook_rate+'%' : '—'}</td>
-        <td style="font-family:var(--mono);">${c.connect_rate !== '—' ? c.connect_rate+'%' : '—'}</td>
-        <td style="font-family:var(--mono);">${convLabel} ${fmtN(c.conversoes)}</td>
-        <td style="font-family:var(--mono);${cpaClass}">${cpaNum > 0 ? fmtR(cpaNum) : '—'}</td>
-      </tr>`;
+    const cpaStyle = cpaMeta > 0 && cpaNum > 0 ? (cpaNum <= cpaMeta ? 'color:var(--green)' : cpaNum <= cpaMeta*1.3 ? 'color:var(--yellow)' : 'color:var(--red)') : '';
+    const fColor = funnelColors[c.funnel] || 'var(--txt-muted)';
+    const freqWarn = parseFloat(c.frequency||0) > 3;
+    const convLabel = c.tipo_conv === 'MSG' ? 'MSG' : c.tipo_conv === 'LEAD' ? 'LEAD' : c.tipo_conv === 'CONV' ? 'CONV' : '';
+    return `<tr style="${c.status!=='ACTIVE'?'opacity:.5':''}">
+      <td>${biScoreBadge(c.score)}</td>
+      <td><span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;background:${fColor}18;color:${fColor};letter-spacing:.5px;">${c.funnel}</span></td>
+      <td style="max-width:220px;"><div style="font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${c.campaign_name}">${c.campaign_name}</div></td>
+      <td>${statusDot(c.status)}</td>
+      <td>${objBadge(c.objective)}</td>
+      <td>${tempBadge(c.temp||'F')}</td>
+      <td style="font-family:var(--mono);font-size:11px;">${fmtR(c.spend)}</td>
+      <td style="font-family:var(--mono);font-size:11px;">${fmtN(c.impressions)}</td>
+      <td style="font-family:var(--mono);font-size:11px;">${c.cpm}</td>
+      <td style="font-family:var(--mono);font-size:11px;${parseFloat(c.ctr)<1?'color:var(--red)':''}">${c.ctr}%</td>
+      <td style="font-family:var(--mono);font-size:11px;">${c.cpc}</td>
+      <td style="font-family:var(--mono);font-size:11px;${freqWarn?'color:var(--red)':''}">${c.frequency}x${freqWarn?' ⚠':''}</td>
+      <td style="font-family:var(--mono);font-size:11px;">${c.connect_rate !== '—' ? c.connect_rate+'%' : '—'}</td>
+      <td style="font-family:var(--mono);font-size:11px;font-weight:700;">${parseInt(c.conversoes||0) > 0 ? `${convLabel ? '<span style="font-size:9px;color:var(--txt-muted);">'+convLabel+'</span> ' : ''}${fmtN(c.conversoes)}` : '—'}</td>
+      <td style="font-family:var(--mono);font-size:11px;font-weight:700;${cpaStyle}">${cpaNum > 0 ? fmtR(cpaNum) : '—'}</td>
+    </tr>`;
   }).join('');
 
   return `
-    <div class="section" style="margin-top:0;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-        <div class="section-title" style="margin:0;">📋 CAMPANHAS — ANÁLISE COMPLETA</div>
-        <div style="display:flex;gap:6px;">
-          ${[['MSG','MSG'],['LEAD','LEAD'],['CONV','CONV'],['REACH','REACH']].map(([k,l]) =>
-            `<span class="obj-badge ${k}" style="cursor:pointer;">${l}</span>`
-          ).join('')}
-        </div>
+    <!-- FILTROS -->
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px;padding:10px 12px;background:var(--surf-2);border-radius:var(--radius);border:1px solid var(--border-light);">
+      <span style="font-size:10px;font-weight:700;color:var(--txt-muted);letter-spacing:.5px;margin-right:4px;">FILTROS</span>
+      <select onchange="setMetaBIFilter('campanhas','funnel',this.value)" style="font-size:11px;padding:4px 8px;border-radius:4px;border:1px solid var(--border-light);background:var(--bg-primary);color:var(--txt-primary);">
+        <option value="all" ${f.funnel==='all'?'selected':''}>Todas fases</option>
+        <option value="TOFU" ${f.funnel==='TOFU'?'selected':''}>TOFU</option>
+        <option value="MOFU" ${f.funnel==='MOFU'?'selected':''}>MOFU</option>
+        <option value="BOFU" ${f.funnel==='BOFU'?'selected':''}>BOFU</option>
+      </select>
+      <select onchange="setMetaBIFilter('campanhas','status',this.value)" style="font-size:11px;padding:4px 8px;border-radius:4px;border:1px solid var(--border-light);background:var(--bg-primary);color:var(--txt-primary);">
+        <option value="all" ${f.status==='all'?'selected':''}>Todos status</option>
+        <option value="active" ${f.status==='active'?'selected':''}>Ativas</option>
+        <option value="paused" ${f.status==='paused'?'selected':''}>Pausadas</option>
+      </select>
+      <select onchange="setMetaBIFilter('campanhas','temp',this.value)" style="font-size:11px;padding:4px 8px;border-radius:4px;border:1px solid var(--border-light);background:var(--bg-primary);color:var(--txt-primary);">
+        <option value="all" ${f.temp==='all'?'selected':''}>Todas temperaturas</option>
+        <option value="F" ${f.temp==='F'?'selected':''}>[F] Frio</option>
+        <option value="M" ${f.temp==='M'?'selected':''}>[M] Morno</option>
+        <option value="Q" ${f.temp==='Q'?'selected':''}>[Q] Quente</option>
+      </select>
+      <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+        <span style="font-size:10px;color:var(--txt-muted);">${filtered.length} de ${allCamps.length} campanhas</span>
+        <button class="btn-small" onclick="META_BI_FILTERS.campanhas={funnel:'all',status:'all',temp:'all',sort:'score',sortDir:'desc'};renderMetaSubTab(CURRENT_CLIENT?.id);" style="font-size:10px;padding:3px 8px;">Limpar</button>
       </div>
+    </div>
+
+    <!-- KPIs -->
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:16px;">
+      ${metaKPICard('CAMPANHAS', `${active.length} ativas / ${filtered.length} total`, null, '', '')}
+      ${metaKPICard('GASTO TOTAL', fmtR(totalSpend), null, '', '')}
+      ${metaKPICard('CONVERSÕES', fmtN(totalConv), null, '', '')}
+      ${metaKPICard('CPA GERAL', avgCPA > 0 ? fmtR(avgCPA) : '—', null, cpaMeta > 0 && avgCPA > 0 ? (avgCPA <= cpaMeta ? 'good' : avgCPA <= cpaMeta*1.3 ? 'warn' : 'alert') : '', cpaMeta > 0 ? 'meta: '+fmtR(cpaMeta) : '')}
+      ${metaKPICard('FREQUÊNCIA', avgFreq.toFixed(2)+'x', null, avgFreq > 3.5 ? 'alert' : avgFreq > 2.5 ? 'warn' : 'good', '')}
+      ${metaKPICard('P/ ESCALAR', `🚀 ${toScale}`, null, toScale > 0 ? 'good' : '', toPause > 0 ? `🛑 ${toPause} p/ pausar` : '')}
+    </div>
+
+    <!-- DISTRIBUIÇÃO POR FUNIL -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
+      ${['TOFU','MOFU','BOFU'].map(stage => {
+        const d = funnelCounts[stage];
+        const color = funnelColors[stage];
+        const pct = totalAllSpend > 0 ? (d.spend/totalAllSpend*100) : 0;
+        const cpa = d.conv > 0 ? d.spend/d.conv : 0;
+        const isActive = f.funnel === stage;
+        return `<div class="card" style="padding:12px;cursor:pointer;border-color:${isActive ? color : 'var(--border-light)'};background:${isActive ? color+'0a' : 'var(--bg-primary)'};" onclick="setMetaBIFilter('campanhas','funnel','${isActive ? 'all' : stage}')">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <span style="font-size:9px;font-weight:700;letter-spacing:.8px;color:${color};">${stage}</span>
+              <span style="font-size:10px;color:var(--txt-muted);margin-left:6px;">${d.n} camp.</span>
+            </div>
+            <span style="font-size:10px;font-weight:700;color:${color};">${pct.toFixed(0)}% verba</span>
+          </div>
+          <div style="height:4px;background:var(--surf-2);border-radius:2px;margin:8px 0;overflow:hidden;">
+            <div style="height:100%;width:${pct}%;background:${color};border-radius:2px;"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--txt-muted);">
+            <span>Gasto ${fmtR(d.spend)}</span>
+            <span>Conv ${fmtN(d.conv)}</span>
+            <span>CPA ${cpa > 0 ? fmtR(cpa) : '—'}</span>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <!-- TABELA BI -->
+    <div class="section" style="margin-top:0;">
       <div class="table-wrapper" style="overflow-x:auto;">
         <table>
           <thead><tr>
+            ${sh('score','SCORE')}
+            <th>FUNIL</th>
             <th style="min-width:200px;">CAMPANHA</th>
-            <th>STATUS</th><th>OBJETIVO</th><th>PÚBLICO</th>
-            <th>GASTO</th><th>IMPRESSÕES</th><th>CPM</th><th>CTR</th>
-            <th>CPC</th><th>FREQ.</th><th>HOOK%</th><th>CONNECT%</th>
-            <th>CONVERSÕES</th><th>CPA</th>
+            <th>STATUS</th>
+            <th>OBJ</th>
+            <th>TEMP</th>
+            ${sh('spend','GASTO')}
+            ${sh('impr','IMPR.')}
+            ${sh('cpm','CPM')}
+            ${sh('ctr','CTR')}
+            ${sh('cpc','CPC')}
+            ${sh('freq','FREQ.')}
+            <th>CONNECT%</th>
+            ${sh('conv','CONV.')}
+            ${sh('cpa','CPA')}
           </tr></thead>
-          <tbody>${rows}</tbody>
+          <tbody>${rows || '<tr><td colspan="15" style="text-align:center;padding:30px;color:var(--txt-muted);">Nenhuma campanha encontrada com esses filtros</td></tr>'}</tbody>
         </table>
-      </div>
-      <div style="margin-top:12px;display:flex;gap:16px;flex-wrap:wrap;">
-        <div style="font-size:10px;color:var(--txt-muted);">
-          <strong style="color:var(--txt-secondary);">Hook Rate:</strong> % do público que assistiu os 1s do vídeo. >30% = bom · <20% = gancho fraco.
-        </div>
-        <div style="font-size:10px;color:var(--txt-muted);">
-          <strong style="color:var(--txt-secondary);">Connect Rate:</strong> % de cliques que viraram contato (WhatsApp/DM). <15% = problema no destino.
-        </div>
-        <div style="font-size:10px;color:var(--txt-muted);">
-          <strong style="color:var(--txt-secondary);">Frequência:</strong> >3,5x = saturação crítica → novos criativos urgente.
-        </div>
       </div>
     </div>`;
 }
@@ -4695,54 +5173,165 @@ function renderMetaCampanhas(data, client) {
 // ─── ABA CONJUNTOS ───────────────────────────────────────────────────────────
 function renderMetaConjuntos(data, client) {
   const camps = data.campaign_insights || [];
-  let rows = '';
+  const cpaMeta = parseFloat(client.cpa_meta || 0);
+  const f = META_BI_FILTERS.conjuntos;
+
+  // Flatten all adsets
+  let allAdsets = [];
   for (const c of camps) {
+    const funnel = inferFunnelStage(c.campaign_name, c.objective);
     for (const as of (c.adsets || [])) {
-      const freqWarn = parseFloat(as.freq||0) > 3.5;
-      const cpaNum = parseFloat(as.cpa||0);
-      const cpaMeta = parseFloat(client.cpa_meta||0);
-      const cpaStyle = cpaMeta > 0 && cpaNum > 0 ? (cpaNum <= cpaMeta ? 'color:var(--green)' : cpaNum <= cpaMeta*1.3 ? 'color:var(--yellow)' : 'color:var(--red)') : '';
-      rows += `
-        <tr style="${as.status!=='ACTIVE'?'opacity:.55':''}">
-          <td style="font-size:10px;color:var(--txt-muted);max-width:80px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${c.campaign_name}">${c.campaign_name.substring(0,30)}…</td>
-          <td><div style="font-size:11px;font-weight:600;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${as.name}">${as.name}</div></td>
-          <td>${statusDot(as.status)}</td>
-          <td>${tempBadge(as.temp||'F')}</td>
-          <td style="font-size:10px;color:var(--txt-muted);">${as.pub_size||'—'}</td>
-          <td style="font-family:var(--mono);">${fmtR(as.spend)}</td>
-          <td style="font-family:var(--mono);">${fmtN(as.impr)}</td>
-          <td style="font-family:var(--mono);">${as.cpm}</td>
-          <td style="font-family:var(--mono);${parseFloat(as.ctr)<1?'color:var(--red)':''}">${as.ctr}%</td>
-          <td style="font-family:var(--mono);">${as.cpc}</td>
-          <td style="font-family:var(--mono);${freqWarn?'color:var(--red)':''}">${as.freq}x${freqWarn?' ⚠':''}</td>
-          <td style="font-family:var(--mono);">${fmtN(as.conv)}</td>
-          <td style="font-family:var(--mono);${cpaStyle}">${cpaNum > 0 ? fmtR(cpaNum) : as.cpa === '—' ? '—' : '—'}</td>
-        </tr>`;
+      const score = calcAdsetScore(as, cpaMeta);
+      allAdsets.push({ ...as, campaign_name: c.campaign_name, campaign_id: c.campaign_id, objective: c.objective, funnel, score, verdict: creativeVerdict(score) });
     }
   }
 
+  // Unique campaigns for filter
+  const uniqueCamps = [...new Map(allAdsets.map(a => [a.campaign_id, a.campaign_name])).entries()];
+
+  // Apply filters
+  let filtered = allAdsets;
+  if (f.temp !== 'all') filtered = filtered.filter(a => a.temp === f.temp);
+  if (f.status !== 'all') filtered = filtered.filter(a => f.status === 'active' ? a.status === 'ACTIVE' : a.status !== 'ACTIVE');
+  if (f.campaign !== 'all') filtered = filtered.filter(a => a.campaign_id === f.campaign);
+
+  // Sort
+  const sortKeys = { score: a => a.score, spend: a => parseFloat(a.spend||0), cpa: a => { const v = parseFloat(a.cpa||0); return v > 0 ? v : 99999; }, ctr: a => parseFloat(a.ctr||0), conv: a => parseInt(a.conv||0), freq: a => parseFloat(a.freq||0), impr: a => parseInt(a.impr||0), cpm: a => parseFloat(a.cpm||0), cpc: a => parseFloat(a.cpc||0) };
+  const sortFn = sortKeys[f.sort] || sortKeys.score;
+  filtered.sort((a, b) => f.sortDir === 'desc' ? sortFn(b) - sortFn(a) : sortFn(a) - sortFn(b));
+
+  // KPIs
+  const active = filtered.filter(a => a.status === 'ACTIVE');
+  const totalSpend = filtered.reduce((s, a) => s + parseFloat(a.spend||0), 0);
+  const totalConv = filtered.reduce((s, a) => s + parseInt(a.conv||0), 0);
+  const avgCPA = totalConv > 0 ? totalSpend / totalConv : 0;
+  const avgFreq = filtered.length > 0 ? filtered.reduce((s, a) => s + parseFloat(a.freq||0), 0) / filtered.length : 0;
+  const toScale = filtered.filter(a => a.verdict.label === 'ESCALAR').length;
+  const toPause = filtered.filter(a => a.verdict.label === 'PAUSAR').length;
+
+  // Temperature analysis
+  const tempColors = { F: '#63B3ED', M: '#EAB308', Q: '#EF4444' };
+  const tempLabels = { F: 'Frio', M: 'Morno', Q: 'Quente' };
+  const tempDescs = { F: 'Interesse/Lookalike — Prospecção', M: 'Engajamento/Visitantes — Nutrição', Q: 'Clientes/Leads/Carrinho — Conversão' };
+  const tempData = { F: { n: 0, spend: 0, conv: 0, impr: 0, freq: 0 }, M: { n: 0, spend: 0, conv: 0, impr: 0, freq: 0 }, Q: { n: 0, spend: 0, conv: 0, impr: 0, freq: 0 } };
+  for (const a of allAdsets) { const td = tempData[a.temp] || tempData.F; td.n++; td.spend += parseFloat(a.spend||0); td.conv += parseInt(a.conv||0); td.impr += parseInt(a.impr||0); td.freq += parseFloat(a.freq||0); }
+  const totalAllSpend = allAdsets.reduce((s, a) => s + parseFloat(a.spend||0), 0);
+
+  const sh = (col, label) => biSortHeader('conjuntos', col, label, f.sort, f.sortDir);
+
+  // Table rows
+  const rows = filtered.map(as => {
+    const cpaNum = parseFloat(as.cpa||0);
+    const cpaStyle = cpaMeta > 0 && cpaNum > 0 ? (cpaNum <= cpaMeta ? 'color:var(--green)' : cpaNum <= cpaMeta*1.3 ? 'color:var(--yellow)' : 'color:var(--red)') : '';
+    const freqWarn = parseFloat(as.freq||0) > 3.5;
+    const tColor = tempColors[as.temp] || tempColors.F;
+    return `<tr style="${as.status!=='ACTIVE'?'opacity:.5':''}">
+      <td>${biScoreBadge(as.score)}</td>
+      <td style="font-size:10px;color:var(--txt-muted);max-width:80px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${as.campaign_name}">${as.campaign_name.substring(0,25)}…</td>
+      <td><div style="font-size:11px;font-weight:600;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${as.name}">${as.name}</div></td>
+      <td>${statusDot(as.status)}</td>
+      <td><span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;background:${tColor}18;color:${tColor};letter-spacing:.5px;">${as.temp||'F'}</span></td>
+      <td style="font-size:10px;color:var(--txt-muted);">${as.pub_size||'—'}</td>
+      <td style="font-family:var(--mono);font-size:11px;">${fmtR(as.spend)}</td>
+      <td style="font-family:var(--mono);font-size:11px;">${fmtN(as.impr)}</td>
+      <td style="font-family:var(--mono);font-size:11px;">${as.cpm}</td>
+      <td style="font-family:var(--mono);font-size:11px;${parseFloat(as.ctr)<1?'color:var(--red)':''}">${as.ctr}%</td>
+      <td style="font-family:var(--mono);font-size:11px;">${as.cpc}</td>
+      <td style="font-family:var(--mono);font-size:11px;${freqWarn?'color:var(--red)':''}">${as.freq}x${freqWarn?' ⚠':''}</td>
+      <td style="font-family:var(--mono);font-size:11px;font-weight:700;">${parseInt(as.conv||0) > 0 ? fmtN(as.conv) : '—'}</td>
+      <td style="font-family:var(--mono);font-size:11px;font-weight:700;${cpaStyle}">${cpaNum > 0 ? fmtR(cpaNum) : '—'}</td>
+    </tr>`;
+  }).join('');
+
   return `
-    <div class="section" style="margin-top:0;">
-      <div class="section-title" style="margin-bottom:12px;">👥 CONJUNTOS DE ANÚNCIOS — SEGMENTAÇÃO [F/M/Q]</div>
-      <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
-        <div style="font-size:11px;padding:8px 12px;background:rgba(99,179,237,.08);border:1px solid rgba(99,179,237,.2);border-radius:var(--radius);">
-          <strong style="color:#63B3ED;">[F] Frio</strong> <span style="color:var(--txt-muted);font-size:10px;"> — Interesse/Lookalike. CPM tende a ser menor. Frequência raramente satura.</span>
-        </div>
-        <div style="font-size:11px;padding:8px 12px;background:rgba(234,179,8,.08);border:1px solid rgba(234,179,8,.2);border-radius:var(--radius);">
-          <strong style="color:var(--yellow);">[M] Morno</strong> <span style="color:var(--txt-muted);font-size:10px;"> — Engajamento IG/FB, visitantes. CTR maior, CPC geralmente ok.</span>
-        </div>
-        <div style="font-size:11px;padding:8px 12px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:var(--radius);">
-          <strong style="color:var(--red);">[Q] Quente</strong> <span style="color:var(--txt-muted);font-size:10px;"> — Clientes/leads, carrinho. Frequência satura rápido. CPA mais baixo.</span>
-        </div>
+    <!-- FILTROS -->
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px;padding:10px 12px;background:var(--surf-2);border-radius:var(--radius);border:1px solid var(--border-light);">
+      <span style="font-size:10px;font-weight:700;color:var(--txt-muted);letter-spacing:.5px;margin-right:4px;">FILTROS</span>
+      <select onchange="setMetaBIFilter('conjuntos','temp',this.value)" style="font-size:11px;padding:4px 8px;border-radius:4px;border:1px solid var(--border-light);background:var(--bg-primary);color:var(--txt-primary);">
+        <option value="all" ${f.temp==='all'?'selected':''}>Todas temperaturas</option>
+        <option value="F" ${f.temp==='F'?'selected':''}>[F] Frio</option>
+        <option value="M" ${f.temp==='M'?'selected':''}>[M] Morno</option>
+        <option value="Q" ${f.temp==='Q'?'selected':''}>[Q] Quente</option>
+      </select>
+      <select onchange="setMetaBIFilter('conjuntos','status',this.value)" style="font-size:11px;padding:4px 8px;border-radius:4px;border:1px solid var(--border-light);background:var(--bg-primary);color:var(--txt-primary);">
+        <option value="all" ${f.status==='all'?'selected':''}>Todos status</option>
+        <option value="active" ${f.status==='active'?'selected':''}>Ativos</option>
+        <option value="paused" ${f.status==='paused'?'selected':''}>Pausados</option>
+      </select>
+      <select onchange="setMetaBIFilter('conjuntos','campaign',this.value)" style="font-size:11px;padding:4px 8px;border-radius:4px;border:1px solid var(--border-light);background:var(--bg-primary);color:var(--txt-primary);max-width:200px;">
+        <option value="all" ${f.campaign==='all'?'selected':''}>Todas campanhas</option>
+        ${uniqueCamps.map(([id, name]) => `<option value="${id}" ${f.campaign===id?'selected':''}>${name.substring(0,35)}${name.length>35?'…':''}</option>`).join('')}
+      </select>
+      <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+        <span style="font-size:10px;color:var(--txt-muted);">${filtered.length} de ${allAdsets.length} conjuntos</span>
+        <button class="btn-small" onclick="META_BI_FILTERS.conjuntos={temp:'all',status:'all',campaign:'all',sort:'score',sortDir:'desc'};renderMetaSubTab(CURRENT_CLIENT?.id);" style="font-size:10px;padding:3px 8px;">Limpar</button>
       </div>
+    </div>
+
+    <!-- KPIs -->
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:16px;">
+      ${metaKPICard('CONJUNTOS', `${active.length} ativos / ${filtered.length} total`, null, '', '')}
+      ${metaKPICard('GASTO TOTAL', fmtR(totalSpend), null, '', '')}
+      ${metaKPICard('CONVERSÕES', fmtN(totalConv), null, '', '')}
+      ${metaKPICard('CPA GERAL', avgCPA > 0 ? fmtR(avgCPA) : '—', null, cpaMeta > 0 && avgCPA > 0 ? (avgCPA <= cpaMeta ? 'good' : avgCPA <= cpaMeta*1.3 ? 'warn' : 'alert') : '', cpaMeta > 0 ? 'meta: '+fmtR(cpaMeta) : '')}
+      ${metaKPICard('FREQUÊNCIA', avgFreq.toFixed(2)+'x', null, avgFreq > 3.5 ? 'alert' : avgFreq > 2.5 ? 'warn' : 'good', '')}
+      ${metaKPICard('P/ ESCALAR', `🚀 ${toScale}`, null, toScale > 0 ? 'good' : '', toPause > 0 ? `🛑 ${toPause} p/ pausar` : '')}
+    </div>
+
+    <!-- DISTRIBUIÇÃO POR TEMPERATURA -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
+      ${['F','M','Q'].map(t => {
+        const d = tempData[t];
+        const color = tempColors[t];
+        const pct = totalAllSpend > 0 ? (d.spend/totalAllSpend*100) : 0;
+        const cpa = d.conv > 0 ? d.spend/d.conv : 0;
+        const avgF = d.n > 0 ? d.freq/d.n : 0;
+        const isActive = f.temp === t;
+        return `<div class="card" style="padding:12px;cursor:pointer;border-color:${isActive ? color : 'var(--border-light)'};background:${isActive ? color+'0a' : 'var(--bg-primary)'};" onclick="setMetaBIFilter('conjuntos','temp','${isActive ? 'all' : t}')">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <span style="font-size:12px;font-weight:700;color:${color};">[${t}] ${tempLabels[t]}</span>
+              <span style="font-size:10px;color:var(--txt-muted);margin-left:6px;">${d.n} conj.</span>
+            </div>
+            <span style="font-size:10px;font-weight:700;color:${color};">${pct.toFixed(0)}% verba</span>
+          </div>
+          <div style="font-size:9px;color:var(--txt-muted);margin:4px 0 8px;">${tempDescs[t]}</div>
+          <div style="height:4px;background:var(--surf-2);border-radius:2px;margin-bottom:8px;overflow:hidden;">
+            <div style="height:100%;width:${pct}%;background:${color};border-radius:2px;"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--txt-muted);">
+            <span>Gasto ${fmtR(d.spend)}</span>
+            <span>Conv ${fmtN(d.conv)}</span>
+            <span>CPA ${cpa > 0 ? fmtR(cpa) : '—'}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--txt-muted);margin-top:4px;">
+            <span>Freq ${avgF.toFixed(1)}x ${avgF > 3.5 ? '⚠ saturação' : ''}</span>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <!-- TABELA BI -->
+    <div class="section" style="margin-top:0;">
       <div class="table-wrapper" style="overflow-x:auto;">
         <table>
           <thead><tr>
-            <th>CAMPANHA</th><th style="min-width:180px;">CONJUNTO</th><th>STATUS</th>
-            <th>TEMP</th><th>TAMANHO</th><th>GASTO</th><th>IMPRESSÕES</th>
-            <th>CPM</th><th>CTR</th><th>CPC</th><th>FREQ.</th><th>CONV.</th><th>CPA</th>
+            ${sh('score','SCORE')}
+            <th>CAMPANHA</th>
+            <th style="min-width:180px;">CONJUNTO</th>
+            <th>STATUS</th>
+            <th>TEMP</th>
+            <th>TAMANHO</th>
+            ${sh('spend','GASTO')}
+            ${sh('impr','IMPR.')}
+            ${sh('cpm','CPM')}
+            ${sh('ctr','CTR')}
+            ${sh('cpc','CPC')}
+            ${sh('freq','FREQ.')}
+            ${sh('conv','CONV.')}
+            ${sh('cpa','CPA')}
           </tr></thead>
-          <tbody>${rows}</tbody>
+          <tbody>${rows || '<tr><td colspan="14" style="text-align:center;padding:30px;color:var(--txt-muted);">Nenhum conjunto encontrado com esses filtros</td></tr>'}</tbody>
         </table>
       </div>
     </div>`;
@@ -4751,80 +5340,448 @@ function renderMetaConjuntos(data, client) {
 // ─── ABA CRIATIVOS ───────────────────────────────────────────────────────────
 function renderMetaCriativos(data, client) {
   const camps = data.campaign_insights || [];
-  let rows = '';
+  const cpaMeta = parseFloat(client.cpa_meta || 0);
+  const f = META_BI_FILTERS.criativos;
+
+  // Flatten all ads with enriched data
+  let allAds = [];
   for (const c of camps) {
+    const funnel = inferFunnelStage(c.campaign_name, c.objective);
     for (const ad of (c.ads || [])) {
-      const hookNum = parseFloat(ad.hook_rate||0);
-      const hookClass = hookNum > 30 ? 'color:var(--green)' : hookNum > 20 ? 'color:var(--yellow)' : hookNum > 0 ? 'color:var(--red)' : '';
-      const freqWarn = parseFloat(ad.freq||0) > 3.5;
-      const cpaNum = parseFloat(ad.cpa||0);
-      const cpaMeta = parseFloat(client.cpa_meta||0);
-      const cpaStyle = cpaMeta > 0 && cpaNum > 0 ? (cpaNum <= cpaMeta ? 'color:var(--green)' : cpaNum <= cpaMeta*1.3 ? 'color:var(--yellow)' : 'color:var(--red)') : '';
-      rows += `
-        <tr style="${ad.status!=='ACTIVE'?'opacity:.55':''}">
-          <td style="font-size:10px;color:var(--txt-muted);">${c.campaign_name.substring(0,25)}…</td>
-          <td><div style="font-size:11px;font-weight:600;">${ad.name}</div></td>
-          <td>${statusDot(ad.status)}</td>
-          <td><span style="font-size:10px;background:var(--surf-2);padding:2px 6px;border-radius:4px;">${ad.format||'—'}</span></td>
-          <td style="font-family:var(--mono);">${fmtR(ad.spend)}</td>
-          <td style="font-family:var(--mono);">${fmtN(ad.impr)}</td>
-          <td style="font-family:var(--mono);${hookClass}">${hookNum > 0 ? hookNum.toFixed(1)+'%' : '—'}</td>
-          <td style="font-family:var(--mono);${parseFloat(ad.ctr)<1?'color:var(--red)':''}">${ad.ctr}%</td>
-          <td style="font-family:var(--mono);">${ad.cpc}</td>
-          <td style="font-family:var(--mono);${freqWarn?'color:var(--red)':''}">${ad.freq}x${freqWarn?' ⚠':''}</td>
-          <td style="font-family:var(--mono);">${fmtN(ad.conv)}</td>
-          <td style="font-family:var(--mono);${cpaStyle}">${cpaNum > 0 ? fmtR(cpaNum) : ad.cpa === '—' ? '—' : '—'}</td>
-        </tr>`;
+      const score = calcCreativeScore(ad, cpaMeta);
+      allAds.push({ ...ad, campaign_name: c.campaign_name, campaign_id: c.campaign_id, objective: c.objective, temp: c.temp, funnel, score, verdict: creativeVerdict(score) });
     }
   }
 
+  // Unique campaigns for filter dropdown
+  const uniqueCamps = [...new Map(allAds.map(a => [a.campaign_id, a.campaign_name])).entries()];
+
+  // Apply filters
+  let filtered = allAds;
+  if (f.funnel !== 'all') filtered = filtered.filter(a => a.funnel === f.funnel);
+  if (f.status !== 'all') filtered = filtered.filter(a => f.status === 'active' ? a.status === 'ACTIVE' : a.status !== 'ACTIVE');
+  if (f.campaign !== 'all') filtered = filtered.filter(a => a.campaign_id === f.campaign);
+
+  // Sort
+  const sortKeys = { score: a => a.score, spend: a => parseFloat(a.spend||0), cpa: a => { const v = parseFloat(a.cpa||0); return v > 0 ? v : 99999; }, ctr: a => parseFloat(a.ctr||0), conv: a => parseInt(a.conv||0), freq: a => parseFloat(a.freq||0), impr: a => parseInt(a.impr||0), cpc: a => parseFloat(a.cpc||0) };
+  const sortFn = sortKeys[f.sort] || sortKeys.score;
+  filtered.sort((a, b) => f.sortDir === 'desc' ? sortFn(b) - sortFn(a) : sortFn(a) - sortFn(b));
+
+  // KPIs from filtered data
+  const active = filtered.filter(a => a.status === 'ACTIVE');
+  const totalSpend = filtered.reduce((s, a) => s + parseFloat(a.spend||0), 0);
+  const totalConv = filtered.reduce((s, a) => s + parseInt(a.conv||0), 0);
+  const avgCTR = filtered.length > 0 ? filtered.reduce((s, a) => s + parseFloat(a.ctr||0), 0) / filtered.length : 0;
+  const avgCPA = totalConv > 0 ? totalSpend / totalConv : 0;
+  const best = filtered.filter(a => parseInt(a.conv||0) > 0).sort((a, b) => parseFloat(a.cpa||999) - parseFloat(b.cpa||999))[0];
+  const worst = filtered.filter(a => parseFloat(a.spend||0) > 5 && parseInt(a.conv||0) === 0).sort((a, b) => parseFloat(b.spend||0) - parseFloat(a.spend||0))[0];
+  const toScale = filtered.filter(a => a.verdict.label === 'ESCALAR').length;
+  const toPause = filtered.filter(a => a.verdict.label === 'PAUSAR').length;
+
+  // Funnel stage breakdown
+  const funnelData = {};
+  for (const stage of ['TOFU','MOFU','BOFU']) {
+    const stageAds = allAds.filter(a => a.funnel === stage);
+    const stageSpend = stageAds.reduce((s, a) => s + parseFloat(a.spend||0), 0);
+    const stageConv = stageAds.reduce((s, a) => s + parseInt(a.conv||0), 0);
+    const stageImpr = stageAds.reduce((s, a) => s + parseInt(a.impr||0), 0);
+    const stageClks = stageAds.reduce((s, a) => s + parseInt(a.clks||0), 0);
+    funnelData[stage] = { count: stageAds.length, active: stageAds.filter(a => a.status === 'ACTIVE').length, spend: stageSpend, conv: stageConv, impr: stageImpr, clks: stageClks, cpa: stageConv > 0 ? stageSpend/stageConv : 0, ctr: stageImpr > 0 ? (stageClks/stageImpr)*100 : 0, cpm: stageImpr > 0 ? (stageSpend/stageImpr)*1000 : 0 };
+  }
+
+  const funnelColors = { TOFU: '#63B3ED', MOFU: '#F6AD55', BOFU: '#68D391' };
+  const funnelLabels = { TOFU: 'Topo — Awareness', MOFU: 'Meio — Engajamento', BOFU: 'Fundo — Conversão' };
+  const funnelMetrics = { TOFU: ['CPM','Alcance','Frequência'], MOFU: ['CTR','Hook Rate','CPC'], BOFU: ['Conversões','CPA','Connect Rate'] };
+  const totalFunnelSpend = Object.values(funnelData).reduce((s, d) => s + d.spend, 0);
+
+  const sortIcon = (col) => f.sort === col ? (f.sortDir === 'desc' ? ' ▼' : ' ▲') : '';
+  const sortHeader = (col, label) => `<th style="cursor:pointer;user-select:none;white-space:nowrap;" onclick="toggleMetaSort('criativos','${col}')">${label}${sortIcon(col)}</th>`;
+
+  // Render table rows
+  const rows = filtered.map(ad => {
+    const cpaNum = parseFloat(ad.cpa||0);
+    const cpaStyle = cpaMeta > 0 && cpaNum > 0 ? (cpaNum <= cpaMeta ? 'color:var(--green)' : cpaNum <= cpaMeta*1.3 ? 'color:var(--yellow)' : 'color:var(--red)') : '';
+    const freqWarn = parseFloat(ad.freq||0) > 3.5;
+    const ctrLow = parseFloat(ad.ctr||0) < 1;
+    const v = ad.verdict;
+    const scoreColor = ad.score >= 75 ? 'var(--green)' : ad.score >= 55 ? 'var(--accent)' : ad.score >= 35 ? 'var(--yellow)' : 'var(--red)';
+    const fColor = funnelColors[ad.funnel] || 'var(--txt-muted)';
+    return `<tr style="${ad.status!=='ACTIVE'?'opacity:.5':''}">
+      <td><div style="display:flex;align-items:center;gap:6px;">
+        <div style="width:28px;height:28px;border-radius:50%;background:${scoreColor}22;border:2px solid ${scoreColor};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:${scoreColor};">${ad.score}</div>
+        <span style="font-size:9px;font-weight:700;letter-spacing:.5px;color:${scoreColor};">${v.label}</span>
+      </div></td>
+      <td><span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;background:${fColor}18;color:${fColor};letter-spacing:.5px;">${ad.funnel}</span></td>
+      <td style="max-width:200px;"><div style="font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${ad.name}">${ad.name}</div>
+        <div style="font-size:9px;color:var(--txt-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;" title="${ad.campaign_name}">${ad.campaign_name.substring(0,35)}</div></td>
+      <td>${statusDot(ad.status)}</td>
+      <td style="font-family:var(--mono);font-size:11px;">${fmtR(ad.spend)}</td>
+      <td style="font-family:var(--mono);font-size:11px;">${fmtN(ad.impr)}</td>
+      <td style="font-family:var(--mono);font-size:11px;${ctrLow?'color:var(--red)':''}">${ad.ctr}%</td>
+      <td style="font-family:var(--mono);font-size:11px;">${ad.cpc}</td>
+      <td style="font-family:var(--mono);font-size:11px;${freqWarn?'color:var(--red)':''}">${ad.freq}x</td>
+      <td style="font-family:var(--mono);font-size:11px;font-weight:700;">${parseInt(ad.conv||0) > 0 ? fmtN(ad.conv) : '—'}</td>
+      <td style="font-family:var(--mono);font-size:11px;font-weight:700;${cpaStyle}">${cpaNum > 0 ? fmtR(cpaNum) : '—'}</td>
+    </tr>`;
+  }).join('');
+
   return `
+    <!-- FILTROS BI -->
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px;padding:10px 12px;background:var(--surf-2);border-radius:var(--radius);border:1px solid var(--border-light);">
+      <span style="font-size:10px;font-weight:700;color:var(--txt-muted);letter-spacing:.5px;margin-right:4px;">FILTROS</span>
+      <select onchange="setMetaBIFilter('criativos','funnel',this.value)" style="font-size:11px;padding:4px 8px;border-radius:4px;border:1px solid var(--border-light);background:var(--bg-primary);color:var(--txt-primary);">
+        <option value="all" ${f.funnel==='all'?'selected':''}>Todas fases</option>
+        <option value="TOFU" ${f.funnel==='TOFU'?'selected':''}>TOFU — Topo</option>
+        <option value="MOFU" ${f.funnel==='MOFU'?'selected':''}>MOFU — Meio</option>
+        <option value="BOFU" ${f.funnel==='BOFU'?'selected':''}>BOFU — Fundo</option>
+      </select>
+      <select onchange="setMetaBIFilter('criativos','status',this.value)" style="font-size:11px;padding:4px 8px;border-radius:4px;border:1px solid var(--border-light);background:var(--bg-primary);color:var(--txt-primary);">
+        <option value="all" ${f.status==='all'?'selected':''}>Todos status</option>
+        <option value="active" ${f.status==='active'?'selected':''}>Ativos</option>
+        <option value="paused" ${f.status==='paused'?'selected':''}>Pausados</option>
+      </select>
+      <select onchange="setMetaBIFilter('criativos','campaign',this.value)" style="font-size:11px;padding:4px 8px;border-radius:4px;border:1px solid var(--border-light);background:var(--bg-primary);color:var(--txt-primary);max-width:220px;">
+        <option value="all" ${f.campaign==='all'?'selected':''}>Todas campanhas</option>
+        ${uniqueCamps.map(([id, name]) => `<option value="${id}" ${f.campaign===id?'selected':''}>${name.substring(0,40)}</option>`).join('')}
+      </select>
+      <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+        <span style="font-size:10px;color:var(--txt-muted);">${filtered.length} de ${allAds.length} criativos</span>
+        <button class="btn-small" onclick="META_BI_FILTERS.criativos={funnel:'all',status:'all',campaign:'all',sort:'score',sortDir:'desc'};renderMetaSubTab(CURRENT_CLIENT?.id);" style="font-size:10px;padding:3px 8px;">Limpar</button>
+      </div>
+    </div>
+
+    <!-- KPIs DINÂMICOS -->
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:16px;">
+      ${metaKPICard('CRIATIVOS', `${active.length} ativos / ${filtered.length} total`, null, '', '')}
+      ${metaKPICard('GASTO TOTAL', fmtR(totalSpend), null, '', '')}
+      ${metaKPICard('CTR MÉDIO', avgCTR.toFixed(2)+'%', null, avgCTR >= 1.5 ? 'good' : avgCTR >= 1 ? '' : 'alert', '')}
+      ${metaKPICard('CPA GERAL', avgCPA > 0 ? fmtR(avgCPA) : '—', null, cpaMeta > 0 && avgCPA > 0 ? (avgCPA <= cpaMeta ? 'good' : avgCPA <= cpaMeta*1.3 ? 'warn' : 'alert') : '', '')}
+      ${metaKPICard('P/ ESCALAR', `🚀 ${toScale}`, null, toScale > 0 ? 'good' : '', '')}
+      ${metaKPICard('P/ PAUSAR', `🛑 ${toPause}`, null, toPause > 0 ? 'alert' : 'good', '')}
+    </div>
+
+    <!-- FUNIL VISUAL -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;">
+      ${['TOFU','MOFU','BOFU'].map(stage => {
+        const d = funnelData[stage];
+        const color = funnelColors[stage];
+        const pctSpend = totalFunnelSpend > 0 ? (d.spend/totalFunnelSpend*100) : 0;
+        const isActive = f.funnel === stage;
+        return `<div class="card" style="padding:14px;cursor:pointer;border-color:${isActive ? color : 'var(--border-light)'};background:${isActive ? color+'0a' : 'var(--bg-primary)'};" onclick="setMetaBIFilter('funnel','${isActive ? 'all' : stage}')">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <div>
+              <div style="font-size:9px;font-weight:700;letter-spacing:.8px;color:${color};">${stage}</div>
+              <div style="font-size:12px;font-weight:600;color:var(--txt-primary);margin-top:2px;">${funnelLabels[stage]}</div>
+            </div>
+            <div style="font-size:18px;font-weight:800;color:${color};">${d.active}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
+            <div style="font-size:10px;color:var(--txt-muted);">Gasto <strong style="color:var(--txt-secondary);">${fmtR(d.spend)}</strong></div>
+            <div style="font-size:10px;color:var(--txt-muted);text-align:right;">${pctSpend.toFixed(0)}% da verba</div>
+            <div style="font-size:10px;color:var(--txt-muted);">Conv <strong style="color:var(--txt-secondary);">${fmtN(d.conv)}</strong></div>
+            <div style="font-size:10px;color:var(--txt-muted);text-align:right;">CPA <strong style="color:var(--txt-secondary);">${d.cpa > 0 ? fmtR(d.cpa) : '—'}</strong></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;">
+            <div style="text-align:center;padding:4px 0;background:${color}0d;border-radius:3px;">
+              <div style="font-size:9px;color:var(--txt-muted);">${funnelMetrics[stage][0]}</div>
+              <div style="font-size:11px;font-weight:700;color:${color};">${stage==='TOFU' ? fmtR(d.cpm) : stage==='MOFU' ? d.ctr.toFixed(2)+'%' : fmtN(d.conv)}</div>
+            </div>
+            <div style="text-align:center;padding:4px 0;background:${color}0d;border-radius:3px;">
+              <div style="font-size:9px;color:var(--txt-muted);">${funnelMetrics[stage][1]}</div>
+              <div style="font-size:11px;font-weight:700;color:${color};">${stage==='TOFU' ? fmtN(d.impr) : stage==='MOFU' ? '—' : (d.cpa > 0 ? fmtR(d.cpa) : '—')}</div>
+            </div>
+            <div style="text-align:center;padding:4px 0;background:${color}0d;border-radius:3px;">
+              <div style="font-size:9px;color:var(--txt-muted);">${funnelMetrics[stage][2]}</div>
+              <div style="font-size:11px;font-weight:700;color:${color};">${stage==='TOFU' ? '—' : stage==='MOFU' ? fmtR(d.cpm) : '—'}</div>
+            </div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    ${best || worst ? `
+    <!-- DESTAQUES -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+      ${best ? `<div class="card" style="padding:12px;border-color:rgba(34,197,94,.3);"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="font-size:16px;">🏆</span><span style="font-size:10px;font-weight:700;color:var(--green);letter-spacing:.5px;">MELHOR CRIATIVO</span></div>
+        <div style="font-size:12px;font-weight:700;color:var(--txt-primary);margin-bottom:4px;">${best.name}</div>
+        <div style="font-size:10px;color:var(--txt-muted);">${best.campaign_name.substring(0,50)}</div>
+        <div style="display:flex;gap:12px;margin-top:8px;font-size:11px;">
+          <span style="color:var(--green);font-weight:600;">CPA ${fmtR(best.cpa)}</span>
+          <span style="color:var(--txt-secondary);">${fmtN(best.conv)} conv</span>
+          <span style="color:var(--txt-secondary);">CTR ${best.ctr}%</span>
+          <span style="color:var(--txt-secondary);">Score ${best.score}</span>
+        </div></div>` : ''}
+      ${worst ? `<div class="card" style="padding:12px;border-color:rgba(239,68,68,.3);"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="font-size:16px;">💸</span><span style="font-size:10px;font-weight:700;color:var(--red);letter-spacing:.5px;">GASTANDO SEM RESULTADO</span></div>
+        <div style="font-size:12px;font-weight:700;color:var(--txt-primary);margin-bottom:4px;">${worst.name}</div>
+        <div style="font-size:10px;color:var(--txt-muted);">${worst.campaign_name.substring(0,50)}</div>
+        <div style="display:flex;gap:12px;margin-top:8px;font-size:11px;">
+          <span style="color:var(--red);font-weight:600;">R$ ${parseFloat(worst.spend).toFixed(2)} gasto</span>
+          <span style="color:var(--red);">0 conversões</span>
+          <span style="color:var(--txt-secondary);">CTR ${worst.ctr}%</span>
+          <span style="color:var(--txt-secondary);">Score ${worst.score}</span>
+        </div></div>` : ''}
+    </div>` : ''}
+
+    <!-- TABELA BI -->
     <div class="section" style="margin-top:0;">
-      <div class="section-title" style="margin-bottom:4px;">🎨 CRIATIVOS — ANÁLISE DE PERFORMANCE</div>
-      <div style="font-size:11px;color:var(--txt-muted);margin-bottom:12px;">Regra de ouro: 6 anúncios rodando + 6 prontos para ativar. Se não testou 10 variações do vencedor, está deixando dinheiro na mesa.</div>
       <div class="table-wrapper" style="overflow-x:auto;">
         <table>
           <thead><tr>
-            <th>CAMPANHA</th><th style="min-width:180px;">CRIATIVO</th><th>STATUS</th>
-            <th>FORMATO</th><th>GASTO</th><th>IMPRESSÕES</th>
-            <th>HOOK RATE</th><th>CTR</th><th>CPC</th><th>FREQ.</th>
-            <th>CONV.</th><th>CPA</th>
+            ${sortHeader('score','SCORE')}
+            <th>FUNIL</th>
+            <th style="min-width:200px;">CRIATIVO</th>
+            <th>STATUS</th>
+            ${sortHeader('spend','GASTO')}
+            ${sortHeader('impr','IMPR.')}
+            ${sortHeader('ctr','CTR')}
+            ${sortHeader('cpc','CPC')}
+            ${sortHeader('freq','FREQ.')}
+            ${sortHeader('conv','CONV.')}
+            ${sortHeader('cpa','CPA')}
           </tr></thead>
-          <tbody>${rows}</tbody>
+          <tbody>${rows || '<tr><td colspan="11" style="text-align:center;padding:30px;color:var(--txt-muted);">Nenhum criativo encontrado com esses filtros</td></tr>'}</tbody>
         </table>
       </div>
-      <div style="margin-top:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
-        <div class="card" style="border-color:rgba(34,197,94,.3);">
-          <div style="font-size:9px;font-weight:700;color:var(--green);letter-spacing:1px;margin-bottom:4px;">HOOK RATE — REFERÊNCIAS</div>
-          <div style="font-size:11px;color:var(--txt-secondary);">
-            <div style="color:var(--green);">✓ >30% — Gancho forte</div>
-            <div style="color:var(--yellow);">~ 20–30% — Médio, melhorar</div>
-            <div style="color:var(--red);">✗ <20% — Reescreva os 3s</div>
-          </div>
-        </div>
-        <div class="card" style="border-color:rgba(234,179,8,.3);">
-          <div style="font-size:9px;font-weight:700;color:var(--yellow);letter-spacing:1px;margin-bottom:4px;">QUANDO PAUSAR UM ANÚNCIO</div>
-          <div style="font-size:11px;color:var(--txt-secondary);">
-            CTR < 0,5% por 3+ dias<br>
-            CPM > 2× benchmark<br>
-            Frequência > 3,5x<br>
-            CPA > 130% da meta
-          </div>
-        </div>
-        <div class="card" style="border-color:rgba(110,127,153,.3);">
-          <div style="font-size:9px;font-weight:700;color:var(--accent);letter-spacing:1px;margin-bottom:4px;">COMO VARIAR O VENCEDOR</div>
-          <div style="font-size:11px;color:var(--txt-secondary);">
-            Trocar gancho (3s iniciais)<br>
-            Mudar formato (img/vídeo/carrossel)<br>
-            Alterar CTA e copy<br>
-            Regravar com final diferente
-          </div>
-        </div>
+    </div>
+
+    <!-- LEGENDA -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px;">
+      <div style="font-size:10px;padding:8px;background:var(--surf-2);border-radius:var(--radius);text-align:center;">
+        <span style="color:var(--green);font-weight:700;">🚀 ESCALAR</span><br><span style="color:var(--txt-muted);">Score 75+</span>
+      </div>
+      <div style="font-size:10px;padding:8px;background:var(--surf-2);border-radius:var(--radius);text-align:center;">
+        <span style="color:var(--accent);font-weight:700;">✅ MANTER</span><br><span style="color:var(--txt-muted);">Score 55-74</span>
+      </div>
+      <div style="font-size:10px;padding:8px;background:var(--surf-2);border-radius:var(--radius);text-align:center;">
+        <span style="color:var(--yellow);font-weight:700;">⚠️ OTIMIZAR</span><br><span style="color:var(--txt-muted);">Score 35-54</span>
+      </div>
+      <div style="font-size:10px;padding:8px;background:var(--surf-2);border-radius:var(--radius);text-align:center;">
+        <span style="color:var(--red);font-weight:700;">🛑 PAUSAR</span><br><span style="color:var(--txt-muted);">Score 0-34</span>
       </div>
     </div>`;
 }
 
 // ─── ABA DIAGNÓSTICO ─────────────────────────────────────────────────────────
+function renderMetaBreakdowns(data, client) {
+  const ag = data.age_gender || [];
+  const pl = data.placements || [];
+  const dv = data.devices || [];
+  const m = metaAgg(data);
+
+  function breakdownBar(label, spend, pct, convCount, color) {
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <div style="min-width:100px;font-size:11px;color:var(--txt-secondary);text-align:right;">${label}</div>
+      <div style="flex:1;height:20px;background:var(--bg-accent);border-radius:3px;overflow:hidden;position:relative;">
+        <div style="height:100%;width:${Math.max(pct,1)}%;background:${color};border-radius:3px;"></div>
+        <span style="position:absolute;right:6px;top:2px;font-size:10px;color:var(--txt-primary);font-weight:600;">${fmtR(spend)}</span>
+      </div>
+      <div style="min-width:60px;text-align:right;font-size:10px;color:var(--txt-muted);">${pct.toFixed(1)}%</div>
+      <div style="min-width:40px;text-align:right;font-size:10px;color:var(--txt-secondary);font-weight:600;">${convCount > 0 ? fmtN(convCount) : '—'}</div>
+    </div>`;
+  }
+
+  // Age breakdown
+  const ageMap = new Map();
+  for (const row of ag) {
+    const age = row.age || 'N/A';
+    if (!ageMap.has(age)) ageMap.set(age, { spend: 0, impr: 0, clks: 0, conv: 0 });
+    const entry = ageMap.get(age);
+    entry.spend += parseFloat(row.spend || 0);
+    entry.impr += parseInt(row.impressions || 0);
+    entry.clks += parseInt(row.clicks || 0);
+    entry.conv += getMetaActionCount(row, ['onsite_conversion.messaging_conversation_started_7d', 'lead', 'purchase', 'omni_purchase']);
+  }
+  const ageSorted = [...ageMap.entries()].sort((a, b) => b[1].spend - a[1].spend);
+  const ageMaxSpend = Math.max(...ageSorted.map(([, v]) => v.spend), 1);
+
+  // Gender breakdown
+  const genderMap = new Map();
+  for (const row of ag) {
+    const g = row.gender === 'male' ? 'Masculino' : row.gender === 'female' ? 'Feminino' : 'Outro';
+    if (!genderMap.has(g)) genderMap.set(g, { spend: 0, impr: 0, clks: 0, conv: 0 });
+    const entry = genderMap.get(g);
+    entry.spend += parseFloat(row.spend || 0);
+    entry.impr += parseInt(row.impressions || 0);
+    entry.clks += parseInt(row.clicks || 0);
+    entry.conv += getMetaActionCount(row, ['onsite_conversion.messaging_conversation_started_7d', 'lead', 'purchase', 'omni_purchase']);
+  }
+  const genderSorted = [...genderMap.entries()].sort((a, b) => b[1].spend - a[1].spend);
+  const genderMaxSpend = Math.max(...genderSorted.map(([, v]) => v.spend), 1);
+
+  // Placement breakdown
+  const placementMap = new Map();
+  for (const row of pl) {
+    const platform = row.publisher_platform || 'Outro';
+    const position = row.platform_position || '';
+    const label = position ? `${platform} — ${position}` : platform;
+    if (!placementMap.has(label)) placementMap.set(label, { spend: 0, impr: 0, clks: 0, conv: 0 });
+    const entry = placementMap.get(label);
+    entry.spend += parseFloat(row.spend || 0);
+    entry.impr += parseInt(row.impressions || 0);
+    entry.clks += parseInt(row.clicks || 0);
+    entry.conv += getMetaActionCount(row, ['onsite_conversion.messaging_conversation_started_7d', 'lead', 'purchase', 'omni_purchase']);
+  }
+  const placeSorted = [...placementMap.entries()].sort((a, b) => b[1].spend - a[1].spend);
+  const placeMaxSpend = Math.max(...placeSorted.map(([, v]) => v.spend), 1);
+
+  // Device breakdown
+  const deviceMap = new Map();
+  for (const row of dv) {
+    const d = row.device_platform || 'Outro';
+    if (!deviceMap.has(d)) deviceMap.set(d, { spend: 0, impr: 0, clks: 0, conv: 0 });
+    const entry = deviceMap.get(d);
+    entry.spend += parseFloat(row.spend || 0);
+    entry.impr += parseInt(row.impressions || 0);
+    entry.clks += parseInt(row.clicks || 0);
+    entry.conv += getMetaActionCount(row, ['onsite_conversion.messaging_conversation_started_7d', 'lead', 'purchase', 'omni_purchase']);
+  }
+  const devSorted = [...deviceMap.entries()].sort((a, b) => b[1].spend - a[1].spend);
+  const devMaxSpend = Math.max(...devSorted.map(([, v]) => v.spend), 1);
+
+  const colors = ['var(--accent)', '#6366f1', '#ec4899', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444'];
+  const hasBreakdowns = ag.length > 0 || pl.length > 0 || dv.length > 0;
+
+  if (!hasBreakdowns) {
+    return `<div class="card" style="border-color:var(--yellow);background:var(--yellow-bg);text-align:center;padding:40px;">
+      <div style="font-size:24px;margin-bottom:12px;">📐</div>
+      <div style="font-weight:700;color:var(--yellow);margin-bottom:8px;">Breakdowns não disponíveis</div>
+      <div style="font-size:12px;color:var(--txt-muted);">Os dados de breakdowns por idade, gênero, posicionamento e dispositivo aparecerão aqui quando a conexão com a API do Meta estiver ativa.</div>
+    </div>`;
+  }
+
+  // Best performing age for insight
+  const bestAge = ageSorted.length > 0 ? ageSorted.reduce((best, [age, v]) => {
+    const cpa = v.conv > 0 ? v.spend / v.conv : Infinity;
+    return cpa < best.cpa ? { age, cpa, conv: v.conv, spend: v.spend } : best;
+  }, { age: '', cpa: Infinity, conv: 0, spend: 0 }) : null;
+
+  const bestGender = genderSorted.length > 0 ? genderSorted.reduce((best, [g, v]) => {
+    const cpa = v.conv > 0 ? v.spend / v.conv : Infinity;
+    return cpa < best.cpa ? { gender: g, cpa, conv: v.conv } : best;
+  }, { gender: '', cpa: Infinity, conv: 0 }) : null;
+
+  const bestPlace = placeSorted.length > 0 ? placeSorted.reduce((best, [p, v]) => {
+    const cpa = v.conv > 0 ? v.spend / v.conv : Infinity;
+    return cpa < best.cpa ? { place: p, cpa, conv: v.conv } : best;
+  }, { place: '', cpa: Infinity, conv: 0 }) : null;
+
+  return `
+    <!-- INSIGHTS RÁPIDOS -->
+    ${bestAge?.conv > 0 || bestGender?.conv > 0 || bestPlace?.conv > 0 ? `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:20px;">
+      ${bestAge?.conv > 0 ? `<div class="card" style="padding:12px;"><div style="font-size:10px;color:var(--txt-muted);font-weight:600;letter-spacing:.5px;">MELHOR FAIXA ETÁRIA</div><div style="font-size:18px;font-weight:700;color:var(--accent);margin:6px 0;">${bestAge.age}</div><div style="font-size:11px;color:var(--txt-secondary);">CPA ${fmtR(bestAge.cpa)} · ${fmtN(bestAge.conv)} conv.</div></div>` : ''}
+      ${bestGender?.conv > 0 ? `<div class="card" style="padding:12px;"><div style="font-size:10px;color:var(--txt-muted);font-weight:600;letter-spacing:.5px;">MELHOR GÊNERO</div><div style="font-size:18px;font-weight:700;color:#6366f1;margin:6px 0;">${bestGender.gender}</div><div style="font-size:11px;color:var(--txt-secondary);">CPA ${fmtR(bestGender.cpa)} · ${fmtN(bestGender.conv)} conv.</div></div>` : ''}
+      ${bestPlace?.conv > 0 ? `<div class="card" style="padding:12px;"><div style="font-size:10px;color:var(--txt-muted);font-weight:600;letter-spacing:.5px;">MELHOR POSICIONAMENTO</div><div style="font-size:18px;font-weight:700;color:#10b981;margin:6px 0;">${bestPlace.place}</div><div style="font-size:11px;color:var(--txt-secondary);">CPA ${fmtR(bestPlace.cpa)} · ${fmtN(bestPlace.conv)} conv.</div></div>` : ''}
+    </div>` : ''}
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <!-- FAIXA ETÁRIA -->
+      <div class="section" style="margin-top:0;">
+        <div class="section-title">👤 POR FAIXA ETÁRIA</div>
+        <div style="display:flex;gap:6px;margin-bottom:8px;font-size:10px;color:var(--txt-muted);justify-content:flex-end;">
+          <span style="min-width:60px;text-align:right;">% Gasto</span>
+          <span style="min-width:40px;text-align:right;">Conv.</span>
+        </div>
+        ${ageSorted.map(([age, v], i) => breakdownBar(age, v.spend, (v.spend / ageMaxSpend) * 100, v.conv, colors[i % colors.length])).join('')}
+        ${ageSorted.length === 0 ? '<div style="color:var(--txt-muted);font-size:12px;text-align:center;padding:20px;">Sem dados</div>' : ''}
+      </div>
+
+      <!-- GÊNERO -->
+      <div class="section" style="margin-top:0;">
+        <div class="section-title">⚧ POR GÊNERO</div>
+        <div style="display:flex;gap:6px;margin-bottom:8px;font-size:10px;color:var(--txt-muted);justify-content:flex-end;">
+          <span style="min-width:60px;text-align:right;">% Gasto</span>
+          <span style="min-width:40px;text-align:right;">Conv.</span>
+        </div>
+        ${genderSorted.map(([g, v], i) => {
+          const gColors = { 'Masculino': '#3b82f6', 'Feminino': '#ec4899', 'Outro': '#94a3b8' };
+          return breakdownBar(g, v.spend, (v.spend / genderMaxSpend) * 100, v.conv, gColors[g] || colors[i]);
+        }).join('')}
+        ${genderSorted.length > 0 ? `
+        <div style="margin-top:12px;background:var(--surf-1);border:1px solid var(--border-light);border-radius:var(--radius);padding:10px;">
+          <table style="width:100%;font-size:11px;">
+            <thead><tr><th style="text-align:left;">Gênero</th><th>Gasto</th><th>CTR</th><th>CPA</th></tr></thead>
+            <tbody>${genderSorted.map(([g, v]) => {
+              const ctr = v.impr > 0 ? ((v.clks / v.impr) * 100).toFixed(2) : '0';
+              const cpa = v.conv > 0 ? fmtR(v.spend / v.conv) : '—';
+              return `<tr><td style="font-weight:600;">${g}</td><td style="text-align:center;font-family:var(--mono);">${fmtR(v.spend)}</td><td style="text-align:center;font-family:var(--mono);">${ctr}%</td><td style="text-align:center;font-family:var(--mono);">${cpa}</td></tr>`;
+            }).join('')}</tbody>
+          </table>
+        </div>` : ''}
+      </div>
+
+      <!-- POSICIONAMENTO -->
+      <div class="section" style="margin-top:0;">
+        <div class="section-title">📱 POR POSICIONAMENTO</div>
+        <div style="display:flex;gap:6px;margin-bottom:8px;font-size:10px;color:var(--txt-muted);justify-content:flex-end;">
+          <span style="min-width:60px;text-align:right;">% Gasto</span>
+          <span style="min-width:40px;text-align:right;">Conv.</span>
+        </div>
+        ${placeSorted.slice(0, 10).map(([p, v], i) => breakdownBar(p, v.spend, (v.spend / placeMaxSpend) * 100, v.conv, colors[i % colors.length])).join('')}
+        ${placeSorted.length === 0 ? '<div style="color:var(--txt-muted);font-size:12px;text-align:center;padding:20px;">Sem dados</div>' : ''}
+      </div>
+
+      <!-- DISPOSITIVO -->
+      <div class="section" style="margin-top:0;">
+        <div class="section-title">💻 POR DISPOSITIVO</div>
+        <div style="display:flex;gap:6px;margin-bottom:8px;font-size:10px;color:var(--txt-muted);justify-content:flex-end;">
+          <span style="min-width:60px;text-align:right;">% Gasto</span>
+          <span style="min-width:40px;text-align:right;">Conv.</span>
+        </div>
+        ${devSorted.map(([d, v], i) => {
+          const dColors = { 'mobile_app': '#3b82f6', 'mobile_web': '#6366f1', 'desktop': '#94a3b8', 'unknown': '#cbd5e1' };
+          const label = d === 'mobile_app' ? 'Mobile App' : d === 'mobile_web' ? 'Mobile Web' : d === 'desktop' ? 'Desktop' : d;
+          return breakdownBar(label, v.spend, (v.spend / devMaxSpend) * 100, v.conv, dColors[d] || colors[i]);
+        }).join('')}
+        ${devSorted.length === 0 ? '<div style="color:var(--txt-muted);font-size:12px;text-align:center;padding:20px;">Sem dados</div>' : ''}
+        ${devSorted.length > 0 ? `
+        <div style="margin-top:12px;background:var(--surf-1);border:1px solid var(--border-light);border-radius:var(--radius);padding:10px;">
+          <table style="width:100%;font-size:11px;">
+            <thead><tr><th style="text-align:left;">Dispositivo</th><th>Gasto</th><th>% do Total</th><th>Conv.</th></tr></thead>
+            <tbody>${devSorted.map(([d, v]) => {
+              const label = d === 'mobile_app' ? 'Mobile App' : d === 'mobile_web' ? 'Mobile Web' : d === 'desktop' ? 'Desktop' : d;
+              const pct = m.spend > 0 ? ((v.spend / m.spend) * 100).toFixed(1) : '0';
+              return `<tr><td style="font-weight:600;">${label}</td><td style="text-align:center;font-family:var(--mono);">${fmtR(v.spend)}</td><td style="text-align:center;font-family:var(--mono);">${pct}%</td><td style="text-align:center;font-family:var(--mono);">${v.conv > 0 ? fmtN(v.conv) : '—'}</td></tr>`;
+            }).join('')}</tbody>
+          </table>
+        </div>` : ''}
+      </div>
+    </div>
+
+    <!-- TABELA DETALHADA IDADE × GÊNERO -->
+    ${ag.length > 0 ? `
+    <div class="section">
+      <div class="section-title">📊 TABELA CRUZADA: IDADE × GÊNERO</div>
+      <div class="table-wrapper" style="overflow-x:auto;">
+        <table>
+          <thead><tr><th>Idade</th><th>Gênero</th><th>Gasto</th><th>Impressões</th><th>Cliques</th><th>CTR</th><th>CPC</th><th>Conv.</th><th>CPA</th></tr></thead>
+          <tbody>${ag.sort((a, b) => parseFloat(b.spend || 0) - parseFloat(a.spend || 0)).slice(0, 20).map(row => {
+            const spend = parseFloat(row.spend || 0);
+            const clks = parseInt(row.clicks || 0);
+            const impr = parseInt(row.impressions || 0);
+            const conv = getMetaActionCount(row, ['onsite_conversion.messaging_conversation_started_7d', 'lead', 'purchase', 'omni_purchase']);
+            const ctr = impr > 0 ? ((clks / impr) * 100).toFixed(2) : '0';
+            const cpc = clks > 0 ? (spend / clks).toFixed(2) : '0';
+            const cpa = conv > 0 ? fmtR(spend / conv) : '—';
+            const gender = row.gender === 'male' ? 'M' : row.gender === 'female' ? 'F' : '?';
+            return `<tr>
+              <td style="font-weight:600;">${row.age || '?'}</td>
+              <td><span style="color:${gender === 'M' ? '#3b82f6' : '#ec4899'};font-weight:700;">${gender}</span></td>
+              <td style="font-family:var(--mono);">${fmtR(spend)}</td>
+              <td style="font-family:var(--mono);">${fmtN(impr)}</td>
+              <td style="font-family:var(--mono);">${fmtN(clks)}</td>
+              <td style="font-family:var(--mono);${parseFloat(ctr) < 1 ? 'color:var(--red)' : ''}">${ctr}%</td>
+              <td style="font-family:var(--mono);">${fmtR(parseFloat(cpc))}</td>
+              <td style="font-family:var(--mono);font-weight:600;">${conv > 0 ? fmtN(conv) : '—'}</td>
+              <td style="font-family:var(--mono);">${cpa}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>
+    </div>` : ''}
+  `;
+}
+
 function renderMetaDiagnostico(data, client) {
   const m = metaAgg(data);
   const camps = data.campaign_insights || [];
@@ -4969,11 +5926,41 @@ function renderMetaDiagnostico(data, client) {
   // ── ANÁLISE DE SEGMENTAÇÃO (obrigatória em todo diagnóstico) ──
   const segAnalysis = buildSegmentationAnalysis(camps, client, m);
 
+  // Health Score
+  const critCount = issues.filter(i => i.sev === 'critical').length;
+  const warnCount = issues.filter(i => i.sev === 'warning').length;
+  const okCount = issues.filter(i => i.sev === 'ok').length;
+  const totalChecks = 9;
+  const healthScore = Math.max(0, Math.min(100, Math.round(100 - (critCount * 20 + warnCount * 8))));
+  const healthColor = healthScore >= 80 ? 'var(--green)' : healthScore >= 50 ? 'var(--yellow)' : 'var(--red)';
+  const healthLabel = healthScore >= 80 ? 'Saudável' : healthScore >= 50 ? 'Precisa de atenção' : 'Crítico';
+  const healthEmoji = healthScore >= 80 ? '💚' : healthScore >= 50 ? '💛' : '❤️‍🩹';
+
   return `
     <div class="section" style="margin-top:0;">
       <div class="section-title" style="margin-bottom:4px;">🔍 DIAGNÓSTICO AUTOMÁTICO</div>
+
+      <!-- HEALTH SCORE -->
+      <div style="display:flex;align-items:center;gap:20px;background:var(--surf-1);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:16px 20px;margin-bottom:16px;">
+        <div style="position:relative;width:80px;height:80px;flex-shrink:0;">
+          <svg viewBox="0 0 36 36" style="width:80px;height:80px;transform:rotate(-90deg);">
+            <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--border-light)" stroke-width="3"/>
+            <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="${healthColor}" stroke-width="3" stroke-dasharray="${healthScore}, 100" stroke-linecap="round"/>
+          </svg>
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;">
+            <div style="font-size:20px;font-weight:800;color:${healthColor};">${healthScore}</div>
+            <div style="font-size:8px;color:var(--txt-muted);margin-top:-2px;">de 100</div>
+          </div>
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:16px;font-weight:700;color:${healthColor};margin-bottom:4px;">${healthEmoji} ${healthLabel}</div>
+          <div style="font-size:11px;color:var(--txt-secondary);">${critCount} crítico(s) · ${warnCount} atenção · ${okCount > 0 && critCount === 0 && warnCount === 0 ? '✅ Tudo OK' : ''}</div>
+          <div style="font-size:10px;color:var(--txt-muted);margin-top:6px;">Score baseado em ${totalChecks} verificações: CPA, CTR, CPM, frequência, connect rate, hook rate, pacing, ROAS e consistência entre campanhas.</div>
+        </div>
+      </div>
+
       <div style="font-size:11px;color:var(--txt-muted);margin-bottom:16px;">
-        Baseado nas métricas do período. ${issues.filter(i=>i.sev==='critical').length} problema(s) crítico(s) · ${issues.filter(i=>i.sev==='warning').length} atenção · ${issues.filter(i=>i.sev==='ok').length} ok.
+        Baseado nas métricas do período. ${critCount} problema(s) crítico(s) · ${warnCount} atenção · ${okCount} ok.
       </div>
       ${diagCards}
 
@@ -9221,6 +10208,61 @@ async function saveMetaAccount() {
     if (content) renderClientMetaDashboard(content);
   } catch(e) {
     showToast('Erro ao salvar conta Meta: ' + e.message, 'error');
+  }
+}
+
+async function testMetaConnection() {
+  const accountId = document.getElementById('meta-account-id').value.trim();
+  const token = document.getElementById('meta-access-token').value.trim();
+  const resultDiv = document.getElementById('meta-test-result');
+
+  if (!accountId || !token) {
+    if (resultDiv) resultDiv.innerHTML = '<span style="color:var(--yellow);">Preencha o ID da conta e o token antes de testar.</span>';
+    return;
+  }
+
+  const adAccountId = accountId.startsWith('act_') ? accountId : 'act_' + accountId;
+
+  if (resultDiv) resultDiv.innerHTML = '<span style="color:var(--txt-muted);">Testando conexão...</span>';
+
+  try {
+    const url = `https://graph.facebook.com/v25.0/${adAccountId}?fields=name,account_status,currency,timezone_name,amount_spent&access_token=${token}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+
+    if (data.error) {
+      const msg = data.error.message || 'Erro desconhecido';
+      const code = data.error.code || '';
+      let hint = '';
+      if (code === 190) hint = 'Token inválido ou expirado. Gere um novo token.';
+      else if (code === 100) hint = 'ID da conta inválido. Verifique o número.';
+      else if (code === 200 || code === 10) hint = 'Sem permissão. Verifique se o token tem acesso a esta conta.';
+      if (resultDiv) resultDiv.innerHTML = `<div style="color:var(--red);"><strong>Erro:</strong> ${msg}${hint ? '<br><em>' + hint + '</em>' : ''}</div>`;
+      return;
+    }
+
+    const statusMap = { 1: 'Ativa', 2: 'Desativada', 3: 'Não publicada', 7: 'Pendente', 9: 'Em análise', 101: 'Fechada' };
+    const statusLabel = statusMap[data.account_status] || `Status ${data.account_status}`;
+    const statusColor = data.account_status === 1 ? 'var(--green)' : 'var(--yellow)';
+
+    if (resultDiv) resultDiv.innerHTML = `
+      <div style="background:var(--surf-1);border:1px solid var(--green);border-radius:var(--radius);padding:12px;margin-top:8px;">
+        <div style="color:var(--green);font-weight:700;margin-bottom:8px;">Conexão OK</div>
+        <div style="font-size:12px;display:grid;grid-template-columns:auto 1fr;gap:4px 12px;">
+          <span style="color:var(--txt-muted);">Conta:</span><span style="font-weight:600;">${data.name || adAccountId}</span>
+          <span style="color:var(--txt-muted);">Status:</span><span style="color:${statusColor};font-weight:600;">${statusLabel}</span>
+          <span style="color:var(--txt-muted);">Moeda:</span><span>${data.currency || '—'}</span>
+          <span style="color:var(--txt-muted);">Fuso:</span><span>${data.timezone_name || '—'}</span>
+          <span style="color:var(--txt-muted);">Gasto total:</span><span style="font-family:var(--mono);">R$ ${data.amount_spent ? (parseFloat(data.amount_spent) / 100).toFixed(2) : '0.00'}</span>
+        </div>
+      </div>`;
+
+    if (document.getElementById('meta-account-name') && data.name) {
+      document.getElementById('meta-account-name').value = data.name;
+    }
+
+  } catch(e) {
+    if (resultDiv) resultDiv.innerHTML = `<span style="color:var(--red);">Erro de rede: ${e.message}</span>`;
   }
 }
 
