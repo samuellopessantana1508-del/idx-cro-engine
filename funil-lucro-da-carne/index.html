@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#7B2D26">
+<title>Lucro da Carne · Diagnóstico da sua operação</title>
+<meta name="description" content="Responda 6 perguntas rápidas e descubra se seus lotes de carne realmente dão lucro. Diagnóstico gratuito para açougues e casas de carne.">
+<meta property="og:title" content="Descubra se seus lotes de carne realmente dão lucro">
+<meta property="og:description" content="6 perguntas rápidas. Um diagnóstico feito para a sua operação.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Noto+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+<!-- ═══════════════════════════════════════════════════════════════
+     CONFIGURAÇÃO · edite apenas este bloco
+     ═══════════════════════════════════════════════════════════════ -->
+<script>
+const CONFIG = {
+  PIXEL_ID: "",
+  GTM_ID: "",
+  CHECKOUT_URL: "https://go.perfectpay.com.br/PPU38CQE4L7",
+  WEBHOOK_URL: "",
+  PRODUTO: "Lucro da Carne",
+  DESCRICAO: "Inteligência de margem para açougues",
+  POLITICA_PRIVACIDADE: "",
+  SCORE_QUALIFICADO: 12,
+  TEMPO_ANALISE: 2600,
+  REGISTRAR_VISITA: true
+};
+</script>
+
+<!-- Google Tag Manager -->
+<script>
+window.dataLayer = window.dataLayer || [];
+if(CONFIG.GTM_ID){
+  (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});
+  var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';
+  j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;
+  f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer',CONFIG.GTM_ID);
+}
+</script>
+
+<script>
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}
+(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+if(CONFIG.PIXEL_ID){ fbq('init', CONFIG.PIXEL_ID); fbq('track', 'PageView'); }
+</script>
+
+<style>
+:root{
+  --ac:#7B2D26;
+  --ac-dark:#5C1F19;
+  --ac-deep:#3D1410;
+  --ac-soft:#FAF0EE;
+  --ac-mid:#D4ADA6;
+  --ac-line:#E8DCDA;
+  --ink:#1A0E0C; --ink-2:#2D1B18; --ink-3:#5A4440;
+  --g-1:#7A6B67; --g-2:#A89894; --g-3:#D4CBC8; --g-4:#E8E2E0; --g-5:#F5F1F0;
+  --paper:#fff; --bg:#F8F4F3;
+  --shell:600px;
+  --sh:0 1px 2px rgba(26,14,12,.05), 0 8px 24px -12px rgba(26,14,12,.15);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+body{
+  font-family:'Noto Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:var(--bg);color:var(--ink-2);
+  font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;
+  min-height:100dvh;display:flex;flex-direction:column;overflow-x:hidden;
+}
+h1,h2,h3{color:var(--ink);line-height:1.16;letter-spacing:-.02em}
+h1{font-family:'Fraunces',Georgia,serif;font-weight:600;font-size:clamp(27px,6.6vw,40px);letter-spacing:-.015em}
+h2{font-family:'Fraunces',Georgia,serif;font-weight:600;font-size:clamp(22px,5.4vw,31px);letter-spacing:-.015em;line-height:1.2}
+.eyebrow{font-size:10px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--ac)}
+.shell{width:100%;max-width:var(--shell);margin:0 auto;padding:0 18px;flex:1;display:flex;flex-direction:column}
+@media(min-width:700px){.shell{padding:0 24px}}
+
+.bar{background:var(--ac);padding:10px 0;position:sticky;top:0;z-index:60}
+.bar-in{max-width:var(--shell);margin:0 auto;padding:0 18px;display:flex;align-items:center;gap:11px}
+@media(min-width:700px){.bar-in{padding:0 24px}}
+.bar-icon{width:32px;height:32px;flex:0 0 32px;color:rgba(255,255,255,.9)}
+.bar-icon svg{width:100%;height:100%;display:block}
+.bar b{font-size:14px;font-weight:700;color:#fff;display:block;line-height:1.3}
+.bar span{font-size:10.5px;color:rgba(255,255,255,.68);display:block;line-height:1.3}
+
+.prog{background:var(--paper);border-bottom:1px solid var(--g-4);position:sticky;top:52px;z-index:59;padding:9px 0 10px}
+.prog.hide{display:none}
+.prog-in{max-width:var(--shell);margin:0 auto;padding:0 18px}
+@media(min-width:700px){.prog-in{padding:0 24px}}
+.prog-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.prog-top b{font-size:11px;font-weight:700;color:var(--ac);letter-spacing:.04em}
+.prog-top span{font-size:10.5px;color:var(--g-1);letter-spacing:.05em}
+.track{height:5px;background:var(--g-4);border-radius:99px;overflow:hidden}
+.track i{display:block;height:100%;background:var(--ac);border-radius:99px;width:0;
+  transition:width .5s cubic-bezier(.34,1.2,.44,1)}
+
+.card{background:var(--paper);border-radius:18px;box-shadow:var(--sh);
+  padding:26px 20px 24px;margin:18px 0 26px;animation:up .38s cubic-bezier(.2,.9,.3,1)}
+@media(min-width:700px){.card{padding:38px 34px 32px;margin:26px 0 40px;border-radius:22px}}
+@keyframes up{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+
+.band{background:linear-gradient(150deg,var(--ac) 0%,var(--ac-deep) 100%);
+  margin:-26px -20px 0;padding:30px 20px 56px;border-radius:18px 18px 0 0;
+  position:relative;overflow:hidden;text-align:center}
+@media(min-width:700px){.band{margin:-38px -34px 0;padding:36px 34px 60px;border-radius:22px 22px 0 0}}
+.band .wm{position:absolute;right:-34px;top:-24px;width:190px;height:190px;opacity:.09}
+.band .wm svg{width:100%;height:100%}
+.band .kicker{position:relative;font-size:10px;font-weight:700;letter-spacing:.22em;
+  text-transform:uppercase;color:rgba(255,255,255,.72)}
+.band .logo{position:relative;width:56px;height:56px;margin:12px auto 0;color:rgba(255,255,255,.95)}
+.band .logo svg{width:100%;height:100%;display:block}
+
+.badge{display:inline-flex;align-items:center;gap:7px;
+  background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.2);
+  font-size:13px;font-weight:600;padding:8px 16px;border-radius:99px;margin:18px auto 0;position:relative}
+.badge svg{width:16px;height:16px}
+
+.hcenter{text-align:center;margin-top:22px}
+.pill{display:inline-flex;align-items:center;gap:7px;background:var(--ac-soft);color:var(--ac);
+  font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  padding:7px 13px;border-radius:99px;margin-bottom:14px}
+.pill svg{width:13px;height:13px}
+.sub{font-size:15.5px;color:var(--ink-3);margin-top:13px}
+.bens{margin:24px 0 4px;display:flex;flex-direction:column;gap:11px}
+.ben{display:flex;gap:11px;align-items:flex-start;font-size:14.5px;color:var(--ink-2);line-height:1.45}
+.ben .ck{flex:0 0 21px;height:21px;border-radius:50%;background:var(--ac-soft);color:var(--ac);
+  display:flex;align-items:center;justify-content:center;margin-top:1px}
+.ben .ck svg{width:12px;height:12px}
+.proof{display:flex;margin-top:22px;padding-top:18px;border-top:1px solid var(--g-4)}
+.proof div{flex:1;text-align:center;border-right:1px solid var(--g-4)}
+.proof div:last-child{border-right:0}
+.proof b{display:block;font-family:'Fraunces',serif;font-size:23px;font-weight:600;color:var(--ac);line-height:1}
+.proof span{display:block;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--g-1);margin-top:5px}
+.trust{display:flex;align-items:center;gap:7px;justify-content:center;margin-top:15px;font-size:11.5px;color:var(--g-1);
+  flex-wrap:wrap;text-align:center;line-height:1.5}
+.trust svg{width:14px;height:14px;color:var(--ac)}
+
+.btn{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;
+  background:var(--ac);color:#fff;border:0;border-radius:12px;
+  font-family:inherit;font-size:16px;font-weight:700;padding:18px 20px;cursor:pointer;
+  transition:transform .12s, box-shadow .18s, background .18s;text-decoration:none;
+  box-shadow:0 4px 14px -4px rgba(123,45,38,.5)}
+.btn:hover{background:var(--ac-dark);box-shadow:0 8px 22px -6px rgba(123,45,38,.55)}
+.btn:active{transform:scale(.985)}
+.btn svg{width:18px;height:18px;flex:0 0 18px}
+.btn.gh{background:transparent;color:var(--ink-2);border:1px solid var(--g-3);
+  font-weight:600;font-size:14.5px;padding:14px 20px;box-shadow:none}
+.btn.gh:hover{border-color:var(--ac);color:var(--ac);background:var(--ac-soft)}
+.btn+.btn{margin-top:10px}
+
+.qt{font-family:'Fraunces',Georgia,serif;font-weight:600;font-size:clamp(21px,5vw,28px);
+  color:var(--ink);line-height:1.2;letter-spacing:-.015em}
+.qh{font-size:13.5px;color:var(--g-1);margin-top:9px;line-height:1.5}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:22px}
+.tile{background:var(--paper);border:1.5px solid var(--g-3);border-radius:14px;padding:16px 12px 14px;
+  display:flex;flex-direction:column;align-items:center;text-align:center;gap:9px;cursor:pointer;
+  font-family:inherit;font-size:13.5px;line-height:1.32;color:var(--ink-2);font-weight:500;
+  transition:.16s cubic-bezier(.3,1,.4,1);position:relative}
+.tile:hover{border-color:var(--ac);transform:translateY(-2px);box-shadow:var(--sh)}
+.tile .ico{width:46px;height:46px;border-radius:12px;background:var(--ac-soft);color:var(--ac);
+  display:flex;align-items:center;justify-content:center;transition:.16s}
+.tile .ico svg{width:26px;height:26px}
+.tile:hover .ico{background:var(--ac-mid)}
+.tile.on{border-color:var(--ac);background:var(--ac-soft);box-shadow:0 0 0 3px rgba(123,45,38,.13)}
+.tile.on .ico{background:var(--ac);color:#fff}
+.tile.on:after{content:"";position:absolute;top:8px;right:8px;width:17px;height:17px;border-radius:50%;
+  background:var(--ac) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center/10px no-repeat}
+.rows{display:flex;flex-direction:column;gap:8px;margin-top:22px}
+.row{background:var(--paper);border:1.5px solid var(--g-3);border-radius:13px;padding:13px 14px;
+  display:flex;align-items:center;gap:13px;cursor:pointer;text-align:left;
+  font-family:inherit;font-size:14.5px;line-height:1.35;color:var(--ink-2);font-weight:500;
+  transition:.16s cubic-bezier(.3,1,.4,1);position:relative}
+.row:hover{border-color:var(--ac);transform:translateX(3px);box-shadow:var(--sh)}
+.row .ico{flex:0 0 38px;height:38px;border-radius:10px;background:var(--ac-soft);color:var(--ac);
+  display:flex;align-items:center;justify-content:center;transition:.16s}
+.row .ico svg{width:21px;height:21px}
+.row .ar{margin-left:auto;color:var(--g-3);flex:0 0 16px;transition:.16s}
+.row .ar svg{width:16px;height:16px}
+.row:hover .ar{color:var(--ac);transform:translateX(2px)}
+.row.on{border-color:var(--ac);background:var(--ac-soft);box-shadow:0 0 0 3px rgba(123,45,38,.13)}
+.row.on .ico{background:var(--ac);color:#fff}
+.row.on .ar{color:var(--ac)}
+.nav{display:flex;margin-top:20px}
+.back{background:none;border:0;font-family:inherit;font-size:13.5px;font-weight:600;color:var(--g-1);
+  cursor:pointer;padding:9px 0;display:inline-flex;align-items:center;gap:6px}
+.back:hover{color:var(--ac)}
+.back svg{width:15px;height:15px}
+
+.an{text-align:center;padding:26px 0 10px}
+.spin{width:66px;height:66px;margin:0 auto 24px;position:relative}
+.spin svg{width:66px;height:66px;transform:rotate(-90deg)}
+.spin circle{fill:none;stroke-width:4;stroke-linecap:round}
+.spin .bgc{stroke:var(--g-4)}
+.spin .fgc{stroke:var(--ac);stroke-dasharray:182;stroke-dashoffset:182;
+  animation:dash 2.6s cubic-bezier(.5,0,.3,1) forwards}
+@keyframes dash{to{stroke-dashoffset:0}}
+.steps{display:flex;flex-direction:column;gap:11px;max-width:290px;margin:0 auto;text-align:left}
+.step{display:flex;gap:11px;align-items:center;font-size:14px;color:var(--g-2);opacity:.35;transition:.4s}
+.step.on{opacity:1;color:var(--ink-2)}
+.step .sc{flex:0 0 20px;height:20px;border-radius:50%;border:1.5px solid var(--g-3);
+  display:flex;align-items:center;justify-content:center;transition:.3s}
+.step.on .sc{background:var(--ac);border-color:var(--ac);color:#fff}
+.step .sc svg{width:11px;height:11px;opacity:0;transition:.3s}
+.step.on .sc svg{opacity:1}
+
+.rhead{background:linear-gradient(150deg,var(--ac) 0%,var(--ac-deep) 100%);color:#fff;
+  margin:-26px -20px 22px;padding:26px 20px 22px;border-radius:18px 18px 0 0;position:relative;overflow:hidden}
+@media(min-width:700px){.rhead{margin:-38px -34px 26px;padding:34px 34px 28px;border-radius:22px 22px 0 0}}
+.rhead .wm{position:absolute;right:-32px;top:-28px;width:165px;height:165px;opacity:.1}
+.rhead .wm svg{width:100%;height:100%}
+.rhead .pill{background:rgba(255,255,255,.17);color:#fff;position:relative}
+.rhead h2{color:#fff;position:relative}
+.rmsg{font-size:15.5px;color:var(--ink-3);margin-bottom:22px;line-height:1.55}
+.rbox{background:var(--ac-soft);border-radius:14px;padding:18px}
+.rbox .eyebrow{display:block;margin-bottom:12px}
+.rbox .it{display:flex;gap:11px;align-items:flex-start;font-size:14px;color:var(--ink-2);
+  line-height:1.45;margin-bottom:11px}
+.rbox .it:last-child{margin-bottom:0}
+.rbox .it .n{flex:0 0 21px;height:21px;border-radius:50%;background:var(--ac);color:#fff;
+  font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}
+.rprod{display:flex;align-items:center;gap:12px;margin:20px 0;padding:14px;
+  border:1px solid var(--g-4);border-radius:13px;background:var(--g-5)}
+.rprod .ph{width:46px;height:46px;border-radius:12px;flex:0 0 46px;background:var(--ac);color:#fff;
+  display:flex;align-items:center;justify-content:center}
+.rprod .ph svg{width:28px;height:28px}
+.rprod b{display:block;font-size:13.5px;color:var(--ink);line-height:1.3}
+.rprod span{display:block;font-size:11.5px;color:var(--g-1);line-height:1.4;margin-top:2px}
+.recap{margin-top:22px;padding-top:18px;border-top:1px solid var(--g-4)}
+.recap .eyebrow{display:block;margin-bottom:12px;color:var(--g-1)}
+.rr{display:flex;gap:11px;align-items:flex-start;font-size:13.5px;margin-bottom:9px}
+.rr b{flex:0 0 78px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--g-2);font-weight:700;padding-top:3px}
+.rr span{color:var(--ink-2)}
+.fine{font-size:11.5px;color:var(--g-1);margin-top:20px;line-height:1.55;text-align:center}
+.okbox{display:flex;gap:12px;align-items:flex-start;background:var(--ac-soft);
+  border-radius:13px;padding:16px;margin-bottom:10px;animation:up .3s cubic-bezier(.2,.9,.3,1)}
+.okbox>svg{width:20px;height:20px;flex:0 0 20px;color:var(--ac);margin-top:2px}
+.okbox b{display:block;font-size:14.5px;color:var(--ink);margin-bottom:3px}
+.okbox span{display:block;font-size:13px;color:var(--ink-3);line-height:1.5}
+.price-tag{display:inline-flex;align-items:baseline;gap:4px;margin-top:4px}
+.price-tag .from{font-size:12px;color:var(--g-1);font-weight:400}
+.price-tag .val{font-family:'Fraunces',serif;font-size:28px;font-weight:700;color:var(--ac);line-height:1}
+.price-tag .per{font-size:12px;color:var(--g-1);font-weight:400}
+
+footer{background:var(--ac);color:rgba(255,255,255,.62);padding:26px 0 32px;
+  font-size:11px;line-height:1.65;margin-top:auto}
+footer .shell{flex:none}
+.flogo{display:flex;align-items:center;gap:8px;margin-bottom:14px;color:rgba(255,255,255,.9)}
+.flogo svg{width:28px;height:28px;display:block}
+.flogo b{font-size:14px;font-weight:700}
+footer p{max-width:420px}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="about:blank" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+
+<div class="bar">
+  <div class="bar-in">
+    <div class="bar-icon" id="barlogo"></div>
+    <div><b>Lucro da Carne</b><span>Diagnóstico da sua operação</span></div>
+  </div>
+</div>
+
+<div class="prog hide" id="prog">
+  <div class="prog-in">
+    <div class="prog-top"><b id="pt">Pergunta 1 de 6</b><span id="ps">Vamos começar</span></div>
+    <div class="track"><i id="pb"></i></div>
+  </div>
+</div>
+
+<main class="shell" id="app"></main>
+
+<footer>
+  <div class="shell">
+    <div class="flogo" id="footlogo"></div>
+    <p>Ferramenta de inteligência de margem para açougues, casas de carne e operações que compram carne por lote. Descubra rendimento, quebra, custo real e lucro de cada lote.</p>
+  </div>
+</footer>
+
+<script>
+const LOGO = `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="26" width="7" height="10" rx="1.5" fill="currentColor" opacity=".35"/><rect x="16" y="18" width="7" height="18" rx="1.5" fill="currentColor" opacity=".55"/><rect x="27" y="10" width="7" height="26" rx="1.5" fill="currentColor" opacity=".8"/><path d="M7 10l10 6 7-4 9-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+const I=(d)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const ICO = {
+  nivel:     I(`<path d="M5 20V13M12 20V8M19 20v-4"/><path d="M3 20h18" opacity=".4"/>`),
+  carteira:  I(`<rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.3"/>`),
+  lupa:      I(`<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/>`),
+  interro:   I(`<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 115 .5c0 1.5-2.5 1.8-2.5 3.5"/><circle cx="12" cy="17" r=".9" fill="currentColor" stroke="none"/>`),
+  lista:     I(`<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.4"/><circle cx="4.5" cy="12" r="1.4"/><circle cx="4.5" cy="18" r="1.4"/>`),
+  bussola:   I(`<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>`),
+  escudo:    I(`<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/>`),
+  raio:      I(`<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>`),
+  cal:       I(`<rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/>`),
+  relogio:   I(`<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>`),
+  horizonte: I(`<path d="M3 17h18"/><circle cx="12" cy="11" r="4"/><path d="M12 3v2M5 6l1.4 1.4M19 6l-1.4 1.4" opacity=".5"/>`),
+  nuvem:     I(`<path d="M7 18h10a4 4 0 000-8 6 6 0 00-11.5 2A3.5 3.5 0 007 18z"/>`),
+  broto:     I(`<path d="M12 21v-7"/><path d="M12 14c0-3 2-5 5-5 0 3-2 5-5 5z"/><path d="M12 16c0-2.5-1.8-4.5-4.5-4.5 0 2.5 1.8 4.5 4.5 4.5z" opacity=".55"/>`),
+  check:     I(`<polyline points="20 6 9 17 4 12"/>`),
+  seta:      I(`<path d="M9 18l6-6-6-6"/>`),
+  volta:     I(`<path d="M15 18l-6-6 6-6"/>`),
+  camadas:   I(`<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5" opacity=".45"/><path d="M3 17l9 5 9-5" opacity=".25"/>`),
+  estrela:   I(`<path d="M12 3l2.6 5.8 6.4.7-4.8 4.3 1.4 6.2L12 17l-5.6 3 1.4-6.2L3 9.5l6.4-.7L12 3z"/>`),
+  pensa:     I(`<path d="M9 20h6"/><path d="M10 17h4c0-2.5 3-3.5 3-7a5 5 0 10-10 0c0 3.5 3 4.5 3 7z"/>`),
+  mala:      I(`<rect x="3" y="8" width="18" height="12" rx="2.5"/><path d="M9 8V5.5A1.5 1.5 0 0110.5 4h3A1.5 1.5 0 0115 5.5V8"/><path d="M3 13h18" opacity=".4"/>`),
+  balanca:   I(`<path d="M12 3v18"/><path d="M4 7h16"/><path d="M4 7l2 7h4l2-7"/><path d="M12 7l2 7h4l2-7" opacity=".55"/>`),
+  faca:      I(`<path d="M18 3l-8 8-2 6 6-2 8-8"/><path d="M14 7l3 3" opacity=".5"/><path d="M4 20l4-1 1-4" opacity=".4"/>`),
+  caixa:     I(`<path d="M4 8l8-4 8 4v8l-8 4-8-4V8z"/><path d="M4 8l8 4 8-4"/><path d="M12 22V12" opacity=".5"/>`),
+  papel:     I(`<path d="M6 4h8l4 4v12a1 1 0 01-1 1H7a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M14 4v4h4" opacity=".5"/><path d="M9 13h6M9 16h4" opacity=".4"/>`),
+  planilha:  I(`<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 4v16" opacity=".5"/>`),
+  sistema:   I(`<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M7 20h10M12 16v4" opacity=".5"/><circle cx="12" cy="10" r="2" opacity=".4"/>`),
+  cabeca:    I(`<circle cx="12" cy="8" r="4.5"/><path d="M4.5 20c0-4.1 3.4-7.5 7.5-7.5s7.5 3.4 7.5 7.5"/>`),
+  proibido:  I(`<circle cx="12" cy="12" r="9"/><path d="M5.5 5.5l13 13"/>`),
+  truck:     I(`<rect x="1" y="10" width="14" height="8" rx="1.5"/><path d="M15 13h4l2 3v2h-6v-5z"/><circle cx="6" cy="19.5" r="1.5"/><circle cx="18.5" cy="19.5" r="1.5"/>`),
+  peso:      I(`<circle cx="12" cy="5" r="2"/><path d="M6 21l2-12h8l2 12H6z"/><path d="M9 15h6" opacity=".4"/>`),
+  moedas:    I(`<circle cx="9" cy="14" r="5"/><circle cx="15" cy="10" r="5" opacity=".45"/>`),
+  grafico:   I(`<path d="M3 20l5-7 4 3 5-6 4 2"/><path d="M3 3v17h18" opacity=".3"/>`),
+  rocket:    I(`<path d="M12 15c-2 0-3.5-1.5-3.5-3.5C8.5 6 12 2 12 2s3.5 4 3.5 9.5c0 2-1.5 3.5-3.5 3.5z"/><path d="M5 19.5c2-2 4-3.5 7-4.5M19 19.5c-2-2-4-3.5-7-4.5" opacity=".5"/><circle cx="12" cy="11" r="1.2" fill="currentColor" stroke="none" opacity=".5"/>`)
+};
+
+const PERGUNTAS = [
+/* ════════ 1 · PROBLEMA ════════ */
+{ dim:"G", key:"problema", tipo:"tile", modo:"unica",
+  t:"Qual desses problemas mais pesa no seu açougue hoje?",
+  h:"Escolha o mais próximo da sua realidade. Não existe resposta errada.",
+  o:[
+    {t:"Não sei o custo real por kg vendável",      i:"nivel",    p:3, v:"custo_real"},
+    {t:"Não sei se meus lotes dão lucro",           i:"carteira", p:3, v:"lucro_lote"},
+    {t:"Fornecedor barato que pode não render",     i:"truck",    p:3, v:"fornecedor"},
+    {t:"Preço dos cortes definido no olho",         i:"interro",  p:3, v:"precificacao"},
+    {t:"Quero organizar a operação",                i:"lista",    p:2, v:"organizar"},
+    {t:"Ainda estou entendendo",                    i:"bussola",  p:1, v:"explorando"}]},
+
+/* ════════ 2 · TIPO DE COMPRA (contexto, não pontua) ════════ */
+{ dim:"C", key:"tipo_compra", tipo:"tile", modo:"unica",
+  t:"Como você compra carne na maioria das vezes?",
+  h:"Isso ajuda a entender o tipo de operação que você faz.",
+  o:[
+    {t:"Traseiro, dianteiro ou boi casado",  i:"peso",    p:0, v:"traseiro_dianteiro"},
+    {t:"Peça inteira (picanha, alcatra...)", i:"faca",    p:0, v:"peca"},
+    {t:"Meia carcaça ou carcaça inteira",    i:"balanca", p:0, v:"carcaca"},
+    {t:"Caixa de cortes prontos",            i:"caixa",   p:0, v:"caixa"},
+    {t:"Misturo vários formatos",            i:"camadas", p:0, v:"misto"},
+    {t:"Prefiro contar depois",              i:"pensa",   p:0, v:"depois"}]},
+
+/* ════════ 3 · BARREIRA ════════ */
+{ dim:"B", key:"barreira", tipo:"row", modo:"unica",
+  t:"O que mais te segura para controlar o lucro dos lotes?",
+  h:"Ter algum obstáculo é normal. Isso define o tipo de orientação que faz sentido para você.",
+  o:[
+    {t:"Não sei como calcular rendimento e custo real",   i:"interro",  p:3, v:"nao_sabe"},
+    {t:"Já tentei planilha ou sistema e não deu certo",   i:"planilha", p:3, v:"ja_tentou"},
+    {t:"Falta tempo na correria do dia a dia",            i:"relogio",  p:2, v:"tempo"},
+    {t:"Acho que é complicado ou dá trabalho",            i:"camadas",  p:2, v:"complicado", medo:true},
+    {t:"Não sei se vale o investimento mensal",           i:"carteira", p:1, v:"investimento"},
+    {t:"Ainda não pensei nisso",                          i:"bussola",  p:1, v:"nao_pensou"}]},
+
+/* ════════ 4 · CONTROLE ATUAL (não pontua, múltipla) ════════ */
+{ dim:"S", key:"controle_atual", tipo:"row", modo:"multipla",
+  t:"Como você controla os números da operação hoje?",
+  h:"Marque tudo que se aplica. Estar sem controle também é uma resposta.",
+  o:[
+    {t:"Papel, caderno ou calculadora",          i:"papel",    p:0, v:"papel"},
+    {t:"Planilha no celular ou computador",      i:"planilha", p:0, v:"planilha"},
+    {t:"Já uso sistema ou ERP",                  i:"sistema",  p:0, v:"sistema", quente:true},
+    {t:"Faço tudo de cabeça",                    i:"cabeca",   p:0, v:"cabeca"},
+    {t:"Não controlo",                           i:"proibido", p:0, v:"nao_controla"}]},
+
+/* ════════ 5 · VOLUME (planejamento) ════════ */
+{ dim:"P", key:"volume", tipo:"row", modo:"unica",
+  t:"Quanto de carne você compra por semana, aproximadamente?",
+  h:"Uma estimativa já basta.",
+  o:[
+    {t:"Acima de 500 kg por semana",    i:"peso",   p:4, v:"acima_500"},
+    {t:"Entre 200 e 500 kg",            i:"caixa",  p:3, v:"200_500"},
+    {t:"Entre 50 e 200 kg",             i:"balanca",p:2, v:"50_200"},
+    {t:"Menos de 50 kg",                i:"faca",   p:1, v:"menos_50"}]},
+
+/* ════════ 6 · PRAZO ════════ */
+{ dim:"T", key:"prazo", tipo:"row", modo:"unica",
+  t:"Quando você quer começar a controlar o lucro dos lotes?",
+  h:"Última pergunta.",
+  o:[
+    {t:"O mais rápido possível",         i:"raio",      p:5, v:"imediato"},
+    {t:"Nas próximas semanas",           i:"cal",       p:4, v:"semanas"},
+    {t:"Nos próximos 2 a 3 meses",       i:"relogio",   p:3, v:"2_3m"},
+    {t:"Este ano ainda",                 i:"horizonte", p:2, v:"este_ano"},
+    {t:"Sem prazo definido",             i:"nuvem",     p:1, v:"sem_prazo"}]}
+];
+
+const ANIMO=["Vamos começar","Boa pergunta","Metade do caminho","Faltam duas","Penúltima","Última pergunta"];
+
+const RESULTADOS = {
+M1:{pill:"Sua operação precisa disso", t:"Você já sabe onde o lucro vaza. Agora é hora de medir.",
+  m:"As suas respostas mostram que você já sente o impacto de operar sem controle de rendimento e custo real. O Lucro da Carne calcula tudo isso em menos de 3 minutos por lote: rendimento, quebra, custo real por kg vendável, margem por corte e lucro. Pelo celular, com histórico salvo e comparativo de fornecedor.",
+  box:"O que você ganha ao começar",
+  li:["Custo real por kg vendável calculado automaticamente em cada lote.",
+      "Preço mínimo sugerido por corte, com base na margem que você definir.",
+      "Ranking de fornecedores por rendimento, quebra e lucro.",
+      "Histórico de todos os lotes, acessível no celular."],
+  cta:"Começar agora", cta2:"Quero conhecer melhor antes"},
+M2:{pill:"Você está no caminho certo", t:"Organizar o controle do lote é o próximo passo.",
+  m:"Você já percebe que a margem pode estar vazando, mas ainda precisa de clareza sobre como medir. O Lucro da Carne resolve exatamente isso: você cadastra o lote, informa os cortes, e o app mostra rendimento, quebra, custo real, margem por corte e lucro. Sem planilha, sem complicação.",
+  box:"O que muda quando você começa a medir",
+  li:["Descobre se o fornecedor barato está realmente saindo caro.",
+      "Sabe o preço mínimo de cada corte antes de colocar na vitrine.",
+      "Para de precificar no olho e começa a decidir com número.",
+      "Cada lote vira aprendizado, não adivinhação."],
+  cta:"Experimentar o Lucro da Carne", cta2:"Quero entender melhor antes"},
+M3:{pill:"Mais simples do que parece", t:"O cálculo que parece difícil leva menos de 3 minutos.",
+  m:"Muita gente acha que controlar rendimento e custo real exige planilha complicada ou horas de trabalho. Não exige. O Lucro da Carne foi feito para quem trabalha no balcão, não para quem trabalha em escritório. Você informa o básico — peso, custo, cortes — e o app faz o resto.",
+  box:"Por que é simples",
+  li:["Não precisa saber fórmula. O app calcula rendimento, quebra e custo real sozinho.",
+      "Funciona no celular. Lança enquanto trabalha.",
+      "Primeiro lote calculado em menos de 3 minutos, com exemplo pronto.",
+      "Se um lote bastar para você ver se deu lucro, já valeu a mensalidade."],
+  cta:"Experimentar por R$39/mês", cta2:"Quero ver como funciona antes"},
+M4:{pill:"Cada lote conta uma história", t:"Comece descobrindo a verdade de um lote.",
+  m:"Você está no começo, e o começo certo é um lote. Pegue o último que comprou, informe peso, custo e cortes, e veja o que aparece: rendimento, quebra, custo real por kg vendável e margem de cada corte. Esse primeiro número muda a forma como você olha para a operação.",
+  box:"O que você descobre com um lote",
+  li:["Quanto do lote virou carne vendável e quanto virou perda.",
+      "Se o custo real por kg é maior do que você imaginava.",
+      "Se algum corte está sendo vendido abaixo do custo.",
+      "Se o fornecedor está entregando o que você espera."],
+  cta:"Conhecer o Lucro da Carne", cta2:"Ainda não é o meu momento"}
+};
+
+/* ── ESTADO ─────────────────────────────── */
+const app=document.getElementById('app'), prog=document.getElementById('prog'),
+      pb=document.getElementById('pb'), pt=document.getElementById('pt'), ps=document.getElementById('ps');
+const S={tela:-1,respostas:{},score:0,temMedo:false,faixa:"",variante:"",
+  t0:Date.now(), trilha:[], etapaMax:-1, completou:false, abandonoEnviado:false, sinais:{},
+  leadId:"lead_"+Date.now().toString(36)+Math.random().toString(36).slice(2,7)};
+const qs=new URLSearchParams(location.search);
+const TRACK={utm_source:qs.get('utm_source')||'',utm_medium:qs.get('utm_medium')||'',
+  utm_campaign:qs.get('utm_campaign')||'',utm_content:qs.get('utm_content')||'',
+  utm_term:qs.get('utm_term')||'',fbclid:qs.get('fbclid')||'',
+  referrer:document.referrer||'',url:location.href};
+
+document.getElementById('barlogo').innerHTML=LOGO;
+document.getElementById('footlogo').innerHTML=LOGO+`<b>Lucro da Carne</b>`;
+
+function dl(evento,dados){
+  try{
+    window.dataLayer=window.dataLayer||[];
+    window.dataLayer.push(Object.assign({event:evento,
+      procedimento:'lucro_da_carne', lead_id:S.leadId||''},dados||{}));
+  }catch(e){console.warn('dataLayer:',e);}
+}
+
+function px(ev,dados,custom){
+  if(!CONFIG.PIXEL_ID||typeof fbq!=='function'){console.log('[pixel simulado]',ev,dados||'');return;}
+  try{custom?fbq('trackCustom',ev,dados||{}):fbq('track',ev,dados||{});}catch(e){console.warn('Pixel:',e);}
+}
+
+const ETAPAS = ()=>['abertura'].concat(PERGUNTAS.map(q=>q.key),['analise','resultado']);
+function marcaEtapa(){
+  const i=S.tela+1, nomes=ETAPAS();
+  if(i>S.etapaMax && nomes[i]){
+    S.etapaMax=i;
+    S.trilha.push(nomes[i]+':'+((Date.now()-S.t0)/1000).toFixed(1));
+  }
+}
+
+function render(){
+  marcaEtapa();
+  window.scrollTo({top:0,behavior:'instant'});
+  if(S.tela===-1) return telaAbertura();
+  if(S.tela<PERGUNTAS.length) return telaPergunta(S.tela);
+  if(S.tela===PERGUNTAS.length) return telaAnalise();
+  return telaResultado();
+}
+
+function progresso(){
+  const total=PERGUNTAS.length;
+  if(S.tela<0||S.tela>=total){prog.classList.add('hide');return;}
+  prog.classList.remove('hide');
+  pb.style.width=((S.tela+1)/total*100)+'%';
+  pt.textContent=`Pergunta ${S.tela+1} de ${PERGUNTAS.length}`;
+  ps.textContent=ANIMO[Math.min(S.tela,ANIMO.length-1)];
+}
+
+function telaAbertura(){
+  progresso();
+  app.innerHTML=`
+  <div class="card">
+    <div class="band">
+      <div class="wm" style="color:#fff">${LOGO}</div>
+      <div class="kicker">Diagnóstico gratuito</div>
+      <div class="logo">${LOGO}</div>
+      <div class="badge">${ICO.estrela} Lucro da Carne</div>
+    </div>
+
+    <div class="hcenter" style="margin-top:28px">
+      <h1>Descubra se seus lotes realmente dão lucro</h1>
+      <p class="sub">${PERGUNTAS.length} perguntas rápidas. Um diagnóstico feito para a sua operação.</p>
+    </div>
+
+    <div class="bens">
+      <div class="ben"><span class="ck">${ICO.check}</span><span>Entenda <b>onde o lucro da carne pode estar vazando</b></span></div>
+      <div class="ben"><span class="ck">${ICO.check}</span><span>Descubra se <b>o custo real por kg está correto</b></span></div>
+      <div class="ben"><span class="ck">${ICO.check}</span><span>Receba <b>uma análise para o seu momento</b></span></div>
+    </div>
+
+    <div class="proof">
+      <div><b>79 mil+</b><span>Açougues no Brasil</span></div>
+      <div><b>3 min</b><span>Por lote</span></div>
+      <div><b>R$39</b><span>/mês</span></div>
+    </div>
+
+    <div style="margin-top:24px"><button class="btn" id="go">Fazer o diagnóstico ${ICO.seta}</button></div>
+    <div class="trust">${ICO.escudo} Simples, rápido e sem compromisso</div>
+  </div>`;
+  document.getElementById('go').onclick=()=>{
+    dl('funil_inicio',{});
+    S.tela=0;render();
+  };
+}
+
+function telaPergunta(i){
+  progresso();
+  const q=PERGUNTAS[i], guardado=S.respostas[q.key];
+  const multi = q.modo==='multipla';
+  const sel = multi ? (Array.isArray(guardado)?guardado.map(x=>x.v):[])
+                    : (guardado?[guardado.v]:[]);
+  const marca = v => sel.includes(v)?'on':'';
+
+  const tiles=q.o.map((o,x)=>`<button class="tile ${marca(o.v)}" data-i="${x}">
+      <span class="ico">${ICO[o.i]}</span><span>${o.t}</span></button>`).join('');
+  const rows=q.o.map((o,x)=>`<button class="row ${marca(o.v)}" data-i="${x}">
+      <span class="ico">${ICO[o.i]}</span><span>${o.t}</span><span class="ar">${ICO.seta}</span></button>`).join('');
+
+  app.innerHTML=`
+  <div class="card">
+    <h2 class="qt">${q.t}</h2>
+    <p class="qh" id="ajuda">${q.h}</p>
+    <div class="${q.tipo==='tile'?'tiles':'rows'}">${q.tipo==='tile'?tiles:rows}</div>
+    ${multi?`<button class="btn" id="cont" style="margin-top:18px" disabled>Continuar ${ICO.seta}</button>`:''}
+    <div class="nav">${i>0?`<button class="back" id="back">${ICO.volta} Voltar</button>`:''}</div>
+  </div>`;
+
+  const itens=[...app.querySelectorAll('.tile,.row')];
+  const botao=document.getElementById('cont'), ajuda=document.getElementById('ajuda');
+  const pinta=()=>{
+    itens.forEach((el,x)=>el.classList.toggle('on', sel.includes(q.o[x].v)));
+    if(botao){
+      botao.disabled = sel.length===0;
+      ajuda.textContent = sel.length===0 ? q.h
+        : (sel.length===1 ? '1 marcada. Pode marcar outras ou continuar.'
+                          : sel.length+' marcadas. Pode marcar outras ou continuar.');
+    }
+  };
+
+  itens.forEach(b=>{
+    b.onclick=()=>{
+      const o=q.o[+b.dataset.i];
+      if(multi){
+        const j=sel.indexOf(o.v);
+        if(j>=0) sel.splice(j,1); else sel.push(o.v);
+        S.respostas[q.key]=sel.map(v=>{const oo=q.o.find(z=>z.v===v);return Object.assign({},oo);});
+        pinta();
+      }else{
+        S.respostas[q.key]=Object.assign({},o);
+        dl('funil_resposta',{etapa:i+1,pergunta:q.key,pergunta_texto:q.t,
+           resposta:o.v,resposta_texto:o.t,pontos:o.p||0});
+        itens.forEach(x=>x.classList.remove('on'));
+        b.classList.add('on');
+        setTimeout(()=>{S.tela++;render();},260);
+      }
+    };
+  });
+  if(botao){ botao.onclick=()=>{
+      dl('funil_resposta',{etapa:i+1,pergunta:q.key,pergunta_texto:q.t,
+         resposta:sel.join('|'),
+         resposta_texto:sel.map(v=>{const oo=q.o.find(z=>z.v===v);return oo?oo.t:v;}).join(' · '),
+         marcadas:sel.length,pontos:0});
+      S.tela++;render();}; }
+  pinta();
+  const bk=document.getElementById('back');
+  if(bk) bk.onclick=()=>{S.tela--;render();};
+}
+
+function calcula(){
+  const r=S.respostas;
+  S.score=['problema','barreira','volume','prazo'].reduce((a,k)=>a+(r[k]?r[k].p:0),0);
+  S.temMedo=!!(r.barreira&&r.barreira.medo);
+  const ca = Array.isArray(r.controle_atual) ? r.controle_atual.map(x=>x.v) : [];
+  S.sinais={
+    usaSistema: ca.includes('sistema'),
+    usaPlanilha: ca.includes('planilha'),
+    semControle: ca.includes('nao_controla') || ca.includes('cabeca')
+  };
+  S.emComparacao = S.sinais.usaSistema;
+
+  if(S.score>=12){      S.faixa="alta";         S.variante="M1";}
+  else if(S.temMedo){   S.faixa="medo_elevado"; S.variante="M3";}
+  else if(S.score>=8){  S.faixa="planejamento"; S.variante="M2";}
+  else{                 S.faixa="educacao";     S.variante="M4";}
+}
+
+function telaAnalise(){
+  prog.classList.add('hide');
+  calcula();
+  S.completou=true;
+  enviaWebhook('funil_concluido');
+  const passos=["Analisando a sua operação","Comparando com o mercado","Montando o diagnóstico"];
+  app.innerHTML=`
+  <div class="card"><div class="an">
+    <div class="spin"><svg viewBox="0 0 66 66">
+      <circle class="bgc" cx="33" cy="33" r="29"/><circle class="fgc" cx="33" cy="33" r="29"/></svg></div>
+    <h2 style="margin-bottom:8px">Montando o seu diagnóstico</h2>
+    <p class="qh" style="margin-bottom:26px">Leva só um instante.</p>
+    <div class="steps">${passos.map((p,i)=>`
+      <div class="step" id="st${i}"><span class="sc">${ICO.check}</span><span>${p}</span></div>`).join('')}</div>
+  </div></div>`;
+  const t=CONFIG.TEMPO_ANALISE;
+  passos.forEach((_,i)=>setTimeout(()=>{const el=document.getElementById('st'+i);if(el)el.classList.add('on');},220+i*(t*0.28)));
+  setTimeout(()=>{S.tela++;render();},t);
+}
+
+function telaResultado(){
+  prog.classList.add('hide');
+  const R=RESULTADOS[S.variante], r=S.respostas;
+  const ctTexto = Array.isArray(r.controle_atual) ? r.controle_atual.map(x=>x.t).join(' · ') : '—';
+  app.innerHTML=`
+  <div class="card">
+    <div class="rhead">
+      <div class="wm" style="color:#fff">${LOGO}</div>
+      <span class="pill">${ICO.check} ${R.pill}</span>
+      <h2>${R.t}</h2>
+    </div>
+    <p class="rmsg">${R.m}</p>
+    <div class="rbox">
+      <span class="eyebrow">${R.box}</span>
+      ${R.li.map((x,i)=>`<div class="it"><span class="n">${i+1}</span><span>${x}</span></div>`).join('')}
+    </div>
+    <div class="rprod">
+      <div class="ph">${LOGO}</div>
+      <div><b>Lucro da Carne</b><span>Inteligência de margem para açougues</span>
+        <div class="price-tag"><span class="from">a partir de</span><span class="val">R$39</span><span class="per">/mês</span></div>
+      </div>
+    </div>
+    <div id="acoes">
+      <a class="btn" id="cta" href="${CONFIG.CHECKOUT_URL}" target="_blank" rel="noopener">${ICO.rocket} ${R.cta}</a>
+      <button class="btn gh" id="sec">${R.cta2}</button>
+    </div>
+    <div class="recap">
+      <span class="eyebrow">O que você nos contou</span>
+      <div class="rr"><b>Problema</b><span>${r.problema?r.problema.t:'—'}</span></div>
+      <div class="rr"><b>Compra</b><span>${r.tipo_compra?r.tipo_compra.t:'—'}</span></div>
+      <div class="rr"><b>Te segura</b><span>${r.barreira?r.barreira.t:'—'}</span></div>
+      <div class="rr"><b>Controle</b><span>${ctTexto}</span></div>
+      <div class="rr"><b>Volume</b><span>${r.volume?r.volume.t:'—'}</span></div>
+      <div class="rr"><b>Prazo</b><span>${r.prazo?r.prazo.t:'—'}</span></div>
+    </div>
+    <p class="fine">Este diagnóstico considera apenas as respostas informadas e tem finalidade orientativa. Os resultados de cada operação dependem de fatores individuais como fornecedor, equipe e mercado local.</p>
+  </div>`;
+
+  const disparaLead=()=>{
+    const base={content_name:'funil_lucro_da_carne', content_category:'saas_acougue',
+      score:S.score, faixa:S.faixa, value:S.score, currency:'BRL'};
+    px('Lead', base);
+    if(S.score>=CONFIG.SCORE_QUALIFICADO){
+      px('LeadQualificado', Object.assign({},base,{
+        problema:r.problema?r.problema.v:'', prazo:r.prazo?r.prazo.v:''}), true);
+    }
+    dl('lead_checkout',{pontuacao:S.score,faixa:S.faixa,variante:S.variante,
+       problema:r.problema?r.problema.v:'',
+       prazo:r.prazo?r.prazo.v:''});
+    if(S.score>=CONFIG.SCORE_QUALIFICADO) dl('lead_qualificado',{pontuacao:S.score,faixa:S.faixa});
+    enviaWebhook('clicou_checkout');
+  };
+
+  document.getElementById('cta').addEventListener('click', disparaLead);
+
+  document.getElementById('sec').onclick=()=>{
+    dl('prefere_conhecer',{pontuacao:S.score,faixa:S.faixa});
+    enviaWebhook('prefere_conhecer');
+    document.getElementById('acoes').innerHTML=`
+      <div class="okbox">${ICO.check}<div>
+        <b>Sem pressa.</b>
+        <span>O Lucro da Carne estará aqui quando você estiver pronto. Cada lote que passa sem controle é um lote que você não sabe se deu lucro. Quando fizer sentido, comece pelo primeiro.</span>
+      </div></div>
+      <a class="btn" href="${CONFIG.CHECKOUT_URL}" target="_blank" rel="noopener" id="cta2">${ICO.rocket} Quero começar agora</a>`;
+    const c2=document.getElementById('cta2');
+    if(c2) c2.addEventListener('click', disparaLead);
+  };
+}
+
+function enviaWebhook(evento){
+  const p=montaPayload(evento);
+  if(!CONFIG.WEBHOOK_URL){console.log('[webhook simulado]',p);return;}
+  const dados=JSON.stringify(p);
+  try{
+    if(navigator.sendBeacon){
+      navigator.sendBeacon(CONFIG.WEBHOOK_URL,new Blob([dados],{type:'text/plain;charset=UTF-8'}));
+    }else{
+      fetch(CONFIG.WEBHOOK_URL,{method:'POST',mode:'no-cors',
+        headers:{'Content-Type':'text/plain;charset=UTF-8'},body:dados,keepalive:true});
+    }
+  }catch(e){console.warn('Webhook:',e);}
+}
+
+function montaPayload(evento){
+  const r=S.respostas, g=k=>r[k]?r[k].v:'', gt=k=>r[k]?r[k].t:'';
+  const gm=k=>Array.isArray(r[k])?r[k].map(x=>x.v).join('|'):'';
+  const gmt=k=>Array.isArray(r[k])?r[k].map(x=>x.t).join(' · '):'';
+  const s=S.sinais||{};
+  return {
+    lead_id:S.leadId, evento:evento||'funil_concluido',
+    data_hora:new Date().toISOString(), procedimento:'lucro_da_carne',
+    problema:g('problema'),                 problema_texto:gt('problema'),
+    contexto:g('tipo_compra'),              contexto_texto:gt('tipo_compra'),
+    contexto_pergunta:'tipo_compra',
+    barreira:g('barreira'),                 barreira_texto:gt('barreira'),
+    controle_atual:gm('controle_atual'),    controle_atual_texto:gmt('controle_atual'),
+    volume:g('volume'),                     volume_texto:gt('volume'),
+    prazo:g('prazo'),                       prazo_texto:gt('prazo'),
+    pontos_problema:r.problema?r.problema.p:0, pontos_barreira:r.barreira?r.barreira.p:0,
+    pontos_volume:r.volume?r.volume.p:0, pontos_prazo:r.prazo?r.prazo.p:0,
+    etapa_max:S.etapaMax, etapa_max_nome:ETAPAS()[S.etapaMax]||'',
+    trilha:S.trilha.join('|'), tempo_total:Math.round((Date.now()-S.t0)/1000),
+    completou:!!S.completou,
+    gcpt_total:S.score, classificacao:S.faixa, variante_resultado:S.variante,
+    lead_qualificado:S.score>=CONFIG.SCORE_QUALIFICADO,
+    usa_sistema:!!s.usaSistema, usa_planilha:!!s.usaPlanilha,
+    sem_controle:!!s.semControle, em_comparacao_ativa:!!S.emComparacao,
+    utm_source:TRACK.utm_source, utm_medium:TRACK.utm_medium,
+    utm_campaign:TRACK.utm_campaign, utm_content:TRACK.utm_content,
+    utm_term:TRACK.utm_term, fbclid:TRACK.fbclid,
+    referrer:TRACK.referrer, url:TRACK.url
+  };
+}
+
+function registraAbandono(){
+  if(S.completou || S.abandonoEnviado || S.etapaMax < 1) return;
+  S.abandonoEnviado = true;
+  dl('funil_abandono',{etapa_max:S.etapaMax,pontuacao:S.score||0});
+  enviaWebhook('abandono');
+}
+addEventListener('pagehide', registraAbandono);
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='hidden') registraAbandono();
+});
+
+render();
+if(CONFIG.REGISTRAR_VISITA) enviaWebhook('visita');
+</script>
+</body>
+</html>
