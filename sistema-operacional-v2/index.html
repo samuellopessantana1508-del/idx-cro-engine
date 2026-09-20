@@ -11,32 +11,32 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   <style>
 :root {
-  --bg-absolute: #F4F4F2;
+  --bg-absolute: #FAFAFA;
   --bg-base: #FFFFFF;
   --surf-1: #FFFFFF;
-  --surf-2: #F1F1EF;
+  --surf-2: #F5F5F5;
   --surf-elevated: #FFFFFF;
-  --bg-accent: #E8E8E5;
-  --border-light: #E2E2DF;
-  --border-mid: #C9C9C5;
-  --border-strong: #8B8B86;
-  --accent: #111111;
-  --accent-hover: #2D2D2D;
+  --bg-accent: #F0F0F0;
+  --border-light: #E8E8E8;
+  --border-mid: #D0D0D0;
+  --border-strong: #999999;
+  --accent: #000000;
+  --accent-hover: #222222;
   --accent-dark: #000000;
-  --txt-primary: #111111;
-  --txt-secondary: #3F3F3C;
-  --txt-muted: #6E6E69;
-  --txt-disabled: #A7A7A1;
-  --green: #111111;
-  --green-bg: #F1F1EF;
-  --yellow: #555550;
-  --yellow-bg: #F1F1EF;
-  --red: #111111;
-  --red-bg: #F1F1EF;
-  --radius: 8px;
-  --radius-lg: 12px;
+  --txt-primary: #000000;
+  --txt-secondary: #333333;
+  --txt-muted: #777777;
+  --txt-disabled: #AAAAAA;
+  --green: #000000;
+  --green-bg: #F5F5F5;
+  --yellow: #000000;
+  --yellow-bg: #F5F5F5;
+  --red: #000000;
+  --red-bg: #F5F5F5;
+  --radius: 6px;
+  --radius-lg: 10px;
   --mono: 'DM Mono', monospace;
-  --sans: 'Inter', sans-serif;
+  --sans: 'Inter', -apple-system, sans-serif;
   color-scheme: light;
 }
 
@@ -1487,35 +1487,35 @@ table input:focus, table select:focus {
 }
 
 /* ============================================================
-   IDX MONO — gestão de clientes, atividades e processos
+   IDX MONO — B&W minimalista, funcional
    ============================================================ */
-#app-shell,
-#login-screen,
-#loading-screen,
-#idx-modal-dialog {
-  filter: grayscale(1);
-}
-
 .app-header {
   padding: 14px 24px;
-  box-shadow: 0 1px 0 rgba(17,17,17,.04);
+  box-shadow: none;
+  border-bottom: 1px solid var(--border-light);
 }
 .logo,
 .login-header h1 {
-  color: var(--txt-primary);
+  color: #000;
   letter-spacing: -.03em;
+  font-weight: 800;
 }
 .tabs-container {
   background: var(--bg-base);
   padding: 0 24px;
+  border-bottom: 1px solid var(--border-light);
 }
 .tab {
   padding: 13px 15px;
-  font-weight: 600;
+  font-weight: 500;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
 }
 .tab.active {
-  color: var(--txt-primary);
-  border-bottom-color: var(--txt-primary);
+  color: #000;
+  border-bottom-color: #000;
+  font-weight: 700;
 }
 .main-content {
   padding: 28px;
@@ -1525,30 +1525,40 @@ table input:focus, table select:focus {
 .focus-card,
 .ranking-item,
 .db-block {
-  box-shadow: 0 1px 2px rgba(17,17,17,.04);
+  box-shadow: none;
+  border: 1px solid var(--border-light);
 }
 .card:hover,
 .client-card:hover,
 .focus-card:hover {
-  background: var(--surf-1);
-  border-color: var(--border-strong);
+  border-color: #000;
 }
 .client-card:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 24px rgba(17,17,17,.08);
+  box-shadow: 0 4px 12px rgba(0,0,0,.06);
 }
 .btn-primary,
 .btn-login {
-  background: #111111;
-  color: #FFFFFF;
-  border: 1px solid #111111;
+  background: #000;
+  color: #FFF;
+  border: 1px solid #000;
+  font-weight: 600;
+  letter-spacing: .3px;
 }
 .btn-primary { flex: 0 0 auto; }
 .modal-footer > .btn-primary,
 .modal-footer > .btn-secondary { flex: 1; }
 .btn-primary:hover,
 .btn-login:hover {
-  background: #303030;
+  background: #222;
+}
+.btn-small {
+  border: 1px solid var(--border-mid);
+  font-weight: 500;
+}
+.btn-small:hover {
+  border-color: #000;
+  color: #000;
 }
 .btn-small:focus-visible,
 .btn-primary:focus-visible,
@@ -1557,32 +1567,57 @@ table input:focus, table select:focus {
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid #111111;
+  outline: 2px solid #000;
   outline-offset: 2px;
 }
 .badge,
 .platform-tag {
   border-radius: 999px;
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .3px;
 }
 .badge-green,
 .badge-yellow,
 .badge-red {
-  color: var(--txt-primary) !important;
-  background: var(--surf-2) !important;
+  color: #000 !important;
+  background: #F0F0F0 !important;
   border: 1px solid var(--border-mid) !important;
 }
 #toast.error,
 #toast.success {
-  border-color: #111111;
-  color: #111111;
+  border-color: #000;
+  color: #000;
 }
 #idx-modal-dialog::backdrop {
-  background: rgba(17,17,17,.62);
-  backdrop-filter: blur(3px);
+  background: rgba(0,0,0,.5);
+  backdrop-filter: blur(4px);
 }
 .modal-content {
-  border-color: var(--border-mid);
-  box-shadow: 0 24px 80px rgba(0,0,0,.18);
+  border-color: var(--border-light);
+  box-shadow: 0 24px 80px rgba(0,0,0,.12);
+}
+.form-group input,
+.form-group select,
+.form-group textarea {
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius);
+}
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  border-color: #000;
+}
+.section-title {
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--txt-muted);
+}
+.avatar {
+  background: #000;
+  color: #FFF;
 }
 
 .ops-hero {
@@ -2308,21 +2343,29 @@ textarea:focus-visible {
       <h2>Conectar Conta Meta Ads</h2>
       <button class="close-btn" onclick="closeModal('mo-meta-account')">✕</button>
     </div>
-    <p style="font-size:12px;color:var(--txt-muted);margin-bottom:16px;line-height:1.6;">Conecte a conta de anúncios do Meta para visualizar métricas em tempo real. O Ad Account ID está em Gerenciador de Anúncios → Configurações.</p>
+    <p style="font-size:12px;color:var(--txt-muted);margin-bottom:16px;line-height:1.6;">Conecte a conta de anúncios do Meta para visualizar métricas em tempo real.</p>
+
     <div class="form-group">
-      <label>Ad Account ID <span style="color:var(--txt-muted);font-weight:400;">(ex: act_1234567890 ou só o número)</span></label>
-      <input type="text" id="meta-account-id" placeholder="123456789 ou act_123456789">
+      <label>Access Token <span style="color:var(--txt-muted);font-weight:400;">(token de longa duração)</span></label>
+      <div style="display:flex;gap:8px;">
+        <input type="password" id="meta-access-token" placeholder="EAAxxxxxx..." style="flex:1;">
+        <button class="btn-secondary" onclick="fetchMetaAdAccounts()" style="white-space:nowrap;font-size:11px;padding:6px 12px;">Buscar Contas</button>
+      </div>
+    </div>
+
+    <div id="meta-accounts-list" style="display:none;margin-bottom:16px;"></div>
+
+    <div class="form-group">
+      <label>Ad Account ID <span style="color:var(--txt-muted);font-weight:400;">(ou selecione acima)</span></label>
+      <input type="text" id="meta-account-id" placeholder="act_123456789">
     </div>
     <div class="form-group">
       <label>Nome da Conta <span style="color:var(--txt-muted);font-weight:400;">(identificação interna)</span></label>
       <input type="text" id="meta-account-name" placeholder="Ex: Vivan Vet — Principal">
     </div>
-    <div class="form-group">
-      <label>Access Token <span style="color:var(--txt-muted);font-weight:400;">(token de longa duração do usuário ou sistema)</span></label>
-      <input type="password" id="meta-access-token" placeholder="EAAxxxxxx...">
-    </div>
+
     <div style="background:var(--yellow-bg);border:1px solid var(--yellow);border-radius:var(--radius);padding:10px 12px;font-size:11px;color:var(--yellow);margin-bottom:16px;">
-      ⚠ O token será salvo no banco de dados. Use sempre tokens de sistema ou de longa duração (60 dias). Nunca use tokens de sessão curta.
+      ⚠ O token será salvo no banco de dados. Use tokens de longa duração (60 dias).
     </div>
     <div id="meta-test-result" style="display:none;margin-bottom:16px;padding:10px 12px;border-radius:var(--radius);font-size:12px;"></div>
     <div class="modal-footer">
@@ -2485,7 +2528,9 @@ let META_STATE = {
   charts: {},
   accountId: null,
   token: null,
-  loading: false
+  loading: false,
+  accounts: [],
+  selectedAccountIdx: 0
 };
 let DIARY_STATE = { date: null, items: [] };
 
@@ -3556,6 +3601,9 @@ function openClientModal(id) {
 }
 
 async function saveClient() {
+  if (_savingLock.has('saveClient')) return;
+  _savingLock.add('saveClient');
+  try {
   const id = (document.getElementById('mo-client')?.dataset?.clientId || '').trim();
   const nome = (document.getElementById('mc-nome')?.value || '').trim();
   if (!nome) { showToast('Nome da empresa é obrigatório', 'error'); return; }
@@ -3602,12 +3650,13 @@ async function saveClient() {
       if (error) throw error;
       showToast('✅ Cliente criado com sucesso', 'success');
     }
-    closeModal('mo-client');
+    closeModal('mo-client', true);
     await loadClientes();
   } catch(e) {
     console.error('[IDX] Erro ao salvar cliente:', e);
     showToast('Erro ao salvar: ' + (e.message || JSON.stringify(e)), 'error');
   }
+  } finally { _savingLock.delete('saveClient'); }
 }
 
 async function openClient(id) {
@@ -3908,23 +3957,28 @@ async function loadMetaDashboard(clientId) {
   content.innerHTML = '<div class="meta-loading"><div class="loader"></div><div>Carregando métricas Meta...</div></div>';
 
   try {
-    const { data: metaAccount, error: metaAccountError } = await SB
+    const { data: metaAccounts, error: metaAccountError } = await SB
       .from('client_meta_accounts')
       .select('ad_account_id, ad_account_name')
       .eq('client_id', clientId)
       .eq('ativo', true)
-      .single();
+      .order('created_at', { ascending: true });
 
     if (metaAccountError && metaAccountError.code !== 'PGRST116') {
       throw new Error('Erro ao buscar conta Meta: ' + metaAccountError.message);
     }
 
-    if (!metaAccount?.ad_account_id) {
+    if (!metaAccounts || metaAccounts.length === 0) {
       META_STATE.data = null;
       META_STATE.compareData = null;
+      META_STATE.accounts = [];
       renderMetaEmptyState('Conta Meta não configurada', 'Abra Configurar, informe o Ad Account ID e um token com permissão ads_read para carregar dados reais.');
       return;
     }
+
+    META_STATE.accounts = metaAccounts;
+    if (META_STATE.selectedAccountIdx >= metaAccounts.length) META_STATE.selectedAccountIdx = 0;
+    const selectedAccount = metaAccounts[META_STATE.selectedAccountIdx];
 
     const { data: creds, error: credsErr } = await SB.rpc('get_meta_token', { p_client_id: clientId });
     if (credsErr || !creds?.[0]?.access_token) {
@@ -3932,15 +3986,15 @@ async function loadMetaDashboard(clientId) {
       return;
     }
 
-    META_STATE.accountId = metaAccount.ad_account_id;
+    META_STATE.accountId = selectedAccount.ad_account_id;
     META_STATE.token = creds[0].access_token;
     META_STATE.data = await loadMetaDirect(
-      { ad_account_id: metaAccount.ad_account_id, access_token: creds[0].access_token },
+      { ad_account_id: selectedAccount.ad_account_id, access_token: creds[0].access_token },
       startDate, endDate
     );
     if (compareStart && compareEnd) {
       const cmpData = await loadMetaDirect(
-        { ad_account_id: metaAccount.ad_account_id, access_token: creds[0].access_token },
+        { ad_account_id: selectedAccount.ad_account_id, access_token: creds[0].access_token },
         compareStart, compareEnd, { summaryOnly: true }
       );
       META_STATE.compareData = { insights: cmpData.insights || [], campaigns: [] };
@@ -3992,7 +4046,7 @@ async function loadMetaDirect(metaAccount, startDate, endDate, options = {}) {
   const token = metaAccount.access_token;
 
   const tr = JSON.stringify({ since: startDate, until: endDate });
-  const [insights, accountAggregate, campaigns, campaignInsights, adsetInsights, adInsights, ageGender, placements, devices] = await Promise.all([
+  const [insights, accountAggregate, campaigns, campaignInsights, adsetInsights, adInsights, adsetMgmt, adMgmt, ageGender, placements, devices] = await Promise.all([
     metaGraphGet(`${version}/${accountId}/insights`, {
       fields: 'date_start,date_stop,spend,impressions,reach,clicks,ctr,cpm,cpc,frequency,actions,action_values',
       level: 'account',
@@ -4033,6 +4087,16 @@ async function loadMetaDirect(metaAccount, startDate, endDate, options = {}) {
       limit: '500',
       access_token: token
     }),
+    options.summaryOnly ? Promise.resolve({ data: [] }) : metaGraphGet(`${version}/${accountId}/adsets`, {
+      fields: 'id,name,status,effective_status',
+      limit: '500',
+      access_token: token
+    }).catch(() => ({ data: [] })),
+    options.summaryOnly ? Promise.resolve({ data: [] }) : metaGraphGet(`${version}/${accountId}/ads`, {
+      fields: 'id,name,status,effective_status',
+      limit: '500',
+      access_token: token
+    }).catch(() => ({ data: [] })),
     options.summaryOnly ? Promise.resolve({ data: [] }) : metaGraphGet(`${version}/${accountId}/insights`, {
       fields: 'spend,impressions,clicks,actions,ctr,cpm,cpc',
       level: 'account',
@@ -4060,9 +4124,11 @@ async function loadMetaDirect(metaAccount, startDate, endDate, options = {}) {
   ]);
 
   const campaignMap = new Map((campaigns.data || []).map(c => [c.id, c]));
+  const adsetStatusMap = new Map((adsetMgmt.data || []).map(a => [a.id, a.effective_status || a.status || 'UNKNOWN']));
+  const adStatusMap = new Map((adMgmt.data || []).map(a => [a.id, a.effective_status || a.status || 'UNKNOWN']));
   const adsetsByCampaign = groupMetaRowsBy(adsetInsights.data || [], 'campaign_id');
   const adsByCampaign = groupMetaRowsBy(adInsights.data || [], 'campaign_id');
-  const campaignRows = (campaignInsights.data || []).map(row => normalizeMetaCampaignRow(row, campaignMap.get(row.campaign_id), adsetsByCampaign.get(row.campaign_id) || [], adsByCampaign.get(row.campaign_id) || []));
+  const campaignRows = (campaignInsights.data || []).map(row => normalizeMetaCampaignRow(row, campaignMap.get(row.campaign_id), adsetsByCampaign.get(row.campaign_id) || [], adsByCampaign.get(row.campaign_id) || [], adsetStatusMap, adStatusMap));
 
   return {
     source: 'graph',
@@ -4084,13 +4150,22 @@ async function metaGraphGet(path, params) {
     if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, value);
   });
 
-  const response = await fetch(url.toString());
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.error) {
-    const err = data.error || {};
-    throw new Error(err.error_user_msg || err.message || `Meta Graph API HTTP ${response.status}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch(url.toString(), { signal: controller.signal });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.error) {
+      const err = data.error || {};
+      throw new Error(err.error_user_msg || err.message || `Meta Graph API HTTP ${response.status}`);
+    }
+    return data;
+  } catch(e) {
+    if (e.name === 'AbortError') throw new Error('Tempo limite excedido ao consultar Meta Ads. Tente novamente.');
+    throw e;
+  } finally {
+    clearTimeout(timeout);
   }
-  return data;
 }
 
 function normalizeMetaAccountId(accountId) {
@@ -4130,7 +4205,7 @@ function getMetaPrimaryConversion(row) {
   return { count: 0, type: '—' };
 }
 
-function normalizeMetaCampaignRow(row, campaign, adsets, ads) {
+function normalizeMetaCampaignRow(row, campaign, adsets, ads, adsetStatusMap, adStatusMap) {
   const conv = getMetaPrimaryConversion(row);
   const spend = parseFloat(row.spend || 0);
   const clicks = parseFloat(row.clicks || 0);
@@ -4155,19 +4230,22 @@ function normalizeMetaCampaignRow(row, campaign, adsets, ads) {
     cpa: conv.count > 0 ? formatMetaNumber(spend / conv.count) : '0',
     hook_rate: '—',
     connect_rate: connectRate > 0 ? formatMetaNumber(connectRate) : '—',
-    adsets: adsets.map(normalizeMetaAdsetRow),
-    ads: ads.map(normalizeMetaAdRow)
+    adsets: adsets.map(r => normalizeMetaAdsetRow(r, adsetStatusMap)),
+    ads: ads.map(r => normalizeMetaAdRow(r, adStatusMap))
   };
 }
 
-function normalizeMetaAdsetRow(row) {
+function normalizeMetaAdsetRow(row, statusMap) {
   const conv = getMetaPrimaryConversion(row);
   const spend = parseFloat(row.spend || 0);
+  const realStatus = statusMap instanceof Map ? (statusMap.get(row.adset_id) || 'ACTIVE') : 'ACTIVE';
   return {
     id: row.adset_id,
     name: row.adset_name,
+    campaign_id: row.campaign_id,
+    campaign_name: row.campaign_name,
     temp: inferMetaTemperature(row.adset_name || row.campaign_name),
-    status: 'ACTIVE',
+    status: realStatus,
     spend: String(row.spend || 0),
     impr: row.impressions || 0,
     reach: row.reach || 0,
@@ -4182,13 +4260,16 @@ function normalizeMetaAdsetRow(row) {
   };
 }
 
-function normalizeMetaAdRow(row) {
+function normalizeMetaAdRow(row, statusMap) {
   const conv = getMetaPrimaryConversion(row);
   const spend = parseFloat(row.spend || 0);
+  const realStatus = statusMap instanceof Map ? (statusMap.get(row.ad_id) || 'ACTIVE') : 'ACTIVE';
   return {
     id: row.ad_id,
     name: row.ad_name,
-    status: 'ACTIVE',
+    campaign_id: row.campaign_id,
+    campaign_name: row.campaign_name,
+    status: realStatus,
     format: '—',
     spend: String(row.spend || 0),
     impr: row.impressions || 0,
@@ -4756,10 +4837,16 @@ function renderMetaDashboard(clientId) {
     { id: 'diagnostico', label: '🔍 Diagnóstico' }
   ];
 
+  const accountSelector = META_STATE.accounts.length > 1 ? `
+    <select onchange="switchMetaAccount(parseInt(this.value))" style="font-size:11px;padding:4px 10px;border-radius:4px;border:1px solid var(--border-light);background:var(--bg-primary);color:var(--txt-primary);font-weight:600;">
+      ${META_STATE.accounts.map((acc, i) => `<option value="${i}" ${i === META_STATE.selectedAccountIdx ? 'selected' : ''}>${acc.ad_account_name || acc.ad_account_id}</option>`).join('')}
+    </select>` : '';
+
   mc.innerHTML = `
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+      ${accountSelector}
       <div style="font-size:11px;color:var(--txt-muted);">Período: <strong style="color:var(--txt-secondary);">${META_STATE.dateStart} → ${META_STATE.dateEnd}</strong></div>
-      <div style="font-size:10px;color:var(--txt-muted);background:var(--bg-accent);padding:3px 8px;border-radius:4px;border:1px solid var(--border-light);">📊 ${data.insights?.length || 0} dias · ${data.source === 'proxy' ? 'Meta via Supabase' : 'Meta Graph API'}</div>
+      <div style="font-size:10px;color:var(--txt-muted);background:var(--bg-accent);padding:3px 8px;border-radius:4px;border:1px solid var(--border-light);">📊 ${data.insights?.length || 0} dias · ${data.source === 'proxy' ? 'Meta via Supabase' : 'Meta Graph API'}${META_STATE.accounts.length > 1 ? ' · Conta '+(META_STATE.selectedAccountIdx+1)+'/'+META_STATE.accounts.length : ''}</div>
       <div style="margin-left:auto;display:flex;gap:6px;">
         <button class="btn-small" onclick="openModal('mo-meta-account')" style="font-size:11px;">🔗 Conectar Meta</button>
         <button class="btn-small" onclick="openEmailModal()" style="font-size:11px;">📧 Relatório</button>
@@ -4772,6 +4859,11 @@ function renderMetaDashboard(clientId) {
   `;
 
   renderMetaSubTab(clientId);
+}
+
+function switchMetaAccount(idx) {
+  META_STATE.selectedAccountIdx = idx;
+  if (CURRENT_CLIENT?.id) loadMetaDashboard(CURRENT_CLIENT.id);
 }
 
 function switchMetaTab(tab) {
@@ -8604,6 +8696,9 @@ function togglePOPGuide() {
 }
 
 async function saveTask() {
+  if (_savingLock.has('saveTask')) return;
+  _savingLock.add('saveTask');
+  try {
   const titulo = document.getElementById('mt-titulo').value.trim();
   if (!titulo) { showToast('Título é obrigatório', 'error'); return; }
 
@@ -8641,7 +8736,7 @@ async function saveTask() {
       if (error) throw error;
       showToast('Atividade criada.', 'success');
     }
-    closeModal('mo-task');
+    closeModal('mo-task', true);
     refreshTaskView();
   } catch(e) {
     // Fallback localStorage
@@ -8655,9 +8750,10 @@ async function saveTask() {
     }
     localStorage.setItem('idx_tasks_local', JSON.stringify(localTasks));
     showToast('Atividade salva somente neste navegador; a sincronização está indisponível.', 'error');
-    closeModal('mo-task');
+    closeModal('mo-task', true);
     refreshTaskView();
   }
+  } finally { _savingLock.delete('saveTask'); }
 }
 
 async function toggleTask(evt, id) {
@@ -10081,50 +10177,74 @@ function calcAllScores() {
 }
 
 // ===== MODAL MANAGEMENT — usa <dialog> nativo (top layer) =====
-let _idxDialog = null;     // único <dialog> reutilizado
-let _activeModalId = null; // id do modal atualmente aberto
+let _idxDialog = null;
+let _activeModalId = null;
+const _modalsWithData = new Set(['mo-client', 'mo-task', 'mo-diary', 'mo-email', 'mo-metrics-month', 'mo-meta-account', 'mo-pesos']);
+
+function _modalHasUnsavedData() {
+  if (!_idxDialog || !_activeModalId) return false;
+  if (!_modalsWithData.has(_activeModalId)) return false;
+  const inputs = _idxDialog.querySelectorAll('input:not([type=hidden]):not([type=date]), textarea');
+  for (const input of inputs) {
+    const val = (input.value || '').trim();
+    if (val.length > 0 && val !== input.defaultValue?.trim()) return true;
+  }
+  return false;
+}
 
 function _getDialog() {
   if (!_idxDialog) {
     _idxDialog = document.createElement('dialog');
     _idxDialog.id = 'idx-modal-dialog';
     document.body.appendChild(_idxDialog);
-    // Fecha ao clicar no backdrop (fora do modal-content)
     _idxDialog.addEventListener('click', function(e) {
-      if (e.target === _idxDialog) closeModal(_activeModalId);
+      if (e.target === _idxDialog) _safeCloseModal();
     });
-    // Fecha com Escape
     _idxDialog.addEventListener('cancel', function(e) {
       e.preventDefault();
-      closeModal(_activeModalId);
+      _safeCloseModal();
     });
   }
   return _idxDialog;
+}
+
+function _safeCloseModal() {
+  if (_modalHasUnsavedData()) {
+    _showUnsavedConfirm();
+  } else {
+    closeModal(_activeModalId);
+  }
+}
+
+function _showUnsavedConfirm() {
+  const overlay = document.createElement('div');
+  overlay.id = 'idx-unsaved-confirm';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);backdrop-filter:blur(2px);';
+  overlay.innerHTML = `
+    <div style="background:var(--bg-primary);border:1px solid var(--border-mid);border-radius:var(--radius-lg);padding:24px;max-width:360px;width:90%;text-align:center;">
+      <div style="font-size:15px;font-weight:700;color:var(--txt-primary);margin-bottom:8px;">Descartar alterações?</div>
+      <div style="font-size:13px;color:var(--txt-muted);margin-bottom:20px;line-height:1.5;">Você tem dados não salvos. Tem certeza que deseja sair sem salvar?</div>
+      <div style="display:flex;gap:8px;justify-content:center;">
+        <button onclick="document.getElementById('idx-unsaved-confirm').remove();" style="padding:8px 20px;border-radius:var(--radius);border:1px solid var(--border-light);background:var(--bg-primary);color:var(--txt-primary);cursor:pointer;font-size:13px;font-weight:600;">Voltar</button>
+        <button onclick="document.getElementById('idx-unsaved-confirm').remove();closeModal(_activeModalId,true);" style="padding:8px 20px;border-radius:var(--radius);border:none;background:var(--red);color:white;cursor:pointer;font-size:13px;font-weight:600;">Descartar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
 }
 
 function openModal(id) {
   try {
     const wrapper = document.getElementById(id);
     if (!wrapper) { console.error('[IDX] Modal wrapper não encontrado:', id); return; }
-
     const content = wrapper.querySelector('.modal-content');
     if (!content) { console.error('[IDX] .modal-content não encontrado em:', id); return; }
-
-    // Fechar qualquer modal aberto
-    if (_activeModalId) closeModal(_activeModalId);
-
+    if (_activeModalId) closeModal(_activeModalId, true);
     _activeModalId = id;
-
     const dlg = _getDialog();
-    // Limpa dialog e move o conteúdo para dentro dele
     dlg.innerHTML = '';
     dlg.appendChild(content);
-    // Guarda referência ao wrapper original para devolver ao fechar
     content._idxWrapper = wrapper;
-
     dlg.showModal();
-
-    // Foca no primeiro input/textarea
     setTimeout(() => {
       const first = dlg.querySelector('input:not([type=hidden]), select, textarea');
       if (first) first.focus();
@@ -10134,10 +10254,12 @@ function openModal(id) {
   }
 }
 
-function closeModal(id) {
+function closeModal(id, force) {
   try {
     if (!_idxDialog) return;
-    // Devolve o conteúdo ao wrapper original
+    if (!force && _modalHasUnsavedData()) { _showUnsavedConfirm(); return; }
+    const confirm = document.getElementById('idx-unsaved-confirm');
+    if (confirm) confirm.remove();
     const content = _idxDialog.querySelector('.modal-content');
     if (content && content._idxWrapper) {
       content._idxWrapper.appendChild(content);
@@ -10208,6 +10330,40 @@ async function saveMetaAccount() {
     if (content) renderClientMetaDashboard(content);
   } catch(e) {
     showToast('Erro ao salvar conta Meta: ' + e.message, 'error');
+  }
+}
+
+async function fetchMetaAdAccounts() {
+  const token = document.getElementById('meta-access-token').value.trim();
+  const listDiv = document.getElementById('meta-accounts-list');
+  if (!token) { showToast('Cole o Access Token primeiro', 'error'); return; }
+  listDiv.style.display = 'block';
+  listDiv.innerHTML = '<div style="font-size:11px;color:var(--txt-muted);padding:8px;">Buscando contas...</div>';
+  try {
+    const resp = await fetch(`https://graph.facebook.com/v25.0/me/adaccounts?fields=id,name,account_status&limit=50&access_token=${token}`);
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error.message);
+    const accounts = (data.data || []).filter(a => a.account_status === 1);
+    if (accounts.length === 0) {
+      listDiv.innerHTML = '<div style="font-size:11px;color:var(--yellow);padding:8px;">Nenhuma conta ativa encontrada nesse token.</div>';
+      return;
+    }
+    listDiv.innerHTML = `
+      <div style="font-size:10px;font-weight:600;color:var(--txt-muted);margin-bottom:6px;letter-spacing:.4px;">CONTAS DISPONÍVEIS (${accounts.length})</div>
+      <div style="max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;">
+        ${accounts.map(a => `
+          <div onclick="document.getElementById('meta-account-id').value='${a.id}';document.getElementById('meta-account-name').value='${(a.name||'').replace(/'/g,"\\'")}';document.querySelectorAll('#meta-accounts-list .meta-acc-item').forEach(el=>el.style.borderColor='var(--border-light)');this.style.borderColor='var(--accent)';"
+               class="meta-acc-item" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius);cursor:pointer;transition:border-color .15s;">
+            <div>
+              <div style="font-size:12px;font-weight:600;color:var(--txt-primary);">${a.name || a.id}</div>
+              <div style="font-size:10px;color:var(--txt-muted);font-family:var(--mono);">${a.id}</div>
+            </div>
+            <span style="font-size:10px;color:var(--green);">Ativa</span>
+          </div>
+        `).join('')}
+      </div>`;
+  } catch(e) {
+    listDiv.innerHTML = `<div style="font-size:11px;color:var(--red);padding:8px;">Erro: ${e.message}</div>`;
   }
 }
 
@@ -10324,7 +10480,7 @@ async function sendReport() {
     if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
 
     showToast(`✅ Relatório enviado para ${to}`, 'success');
-    closeModal('mo-email');
+    closeModal('mo-email', true);
     // Limpa PDF temporário
     window._lastExportedPdf = null;
   } catch(e) {
@@ -10370,6 +10526,9 @@ function addDiaryEntry(evt) {
 }
 
 async function saveDiaryEntry() {
+  if (_savingLock.has('saveDiary')) return;
+  _savingLock.add('saveDiary');
+  try {
   const titulo = document.getElementById('md-titulo').value.trim();
   const tipo = document.getElementById('md-tipo').value;
   const data = document.getElementById('md-data').value;
@@ -10400,10 +10559,11 @@ async function saveDiaryEntry() {
     showToast('✅ Entrada salva localmente', 'success');
   }
 
-  closeModal('mo-diary');
+  closeModal('mo-diary', true);
   // Refresh if we're on the diary tab
   const content = document.getElementById('main-content');
   if (content && CURRENT_SUB_TAB === 'diario') renderClientDiario(content);
+  } finally { _savingLock.delete('saveDiary'); }
 }
 
 function addMetricsMonth(evt) {
@@ -10443,6 +10603,9 @@ function addMetricsMonth(evt) {
 }
 
 async function saveMetricsMonth() {
+  if (_savingLock.has('saveMetrics')) return;
+  _savingLock.add('saveMetrics');
+  try {
   const mes = parseInt(document.getElementById('mhm-mes').value);
   const ano = parseInt(document.getElementById('mhm-ano').value);
   const investimento = parseFloat(document.getElementById('mhm-inv').value) || 0;
@@ -10478,10 +10641,10 @@ async function saveMetricsMonth() {
     showToast(`✅ Métricas salvas localmente`, 'success');
   }
 
-  closeModal('mo-metrics-month');
-  // Refresh if on historico tab
+  closeModal('mo-metrics-month', true);
   const content = document.getElementById('main-content');
   if (content && CURRENT_SUB_TAB === 'historico') renderClientHistorico(content);
+  } finally { _savingLock.delete('saveMetrics'); }
 }
 
 // ===== GUIA DE CONEXÃO META ADS =====
@@ -10761,6 +10924,39 @@ async function exportMetaReport(clientId) {
   }
 }
 
+// ===== DEBOUNCE & LOADING =====
+const _savingLock = new Set();
+function withSaveLock(key, fn) {
+  return async function(...args) {
+    if (_savingLock.has(key)) return;
+    _savingLock.add(key);
+    const btn = document.querySelector(`[onclick*="${key}"]`) || document.activeElement;
+    const origText = btn?.textContent;
+    if (btn?.tagName === 'BUTTON') { btn.disabled = true; btn.textContent = 'Salvando...'; }
+    try { await fn.apply(this, args); }
+    finally {
+      _savingLock.delete(key);
+      if (btn?.tagName === 'BUTTON') { btn.disabled = false; btn.textContent = origText; }
+    }
+  };
+}
+
+function showLoadingOverlay(msg) {
+  let el = document.getElementById('idx-loading-overlay');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'idx-loading-overlay';
+    el.style.cssText = 'position:fixed;inset:0;z-index:99998;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.7);backdrop-filter:blur(1px);';
+    document.body.appendChild(el);
+  }
+  el.innerHTML = `<div style="text-align:center;"><div style="width:28px;height:28px;border:3px solid var(--border-light);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;margin:0 auto 10px;"></div><div style="font-size:13px;color:var(--txt-muted);">${msg || 'Carregando...'}</div></div>`;
+  el.style.display = 'flex';
+}
+function hideLoadingOverlay() {
+  const el = document.getElementById('idx-loading-overlay');
+  if (el) el.style.display = 'none';
+}
+
 // ===== UTILS =====
 function showToast(msg, type = 'default') {
   const t = document.getElementById('toast');
@@ -10774,6 +10970,13 @@ const fmtR = v => 'R$ ' + parseFloat(v || 0).toLocaleString('pt-BR', { minimumFr
 const fmtN = v => parseInt(v || 0).toLocaleString('pt-BR');
 const fmtP = v => parseFloat(v || 0).toFixed(2).replace('.', ',') + '%';
 const fmtDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
+
+// ===== GLOBAL ERROR HANDLER =====
+window.addEventListener('unhandledrejection', function(e) {
+  console.error('[IDX] Unhandled rejection:', e.reason);
+  hideLoadingOverlay();
+  META_STATE.loading = false;
+});
 
 // ===== INIT STARTUP =====
 window.addEventListener('DOMContentLoaded', initApp);
