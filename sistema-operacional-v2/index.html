@@ -4048,7 +4048,7 @@ async function loadMetaDirect(metaAccount, startDate, endDate, options = {}) {
   const tr = JSON.stringify({ since: startDate, until: endDate });
   const [insights, accountAggregate, campaigns, campaignInsights, adsetInsights, adInsights, adsetMgmt, adMgmt, ageGender, placements, devices] = await Promise.all([
     metaGraphGet(`${version}/${accountId}/insights`, {
-      fields: 'date_start,date_stop,spend,impressions,reach,clicks,ctr,cpm,cpc,frequency,actions,action_values',
+      fields: 'date_start,date_stop,spend,impressions,reach,clicks,inline_link_clicks,ctr,cpm,cpc,frequency,actions,action_values',
       level: 'account',
       time_increment: '1',
       time_range: tr,
@@ -4056,7 +4056,7 @@ async function loadMetaDirect(metaAccount, startDate, endDate, options = {}) {
       access_token: token
     }),
     metaGraphGet(`${version}/${accountId}/insights`, {
-      fields: 'spend,impressions,reach,clicks,ctr,cpm,cpc,frequency,actions,action_values',
+      fields: 'spend,impressions,reach,clicks,inline_link_clicks,ctr,cpm,cpc,frequency,actions,action_values',
       level: 'account',
       time_range: tr,
       access_token: token
@@ -4067,21 +4067,21 @@ async function loadMetaDirect(metaAccount, startDate, endDate, options = {}) {
       access_token: token
     }),
     options.summaryOnly ? Promise.resolve({ data: [] }) : metaGraphGet(`${version}/${accountId}/insights`, {
-      fields: 'campaign_id,campaign_name,objective,spend,impressions,reach,clicks,ctr,cpm,cpc,frequency,actions,action_values',
+      fields: 'campaign_id,campaign_name,objective,spend,impressions,reach,clicks,inline_link_clicks,ctr,cpm,cpc,frequency,actions,action_values',
       level: 'campaign',
       time_range: tr,
       limit: '500',
       access_token: token
     }),
     options.summaryOnly ? Promise.resolve({ data: [] }) : metaGraphGet(`${version}/${accountId}/insights`, {
-      fields: 'campaign_id,campaign_name,adset_id,adset_name,spend,impressions,reach,clicks,ctr,cpm,cpc,frequency,actions',
+      fields: 'campaign_id,campaign_name,adset_id,adset_name,spend,impressions,reach,clicks,inline_link_clicks,ctr,cpm,cpc,frequency,actions',
       level: 'adset',
       time_range: tr,
       limit: '500',
       access_token: token
     }),
     options.summaryOnly ? Promise.resolve({ data: [] }) : metaGraphGet(`${version}/${accountId}/insights`, {
-      fields: 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,reach,clicks,ctr,cpm,cpc,frequency,actions',
+      fields: 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,reach,clicks,inline_link_clicks,ctr,cpm,cpc,frequency,actions',
       level: 'ad',
       time_range: tr,
       limit: '500',
@@ -4208,8 +4208,9 @@ function getMetaPrimaryConversion(row) {
 function normalizeMetaCampaignRow(row, campaign, adsets, ads, adsetStatusMap, adStatusMap) {
   const conv = getMetaPrimaryConversion(row);
   const spend = parseFloat(row.spend || 0);
-  const clicks = parseFloat(row.clicks || 0);
-  const connectRate = clicks > 0 ? (getMetaActionCount(row, ['onsite_conversion.messaging_conversation_started_7d']) / clicks) * 100 : 0;
+  const impr = parseInt(row.impressions || 0);
+  const linkClks = metaLinkClicks(row);
+  const connectRate = linkClks > 0 ? (getMetaActionCount(row, ['onsite_conversion.messaging_conversation_started_7d']) / linkClks) * 100 : 0;
 
   return {
     campaign_id: row.campaign_id,
@@ -4220,10 +4221,10 @@ function normalizeMetaCampaignRow(row, campaign, adsets, ads, adsetStatusMap, ad
     spend: String(row.spend || 0),
     impressions: String(row.impressions || 0),
     reach: String(row.reach || 0),
-    clicks: String(row.clicks || 0),
-    ctr: formatMetaNumber(row.ctr),
-    cpm: formatMetaNumber(row.cpm),
-    cpc: formatMetaNumber(row.cpc),
+    clicks: String(linkClks),
+    ctr: formatMetaNumber(impr > 0 ? (linkClks / impr) * 100 : 0),
+    cpm: formatMetaNumber(impr > 0 ? (spend / impr) * 1000 : 0),
+    cpc: formatMetaNumber(linkClks > 0 ? spend / linkClks : 0),
     frequency: formatMetaNumber(row.frequency),
     conversoes: String(conv.count || 0),
     tipo_conv: conv.type,
@@ -4238,6 +4239,8 @@ function normalizeMetaCampaignRow(row, campaign, adsets, ads, adsetStatusMap, ad
 function normalizeMetaAdsetRow(row, statusMap) {
   const conv = getMetaPrimaryConversion(row);
   const spend = parseFloat(row.spend || 0);
+  const impr = parseInt(row.impressions || 0);
+  const linkClks = metaLinkClicks(row);
   const realStatus = statusMap instanceof Map ? (statusMap.get(row.adset_id) || 'ACTIVE') : 'ACTIVE';
   return {
     id: row.adset_id,
@@ -4247,12 +4250,12 @@ function normalizeMetaAdsetRow(row, statusMap) {
     temp: inferMetaTemperature(row.adset_name || row.campaign_name),
     status: realStatus,
     spend: String(row.spend || 0),
-    impr: row.impressions || 0,
+    impr: impr,
     reach: row.reach || 0,
-    clks: row.clicks || 0,
-    ctr: formatMetaNumber(row.ctr),
-    cpm: formatMetaNumber(row.cpm),
-    cpc: formatMetaNumber(row.cpc),
+    clks: linkClks,
+    ctr: formatMetaNumber(impr > 0 ? (linkClks / impr) * 100 : 0),
+    cpm: formatMetaNumber(impr > 0 ? (spend / impr) * 1000 : 0),
+    cpc: formatMetaNumber(linkClks > 0 ? spend / linkClks : 0),
     freq: formatMetaNumber(row.frequency),
     conv: conv.count || 0,
     cpa: conv.count > 0 ? formatMetaNumber(spend / conv.count) : '—',
@@ -4263,6 +4266,8 @@ function normalizeMetaAdsetRow(row, statusMap) {
 function normalizeMetaAdRow(row, statusMap) {
   const conv = getMetaPrimaryConversion(row);
   const spend = parseFloat(row.spend || 0);
+  const impr = parseInt(row.impressions || 0);
+  const linkClks = metaLinkClicks(row);
   const realStatus = statusMap instanceof Map ? (statusMap.get(row.ad_id) || 'ACTIVE') : 'ACTIVE';
   return {
     id: row.ad_id,
@@ -4272,10 +4277,10 @@ function normalizeMetaAdRow(row, statusMap) {
     status: realStatus,
     format: '—',
     spend: String(row.spend || 0),
-    impr: row.impressions || 0,
-    clks: row.clicks || 0,
-    ctr: formatMetaNumber(row.ctr),
-    cpc: formatMetaNumber(row.cpc),
+    impr: impr,
+    clks: linkClks,
+    ctr: formatMetaNumber(impr > 0 ? (linkClks / impr) * 100 : 0),
+    cpc: formatMetaNumber(linkClks > 0 ? spend / linkClks : 0),
     freq: formatMetaNumber(row.frequency),
     hook_rate: '—',
     conv: conv.count || 0,
@@ -4896,14 +4901,18 @@ function renderMetaSubTab(clientId) {
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
+function metaLinkClicks(row) {
+  return parseInt(row.inline_link_clicks || 0) || getMetaActionCount(row, ['link_click']);
+}
+
 function metaAgg(data) {
   const insights = data.insights || [];
   const agg = data.aggregate || null;
-  let spend=0, impr=0, clks=0, msgs=0, leads=0, purchases=0, revenue=0, hookSum=0, hookN=0, connectSum=0;
+  let sumSpend=0, sumImpr=0, sumLinkClks=0, msgs=0, leads=0, purchases=0, revenue=0, hookSum=0, hookN=0, connectSum=0;
   for (const d of insights) {
-    spend += parseFloat(d.spend||0);
-    impr  += parseInt(d.impressions||0);
-    clks  += parseInt(d.clicks||0);
+    sumSpend    += parseFloat(d.spend||0);
+    sumImpr     += parseInt(d.impressions||0);
+    sumLinkClks += metaLinkClicks(d);
     if (d.hook_rate) { hookSum += parseFloat(d.hook_rate); hookN++; }
     if (d.connect_rate) connectSum += parseFloat(d.connect_rate);
     for (const a of (d.actions||[])) {
@@ -4916,18 +4925,21 @@ function metaAgg(data) {
       if (av.action_type === 'purchase') revenue += parseFloat(av.value||0);
     }
   }
+  const spend = agg ? parseFloat(agg.spend || sumSpend) : sumSpend;
+  const impr  = agg ? parseInt(agg.impressions || sumImpr) : sumImpr;
+  const linkClks = agg ? metaLinkClicks(agg) || sumLinkClks : sumLinkClks;
   const dias = Math.max(insights.length, 1);
   const reach = agg ? parseInt(agg.reach||0) : impr;
   const freq  = agg ? parseFloat(agg.frequency||0) : (impr > 0 && reach > 0 ? impr/reach : 0);
-  const ctr  = impr > 0 ? (clks/impr)*100 : 0;
+  const ctr  = impr > 0 ? (linkClks/impr)*100 : 0;
   const cpm  = impr > 0 ? (spend/impr)*1000 : 0;
-  const cpc  = clks > 0 ? spend/clks : 0;
+  const cpc  = linkClks > 0 ? spend/linkClks : 0;
   const totalConv = msgs || leads || purchases;
   const cpa  = totalConv > 0 ? spend/totalConv : 0;
   const roas = spend > 0 ? revenue/spend : 0;
   const hookRate = hookN > 0 ? hookSum/hookN : 0;
   const connectRate = dias > 0 ? connectSum/dias : 0;
-  return { spend, impr, reach, clks, ctr, cpm, cpc, freq, msgs, leads, purchases, revenue, cpa, roas, hookRate, connectRate, dias };
+  return { spend, impr, reach, clks: linkClks, ctr, cpm, cpc, freq, msgs, leads, purchases, revenue, cpa, roas, hookRate, connectRate, dias, dailyInsights: insights };
 }
 
 function metaBmClass(val, meta, lowerBetter) {
@@ -6289,10 +6301,10 @@ function initMetaCharts(data) {
   const metricMap = {
     spend:       { label: 'Investimento (R$)',  fn: d => parseFloat(d.spend||0),       color: '#6E7F99' },
     impressions: { label: 'Impressões',          fn: d => parseInt(d.impressions||0),   color: '#63B3ED' },
-    clicks:      { label: 'Cliques',             fn: d => parseInt(d.clicks||0),        color: '#34D399' },
-    ctr:         { label: 'CTR (%)',             fn: d => parseFloat(d.ctr||0),         color: '#FBBF24' },
-    cpm:         { label: 'CPM (R$)',            fn: d => parseFloat(d.cpm||0),         color: '#A78BFA' },
-    cpc:         { label: 'CPC (R$)',            fn: d => parseFloat(d.cpc||0),         color: '#F87171' },
+    clicks:      { label: 'Cliques no Link',    fn: d => metaLinkClicks(d),            color: '#34D399' },
+    ctr:         { label: 'CTR Link (%)',        fn: d => { const i=parseInt(d.impressions||0); const lc=metaLinkClicks(d); return i>0?(lc/i)*100:0; }, color: '#FBBF24' },
+    cpm:         { label: 'CPM (R$)',            fn: d => { const i=parseInt(d.impressions||0); const s=parseFloat(d.spend||0); return i>0?(s/i)*1000:0; }, color: '#A78BFA' },
+    cpc:         { label: 'CPC Link (R$)',       fn: d => { const lc=metaLinkClicks(d); const s=parseFloat(d.spend||0); return lc>0?s/lc:0; }, color: '#F87171' },
     frequency:   { label: 'Frequência',          fn: d => parseFloat(d.frequency||0),   color: '#FB923C' }
   };
   const mm = metricMap[metricSel] || metricMap['spend'];
