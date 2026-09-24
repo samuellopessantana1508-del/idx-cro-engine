@@ -2379,6 +2379,7 @@ textarea:focus-visible {
 <!-- Modal: Nova Entrada no Diário -->
 <div id="mo-diary" class="modal">
   <div class="modal-content wide">
+    <input type="hidden" id="md-edit-id" value="">
     <div class="modal-header">
       <h2>📓 Nova Entrada no Diário</h2>
       <button class="close-btn" onclick="closeModal('mo-diary')">✕</button>
@@ -7662,6 +7663,7 @@ async function renderClientDiario(content) {
   const key = `diario_${clientSnapshot.id}`;
   const local = JSON.parse(localStorage.getItem(key) || '[]');
   entries = [...entries, ...local.filter(l => !entries.find(e => e.id === l.id))];
+  _diaryCache = entries;
 
   const typeMeta = {
     nota:    { label: 'Nota',    cls: 'badge', color: 'var(--accent)' },
@@ -7676,15 +7678,29 @@ async function renderClientDiario(content) {
     const meta = typeMeta[entry.tipo] || typeMeta.nota;
     const badge = `<span class="${meta.cls}" style="font-size:10px; padding:2px 8px; border-radius:4px; background:${meta.color}22; color:${meta.color}; border:1px solid ${meta.color}44;">${meta.label}</span>`;
     const dataStr = entry.data_entrada ? fmtDate(entry.data_entrada) : fmtDate(entry.created_at?.split('T')[0] || '');
+    const eid = entry.id || 'local_' + Date.now();
+    const isLong = (entry.conteudo || '').length > 120;
+    const escContent = (entry.conteudo || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const preview = isLong ? escContent.slice(0, 120) + '…' : escContent;
     html += `
-      <div class="card" style="margin-bottom:10px;">
+      <div class="card diary-card" style="margin-bottom:10px; cursor:pointer;" onclick="toggleDiaryCard(this)">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
           <div style="flex:1; min-width:0;">
             <div style="font-weight:600; margin-bottom:4px;">${entry.titulo}</div>
-            ${entry.conteudo ? `<div style="font-size:12px; color:var(--txt-muted); line-height:1.5; margin-bottom:6px; white-space:pre-wrap;">${entry.conteudo.slice(0, 200)}${entry.conteudo.length > 200 ? '...' : ''}</div>` : ''}
-            <div style="font-size:11px; color:var(--txt-disabled);">${dataStr}</div>
+            ${escContent ? `<div class="diary-preview" style="font-size:12px; color:var(--txt-muted); line-height:1.6; margin-bottom:6px; white-space:pre-wrap;">${preview}</div>` : ''}
+            ${escContent ? `<div class="diary-full" style="font-size:13px; color:var(--txt-secondary); line-height:1.7; margin-bottom:8px; white-space:pre-wrap; display:none;">${escContent}</div>` : ''}
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="font-size:11px; color:var(--txt-disabled);">${dataStr}</span>
+              <div class="diary-actions" style="display:none; gap:6px;">
+                <button onclick="event.stopPropagation(); editDiaryEntry('${eid}')" style="font-size:11px; padding:3px 10px; border-radius:var(--radius); border:1px solid var(--border-light); background:var(--bg-primary); color:var(--txt-primary); cursor:pointer;">Editar</button>
+                <button onclick="event.stopPropagation(); deleteDiaryEntry('${eid}')" style="font-size:11px; padding:3px 10px; border-radius:var(--radius); border:1px solid var(--red); background:transparent; color:var(--red); cursor:pointer;">Excluir</button>
+              </div>
+            </div>
           </div>
-          <div style="flex-shrink:0;">${badge}</div>
+          <div style="flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
+            ${badge}
+            ${isLong ? '<span class="diary-chevron" style="font-size:10px; color:var(--txt-muted); transition:transform .2s;">▼</span>' : ''}
+          </div>
         </div>
       </div>
     `;
@@ -10510,6 +10526,59 @@ function saveTestData(objectiveId) {
   showToast('Dados de testes salvos', 'success');
 }
 
+let _diaryCache = [];
+
+function toggleDiaryCard(el) {
+  const preview = el.querySelector('.diary-preview');
+  const full = el.querySelector('.diary-full');
+  const actions = el.querySelector('.diary-actions');
+  const chevron = el.querySelector('.diary-chevron');
+  if (!full) return;
+  const open = full.style.display !== 'none';
+  if (preview) preview.style.display = open ? '' : 'none';
+  full.style.display = open ? 'none' : 'block';
+  if (actions) actions.style.display = open ? 'none' : 'flex';
+  if (chevron) chevron.style.transform = open ? '' : 'rotate(180deg)';
+}
+
+function editDiaryEntry(id) {
+  const entry = _diaryCache.find(e => String(e.id) === String(id));
+  if (!entry) { showToast('Registro não encontrado', 'error'); return; }
+  const dateEl    = document.getElementById('md-data');
+  const titleEl   = document.getElementById('md-titulo');
+  const contentEl = document.getElementById('md-conteudo');
+  const tipoEl    = document.getElementById('md-tipo');
+  const editIdEl  = document.getElementById('md-edit-id');
+  if (!dateEl || !titleEl || !contentEl || !tipoEl) { showToast('Erro interno', 'error'); return; }
+  dateEl.value    = entry.data_entrada || '';
+  titleEl.value   = entry.titulo || '';
+  contentEl.value = entry.conteudo || '';
+  tipoEl.value    = entry.tipo || 'nota';
+  if (editIdEl) editIdEl.value = String(id);
+  document.querySelector('#mo-diary .modal-header h2').textContent = '📓 Editar Registro';
+  openModal('mo-diary');
+  setTimeout(() => titleEl.focus(), 100);
+}
+
+async function deleteDiaryEntry(id) {
+  if (!confirm('Excluir este registro do diário?')) return;
+  try {
+    if (String(id).startsWith('local_')) {
+      const key = `diario_${CURRENT_CLIENT.id}`;
+      const items = JSON.parse(localStorage.getItem(key) || '[]');
+      localStorage.setItem(key, JSON.stringify(items.filter(e => e.id !== id)));
+    } else {
+      const { error } = await SB.from('diario_cliente').delete().eq('id', id);
+      if (error) throw error;
+    }
+    showToast('Registro excluído', 'success');
+    const content = document.getElementById('main-content');
+    if (content) renderClientDiario(content);
+  } catch(e) {
+    showToast('Erro ao excluir: ' + e.message, 'error');
+  }
+}
+
 function addDiaryEntry(evt) {
   if (evt) { evt.preventDefault(); evt.stopPropagation(); }
   try {
@@ -10517,10 +10586,10 @@ function addDiaryEntry(evt) {
     const titleEl   = document.getElementById('md-titulo');
     const contentEl = document.getElementById('md-conteudo');
     const tipoEl    = document.getElementById('md-tipo');
+    const editIdEl  = document.getElementById('md-edit-id');
 
     if (!dateEl || !titleEl || !contentEl || !tipoEl) {
       showToast('Erro interno: modal não encontrado. Recarregue a página.', 'error');
-      console.error('[IDX] Elementos do modal mo-diary não encontrados');
       return;
     }
 
@@ -10529,6 +10598,8 @@ function addDiaryEntry(evt) {
     titleEl.value   = '';
     contentEl.value = '';
     tipoEl.value    = 'nota';
+    if (editIdEl) editIdEl.value = '';
+    document.querySelector('#mo-diary .modal-header h2').textContent = '📓 Nova Entrada no Diário';
     openModal('mo-diary');
     setTimeout(() => titleEl.focus(), 100);
   } catch(e) {
@@ -10545,30 +10616,47 @@ async function saveDiaryEntry() {
   const tipo = document.getElementById('md-tipo').value;
   const data = document.getElementById('md-data').value;
   const conteudo = document.getElementById('md-conteudo').value.trim();
+  const editId = (document.getElementById('md-edit-id')?.value || '').trim();
 
   if (!titulo) { showToast('Título é obrigatório', 'error'); return; }
   if (!CURRENT_CLIENT) { showToast('Selecione um cliente', 'error'); return; }
 
-  const entry = {
-    client_id: CURRENT_CLIENT.id,
+  const fields = {
     titulo,
     tipo,
     data_entrada: data || new Date().toISOString().split('T')[0],
-    conteudo,
-    created_at: new Date().toISOString()
+    conteudo
   };
 
-  try {
-    const { error } = await SB.from('diario_cliente').insert(entry);
-    if (error) throw error;
-    showToast('✅ Entrada salva no diário', 'success');
-  } catch(e) {
-    // LocalStorage fallback
-    const key = `diario_${CURRENT_CLIENT.id}`;
-    const existing = JSON.parse(localStorage.getItem(key) || '[]');
-    existing.unshift({ ...entry, id: 'local_' + Date.now() });
-    localStorage.setItem(key, JSON.stringify(existing));
-    showToast('✅ Entrada salva localmente', 'success');
+  if (editId) {
+    if (String(editId).startsWith('local_')) {
+      const key = `diario_${CURRENT_CLIENT.id}`;
+      const items = JSON.parse(localStorage.getItem(key) || '[]');
+      const idx = items.findIndex(e => e.id === editId);
+      if (idx >= 0) { Object.assign(items[idx], fields); localStorage.setItem(key, JSON.stringify(items)); }
+      showToast('✅ Registro atualizado', 'success');
+    } else {
+      try {
+        const { error } = await SB.from('diario_cliente').update(fields).eq('id', editId);
+        if (error) throw error;
+        showToast('✅ Registro atualizado', 'success');
+      } catch(e) {
+        showToast('Erro ao atualizar: ' + e.message, 'error');
+      }
+    }
+  } else {
+    const entry = { client_id: CURRENT_CLIENT.id, ...fields, created_at: new Date().toISOString() };
+    try {
+      const { error } = await SB.from('diario_cliente').insert(entry);
+      if (error) throw error;
+      showToast('✅ Entrada salva no diário', 'success');
+    } catch(e) {
+      const key = `diario_${CURRENT_CLIENT.id}`;
+      const existing = JSON.parse(localStorage.getItem(key) || '[]');
+      existing.unshift({ ...entry, id: 'local_' + Date.now() });
+      localStorage.setItem(key, JSON.stringify(existing));
+      showToast('✅ Entrada salva localmente', 'success');
+    }
   }
 
   closeModal('mo-diary', true);
