@@ -148,3 +148,56 @@ export type MetaAudienceStatus = {
   skipped_members: number;
   total_attempts: number;
 };
+
+export type TenantReport = {
+  tenant_id: string;
+  clicks: number;
+  whatsapp_leads: number;
+  remarketing_leads: number;
+  sales: number;
+  revenue: number;
+  conversion_rate: number;
+  duplicate_clicks: number;
+  whatsapp_conversations: number;
+  unattributed_conversations: number;
+  ai_sales: number;
+  ai_pending_sales: number;
+};
+
+export type SaleDetection = {
+  id: string;
+  tenant_id: string;
+  status: "pending" | "auto_confirmed" | "confirmed" | "dismissed";
+  confidence: number;
+  sale_value?: number | null;
+  product?: string | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  evidence?: string[] | null;
+  summary?: string | null;
+  created_at: string;
+  reviewed_at?: string | null;
+  conversation_id: string;
+  tracking_session_id?: string | null;
+  ref?: string | null;
+  utm_campaign?: string | null;
+  utm_content?: string | null;
+  match_method?: string | null;
+  last_message_at?: string | null;
+};
+
+export type WhatsappIntegrationStatus = {
+  configured: boolean;
+  api_url?: string;
+  instance_name?: string;
+  enabled?: boolean;
+  connection_state?: string | null;
+  integration_status?: "pending" | "connected" | "needs_attention";
+  last_event_at?: string | null;
+  last_error?: string | null;
+  ai_enabled?: boolean;
+  ai_auto_confirm?: boolean;
+  ai_min_confidence?: number;
+  webhook_url?: string;
+  ai_ready?: boolean;
+};

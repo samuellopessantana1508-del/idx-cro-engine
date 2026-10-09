@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { canOperateTenantOrPlatform } from "../_shared/access.ts";
-import { syncSessionToMetaAudience } from "../_shared/meta-audiences.ts";
+import { confirmPurchase } from "../_shared/purchase.ts";
 
 const supa = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -11,14 +11,6 @@ const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
-type CapiResult = {
-  ok: boolean;
-  status: number | null;
-  data: unknown;
-  error?: string;
-  pixelId?: string;
 };
 
 function json(data: unknown, status = 200): Response {
@@ -34,46 +26,6 @@ function cleanDigits(value: string | null | undefined): string {
 
 function cleanText(value: unknown): string {
   return String(value ?? "").trim();
-}
-
-async function h256(value: string): Promise<string> {
-  const bytes = new TextEncoder().encode(value.toLowerCase().trim());
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest)).map((x) => x.toString(16).padStart(2, "0")).join("");
-}
-
-async function sendCapi(
-  tenantId: string,
-  event: Record<string, unknown>,
-): Promise<CapiResult> {
-  const { data: creds, error } = await supa
-    .from("tenant_meta_credentials")
-    .select("pixel_id, access_token, graph_version, enabled")
-    .eq("tenant_id", tenantId)
-    .maybeSingle();
-
-  if (error) return { ok: false, status: null, data: null, error: error.message };
-  if (!creds?.enabled || !creds.pixel_id || !creds.access_token) {
-    return { ok: false, status: null, data: { error: "missing_meta_credentials" } };
-  }
-
-  const version = Deno.env.get("META_GRAPH_VERSION") ?? creds.graph_version ?? "v25.0";
-  const endpoint = `https://graph.facebook.com/${version}/${creds.pixel_id}/events`;
-
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        data: [event],
-        access_token: creds.access_token,
-      }),
-    });
-    const data = await response.json().catch(() => null);
-    return { ok: response.ok, status: response.status, data, pixelId: creds.pixel_id };
-  } catch (err) {
-    return { ok: false, status: null, data: null, error: String(err) };
-  }
 }
 
 async function currentUser(req: Request) {
@@ -110,9 +62,9 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     if (sessionError || !data) return json({ error: "session_not_found" }, 404);
-    session = data;
+    session = data as Record<string, any>;
 
-    if (!(await canOperateTenantOrPlatform(supa, session.tenant_id, user.id, user.email))) {
+    if (!(await canOperateTenantOrPlatform(supa, data.tenant_id, user.id, user.email))) {
       return json({ error: "forbidden" }, 403);
     }
   } else {
@@ -159,6 +111,8 @@ Deno.serve(async (req: Request) => {
     session = matchedSessions[0];
   }
 
+  if (!session) return json({ error: "session_not_found" }, 404);
+
   if (action === "lost") {
     await supa
       .from("tracking_sessions")
@@ -178,98 +132,18 @@ Deno.serve(async (req: Request) => {
     return json({ error: "invalid_revenue" }, 400);
   }
 
-  await supa
-    .from("tracking_sessions")
-    .update({
-      lead_status: "sold",
-      sold_at: new Date().toISOString(),
-      customer_phone: phone || session.customer_phone || null,
-      customer_email: email || session.customer_email || null,
-      customer_name: name || session.customer_name || null,
-      revenue,
-      sale_notes: body.notes ?? null,
-    })
-    .eq("id", session.id);
-
-  const userData: Record<string, unknown> = {
-    client_ip_address: session.ip,
-    client_user_agent: session.ua,
-    fbc: session.fbc,
-    fbp: session.fbp,
-    country: await h256("br"),
-  };
-
-  if (phone) userData.ph = await h256(phone);
-  if (email) userData.em = await h256(email);
-  if (name) {
-    const parts = name.split(/\s+/);
-    userData.fn = await h256(parts[0]);
-    if (parts.length > 1) userData.ln = await h256(parts.slice(1).join(" "));
-  }
-
-  const eventId = `purchase_${session.id}`;
-  const capiPayload = {
-    event_name: "Purchase",
-    event_time: Math.floor(Date.now() / 1000),
-    event_id: eventId,
-    event_source_url: session.request_url ?? session.source_url ?? "",
-    action_source: "website",
-    user_data: userData,
-    custom_data: {
-      content_ids: [session.offer?.slug ?? session.smart_link?.code ?? session.ref],
-      content_type: "product",
-      content_name: session.offer?.name ?? session.smart_link?.name ?? "Local offer",
-      content_category: session.offer?.category ?? "local_offer",
-      value: revenue,
-      currency: "BRL",
-      ref: session.ref,
-      utm_source: session.utm_source,
-      utm_medium: session.utm_medium,
-      utm_campaign: session.utm_campaign,
-      utm_content: session.utm_content,
-      utm_term: session.utm_term,
-    },
-  };
-
-  const capi = await sendCapi(session.tenant_id, capiPayload);
-
-  await supa.from("capi_events").insert({
-    tenant_id: session.tenant_id,
-    tracking_session_id: session.id,
-    event_name: "Purchase",
-    event_id: eventId,
-    pixel_id: capi.pixelId ?? null,
-    request_payload: capiPayload,
-    response_payload: capi.data,
-    ok: capi.ok,
-    status_code: capi.status,
-    error_message: capi.error ?? null,
-  });
-
-  if (capi.ok) {
-    await supa.from("tracking_sessions").update({ capi_purchase_ok: true }).eq("id", session.id);
-  }
-
-  const updatedSession = {
-    ...session,
-    lead_status: "sold",
-    customer_phone: phone || session.customer_phone,
-    customer_email: email || session.customer_email,
-    customer_name: name || session.customer_name,
+  // Purchase CAPI, público de compradores e histórico do CRM ficam em
+  // _shared/purchase.ts, que também é usado pela detecção de vendas por IA.
+  const result = await confirmPurchase(supa, session, {
     revenue,
-  };
-  const audienceSync = await syncSessionToMetaAudience(supa, updatedSession, "purchased", body);
-
-  await supa.from("crm_activities").insert({
-    tenant_id: session.tenant_id,
-    tracking_session_id: session.id,
-    user_id: user.id,
-    activity_type: "system",
-    body: "meta_audience_purchased",
-    from_status: session.lead_status,
-    to_status: "sold",
-    metadata: audienceSync,
+    phone,
+    email,
+    name,
+    notes: body.notes ?? null,
+    userId: user.id,
+    source: "manual",
   });
+  if (!result.ok) return json({ error: result.error }, result.error === "already_sold" ? 409 : 400);
 
-  return json({ ok: true, capi_ok: capi.ok, audience_sync: audienceSync, status: "sold", match_strategy: matchStrategy, ref: session.ref });
+  return json({ ok: true, capi_ok: result.capi_ok, audience_sync: result.audience_sync, status: "sold", match_strategy: matchStrategy, ref: session.ref });
 });

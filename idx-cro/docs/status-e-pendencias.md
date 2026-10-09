@@ -3,6 +3,19 @@
 Análise feita em 09/10/2026 sobre o código desta pasta (`idx-cro/`).
 Build (`npm run build`) e testes de contrato (`npm run test:edge`) passam.
 
+## Atualização de 09/10/2026 — leads reais + WhatsApp + IA de vendas
+
+Resolvido nesta rodada (detalhes em `docs/whatsapp-evolution-ia.md`):
+
+- **P0-4** KPIs, vendas, receita e "Qualidade por campanha" agora vêm agregados do
+  banco. A lista do CRM continua mostrando os 100 mais recentes (paginação ainda falta).
+- **P0-5** Lead = `lead_confirmed_at`. Clique repetido e robô não contam mais.
+- **P0-6** A confirmação tenta de novo quando chega antes da sessão ser gravada.
+- **Novo:** integração com a Evolution API (lead conta pela primeira mensagem) e
+  IA que detecta a venda na conversa, aponta o cliente e o valor, e lança a venda.
+
+Continuam abertos: P0-1, P0-2, P0-3, P0-7 e os itens P1/P2.
+
 ## O que é o software
 
 Smart Link → página de passagem (`ir.html`) → WhatsApp. Cada clique vira uma sessão
@@ -110,8 +123,8 @@ gerou venda.** São esses os itens P0.
 
 ## Ordem sugerida
 
-1. P0-6 e P0-5 (bug e definição de lead): pequenos, corrigem dados já hoje.
-2. P0-4 e P0-3 (números do painel e período): o relatório passa a bater.
+1. ~~P0-6 e P0-5~~ (feito em 09/10/2026).
+2. P0-3 (período) e paginação do CRM.
 3. P0-1 e P0-2 (IDs dinâmicos + nível conjunto/anúncio): passa a apontar o criativo vencedor.
 4. P0-7 (sync diário) e aviso de token.
 5. Recomendações e relatório para o cliente.

@@ -26,6 +26,12 @@ function mustExist(path) {
   "supabase/functions/_shared/access.ts",
   "supabase/functions/_shared/meta-audiences.ts",
   "supabase/functions/crm/index.ts",
+  "supabase/functions/whatsapp/index.ts",
+  "supabase/functions/whatsapp-webhook/index.ts",
+  "supabase/functions/_shared/capi.ts",
+  "supabase/functions/_shared/purchase.ts",
+  "supabase/functions/_shared/whatsapp.ts",
+  "supabase/functions/_shared/sale-detector.ts",
 ].forEach(mustExist);
 
 const migration1 = read("supabase/migrations/202606300001_init.sql");
@@ -50,6 +56,13 @@ const sharedAccess = read("supabase/functions/_shared/access.ts");
 const sharedMetaAudiences = read("supabase/functions/_shared/meta-audiences.ts");
 const crm = read("supabase/functions/crm/index.ts");
 const supabaseHealth = read("supabase/functions/supabase-health/index.ts");
+const migrationRealLeads = read("supabase/migrations/20261009120000_real_leads_whatsapp_ai.sql");
+const sharedCapi = read("supabase/functions/_shared/capi.ts");
+const sharedPurchase = read("supabase/functions/_shared/purchase.ts");
+const sharedWhatsapp = read("supabase/functions/_shared/whatsapp.ts");
+const saleDetector = read("supabase/functions/_shared/sale-detector.ts");
+const whatsappFn = read("supabase/functions/whatsapp/index.ts");
+const whatsappWebhook = read("supabase/functions/whatsapp-webhook/index.ts");
 
 assert.match(migration1, /create table public\.tenants/);
 assert.match(migration1, /create table public\.smart_links/);
@@ -106,10 +119,15 @@ assert.match(go, /meta-externalfetcher/);
 assert.match(go, /173\.252\./);
 assert.doesNotMatch(go, /go\.idx\.app/);
 
-assert.match(convert, /event_name: "Purchase"/);
-assert.match(convert, /lead_status: "sold"/);
-assert.match(convert, /tenant_meta_credentials/);
+assert.match(convert, /confirmPurchase/);
+assert.match(convert, /source: "manual"/);
 assert.match(convert, /canOperateTenantOrPlatform/);
+assert.match(sharedPurchase, /event_name: "Purchase"/);
+assert.match(sharedPurchase, /lead_status: "sold"/);
+assert.match(sharedPurchase, /\.is\("sold_at", null\)/);
+assert.match(sharedPurchase, /syncSessionToMetaAudience/);
+assert.match(sharedCapi, /tenant_meta_credentials/);
+assert.match(sharedCapi, /capi_events/);
 assert.match(convert, /contact_match_not_found/);
 assert.match(convert, /ambiguous_contact_match/);
 assert.match(convert, /match_strategy/);
@@ -196,5 +214,43 @@ assert.match(supabaseHealth, /single_owned_multi_tenant/);
 assert.match(supabaseHealth, /tenant_id \+ rls \+ edge_functions/);
 assert.match(supabaseHealth, /platform_users/);
 assert.match(supabaseHealth, /invalid_link_events/);
+
+// Leads reais: clique repetido e robô não contam; lead = lead_confirmed_at.
+assert.match(go, /markIfDuplicate/);
+assert.match(go, /duplicate_of/);
+assert.match(go, /isGenericBot/);
+assert.match(go, /lead_confirmed_at/);
+assert.match(go, /tenantUsesWhatsappIntegration/);
+assert.match(migrationRealLeads, /add column if not exists lead_confirmed_at/);
+assert.match(migrationRealLeads, /duplicate_of uuid references public\.tracking_sessions/);
+assert.match(migrationRealLeads, /where ts\.lead_confirmed_at is not null\s+and ts\.duplicate_of is null/);
+assert.match(migrationRealLeads, /create table if not exists public\.tenant_whatsapp_integrations/);
+assert.match(migrationRealLeads, /tenant_whatsapp_integrations_service_only/);
+assert.match(migrationRealLeads, /create table if not exists public\.whatsapp_conversations/);
+assert.match(migrationRealLeads, /create table if not exists public\.whatsapp_messages/);
+assert.match(migrationRealLeads, /create table if not exists public\.sale_detections/);
+assert.match(migrationRealLeads, /vw_sale_detections/);
+assert.match(migrationRealLeads, /unattributed_conversations/);
+
+// WhatsApp (Evolution API) + IA de vendas.
+assert.match(config, /\[functions\.whatsapp-webhook\][\s\S]*verify_jwt = false/);
+assert.match(config, /\[functions\.whatsapp\]/);
+assert.match(whatsappWebhook, /webhook_secret/);
+assert.match(whatsappWebhook, /messages\.upsert/);
+assert.match(whatsappWebhook, /connection\.update/);
+assert.match(sharedWhatsapp, /REF_PATTERN/);
+assert.match(sharedWhatsapp, /time_window/);
+assert.match(sharedWhatsapp, /@lid|remoteJidAlt/);
+assert.match(sharedWhatsapp, /event_id: `lead_\$\{session\.id\}`/);
+assert.match(sharedWhatsapp, /\/webhook\/set\//);
+assert.match(saleDetector, /npm:@anthropic-ai\/sdk@\d+\.\d+\.\d+/);
+assert.match(saleDetector, /claude-opus-5-5/);
+assert.match(saleDetector, /json_schema/);
+assert.match(saleDetector, /stop_reason === "refusal"/);
+assert.match(saleDetector, /ai_min_confidence/);
+assert.match(saleDetector, /source: options\.status === "auto_confirmed" \? "ai" : "manual"/);
+assert.match(whatsappFn, /canOperateTenantOrPlatform/);
+assert.match(whatsappFn, /analyze_pending/);
+assert.doesNotMatch(whatsappFn, /api_key: integration\.api_key/);
 
 console.log("Edge function contract tests passed.");

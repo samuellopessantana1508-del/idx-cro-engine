@@ -2225,3 +2225,14 @@ td small {
     bottom: 88px;
   }
 }
+
+.check-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.86rem;
+}
+
+.check-line input {
+  width: auto;
+}

@@ -143,8 +143,74 @@ function isPreviewCrawler(userAgent: string | null, ip: string | null): boolean 
     "meta-externalfetcher",
   ].some((agent) => value.includes(agent));
 
-  return hasPreviewUserAgent || isMetaPreviewIp(ip);
+  return hasPreviewUserAgent || isMetaPreviewIp(ip) || isGenericBot(value);
 }
+
+// Previews de outros apps, verificadores de link e scripts. Antes eles viravam
+// sessão e inflavam cliques/leads no painel.
+function isGenericBot(userAgentLower: string): boolean {
+  if (!userAgentLower) return true;
+  return [
+    "whatsapp/",
+    "telegrambot",
+    "twitterbot",
+    "slackbot",
+    "discordbot",
+    "linkedinbot",
+    "skypeuripreview",
+    "googlebot",
+    "bingbot",
+    "applebot",
+    "+http", // robôs costumam se identificar com uma URL de contato
+    "crawler",
+    "spider",
+    "headlesschrome",
+    "python-requests",
+    "curl/",
+    "wget/",
+    "go-http-client",
+    "okhttp/",
+    "axios/",
+    "node-fetch",
+  ].some((agent) => userAgentLower.includes(agent));
+}
+
+// Mesma pessoa clicando de novo no mesmo link em pouco tempo (mesmo IP e
+// navegador) não é um clique novo: a sessão nova aponta para a original.
+const DUPLICATE_WINDOW_MINUTES = 30;
+
+async function markIfDuplicate(session: { id: string; tenant_id: string; ip: string | null; ua: string | null; clicked_at: string }): Promise<void> {
+  if (!session.ip) return;
+  const since = new Date(new Date(session.clicked_at).getTime() - DUPLICATE_WINDOW_MINUTES * 60 * 1000).toISOString();
+  let query = supa
+    .from("tracking_sessions")
+    .select("id")
+    .eq("tenant_id", session.tenant_id)
+    .eq("ip", session.ip)
+    .is("duplicate_of", null)
+    .neq("id", session.id)
+    .gte("clicked_at", since)
+    .lte("clicked_at", session.clicked_at)
+    .order("clicked_at", { ascending: true })
+    .limit(1);
+  query = session.ua ? query.eq("ua", session.ua) : query.is("ua", null);
+  const { data } = await query;
+  const original = data?.[0];
+  if (original) {
+    await supa.from("tracking_sessions").update({ duplicate_of: original.id }).eq("id", session.id);
+  }
+}
+
+async function tenantUsesWhatsappIntegration(tenantId: string): Promise<boolean> {
+  const { data } = await supa
+    .from("tenant_whatsapp_integrations")
+    .select("enabled, integration_status")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  return Boolean(data?.enabled && data.integration_status === "connected");
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function logInvalidLink(req: Request, code: string | null | undefined, reason: string): Promise<void> {
   try {
@@ -261,29 +327,57 @@ async function handleConfirm(req: Request, url: URL): Promise<Response> {
     return new Response(null, { status: 400 });
   }
 
-  // Atomic: only the first confirmation flips whatsapp_opened_at, so the
-  // Lead event is sent exactly once per session.
-  const { data: session } = await supa
-    .from("tracking_sessions")
-    .update({ whatsapp_opened_at: new Date().toISOString() })
-    .eq("ref", ref)
-    .is("whatsapp_opened_at", null)
-    .select("*, tenant:tenants(*), offer:offers(*), smart_link:smart_links(*)")
-    .maybeSingle();
+  // A sessão é gravada em segundo plano pelo redirect. Se a confirmação chegar
+  // antes do insert terminar, tenta de novo por alguns segundos em vez de
+  // perder o lead.
+  let session: Record<string, any> | null = null;
+  for (let attempt = 0; attempt < 5 && !session; attempt++) {
+    if (attempt) await sleep(800);
+    // Atomic: only the first confirmation flips whatsapp_opened_at, so the
+    // Lead event is sent exactly once per session.
+    const { data } = await supa
+      .from("tracking_sessions")
+      .update({ whatsapp_opened_at: new Date().toISOString() })
+      .eq("ref", ref)
+      .is("whatsapp_opened_at", null)
+      .select("*, tenant:tenants(*), offer:offers(*), smart_link:smart_links(*)")
+      .maybeSingle();
+    if (data) {
+      session = data;
+      break;
+    }
+    const { data: existing } = await supa.from("tracking_sessions").select("id").eq("ref", ref).maybeSingle();
+    if (existing) break; // já confirmada antes
+  }
 
-  if (session) {
-    // Marca visivel no CRM: o vendedor continua vendo TODOS os leads, e os que
-    // realmente entraram no WhatsApp ganham esta tag (o painel ja renderiza tags).
-    const currentTags = Array.isArray(session.tags) ? session.tags.map(String) : [];
-    if (!currentTags.includes(ENTERED_TAG)) {
-      runBackground((async () => {
+  // Clique repetido da mesma pessoa não vira lead novo.
+  if (session && !session.duplicate_of) {
+    const confirmed = session;
+    runBackground((async () => {
+      // Com o WhatsApp da empresa conectado (Evolution API), o lead só conta
+      // quando a primeira mensagem chega (whatsapp-webhook). Abrir o WhatsApp e
+      // não mandar nada não é lead.
+      if (await tenantUsesWhatsappIntegration(confirmed.tenant_id)) return;
+
+      const { data: promoted } = await supa
+        .from("tracking_sessions")
+        .update({ lead_confirmed_at: new Date().toISOString(), lead_source: "page_confirm" })
+        .eq("id", confirmed.id)
+        .is("lead_confirmed_at", null)
+        .select("id")
+        .maybeSingle();
+      if (!promoted) return;
+
+      // Marca visivel no CRM para os leads que realmente entraram no WhatsApp.
+      const currentTags = Array.isArray(confirmed.tags) ? confirmed.tags.map(String) : [];
+      if (!currentTags.includes(ENTERED_TAG)) {
         await supa.from("tracking_sessions")
           .update({ tags: [...currentTags, ENTERED_TAG].slice(0, 12) })
-          .eq("id", session.id);
-      })());
-    }
-    // Lead so vai para o Meta quando a entrada no WhatsApp e confirmada.
-    runBackground(sendLeadForSession(session));
+          .eq("id", confirmed.id);
+      }
+      // Lead so vai para o Meta quando a entrada no WhatsApp e confirmada.
+      await sendLeadForSession(confirmed);
+    })());
   }
 
   return new Response(null, {
@@ -448,7 +542,7 @@ Deno.serve(async (req: Request) => {
       .single();
 
     if (sessionError || !session) return;
-
+    await markIfDuplicate({ id: sessionId, tenant_id: tenant.id, ip, ua, clicked_at: now });
   })());
 
   // Redirect 302 para a pagina de passagem no dominio proprio: ela abre o

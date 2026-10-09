@@ -32,7 +32,24 @@ uma fila simples para o atendente confirmar venda.
 - `supabase/functions/meta-insights`: importa campanhas, cliques e gasto do Meta Ads.
 - `supabase/functions/tenant-admin`: cria clientes, salva Meta manual e convida usuários.
 - `supabase/functions/supabase-health`: valida se a instalação Supabase está saudável.
+- `supabase/functions/whatsapp-webhook`: recebe as mensagens da Evolution API. A
+  primeira mensagem da pessoa transforma o clique em lead real e liga a conversa
+  à campanha (ref, telefone ou janela de tempo).
+- `supabase/functions/whatsapp`: configuração da Evolution API pelo painel,
+  análise de conversas com IA e revisão das vendas detectadas.
 - `docs/`: roteiro de implantação e decisões de produto.
+
+## Como leads e vendas são contados
+
+- **Clique**: sessão do Smart Link, sem robôs e sem cliques repetidos da mesma
+  pessoa em 30 minutos.
+- **Lead real**: com WhatsApp conectado (Evolution API), quando a primeira mensagem
+  chega; sem WhatsApp conectado, quando a página de passagem confirma a abertura.
+- **Venda**: confirmada pelo atendente ou detectada pela IA na conversa
+  (confiança alta = lançada sozinha; média = aguarda revisão).
+
+Detalhes, causas da diferença de números e implantação:
+`docs/whatsapp-evolution-ia.md`.
 
 ## Banco de dados
 
@@ -171,7 +188,12 @@ supabase functions deploy meta-assets
 supabase functions deploy meta-insights
 supabase functions deploy meta-audiences
 supabase functions deploy supabase-health
+supabase functions deploy whatsapp --no-verify-jwt
+supabase functions deploy whatsapp-webhook --no-verify-jwt
 ```
+
+A IA de vendas precisa do secret `ANTHROPIC_API_KEY` (veja
+`supabase/.env.secrets.example`).
 
 As funções públicas/privadas também estão declaradas em `supabase/config.toml`.
 

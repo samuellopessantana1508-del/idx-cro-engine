@@ -29,3 +29,9 @@ verify_jwt = true
 
 [functions.meta-audiences]
 verify_jwt = true
+
+[functions.whatsapp]
+verify_jwt = false
+
+[functions.whatsapp-webhook]
+verify_jwt = false

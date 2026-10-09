@@ -22,7 +22,7 @@ import {
   Users,
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
-import type { CapiEvent, CapiHealth, CrmActivity, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, Offer, SmartLink, Tenant, TenantUser } from "./lib/types";
+import type { CapiEvent, CapiHealth, CrmActivity, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, Offer, SaleDetection, SmartLink, Tenant, TenantReport, TenantUser, WhatsappIntegrationStatus } from "./lib/types";
 import { envConfigured, formatDate, formatMoney, linkCode, slugify, smartLinkUrl, timeAgo } from "./lib/utils";
 
 type Section = "dashboard" | "sales" | "links" | "leads" | "crm" | "integrations" | "clients" | "users" | "reports" | "capi" | "settings";
@@ -64,6 +64,15 @@ type MetaDraft = {
   pixelId: string;
   accessToken: string;
   testEventCode: string;
+};
+
+type WhatsappDraft = {
+  apiUrl: string;
+  instanceName: string;
+  apiKey: string;
+  aiEnabled: boolean;
+  aiAutoConfirm: boolean;
+  aiMinConfidence: string;
 };
 
 type ContactDraft = {
@@ -122,6 +131,17 @@ type QualityRow = {
   cpl: number | null;
   costPerQualified: number | null;
   roas: number | null;
+};
+
+type LeadQualityReportRow = {
+  tenant_id: string;
+  campaign_key: string;
+  leads: number;
+  contacted_leads: number;
+  qualified_leads: number;
+  bad_leads: number;
+  sales: number;
+  revenue: number;
 };
 
 type CrmFilter = LeadStatus | "all" | "needs_follow_up" | "no_identifier";
@@ -190,6 +210,15 @@ const emptyMetaDraft: MetaDraft = {
   pixelId: "",
   accessToken: "",
   testEventCode: "",
+};
+
+const emptyWhatsappDraft: WhatsappDraft = {
+  apiUrl: "",
+  instanceName: "",
+  apiKey: "",
+  aiEnabled: true,
+  aiAutoConfirm: true,
+  aiMinConfidence: "0.85",
 };
 
 const emptyHealth: CapiHealth = {
@@ -343,6 +372,12 @@ export function App() {
   const [health, setHealth] = useState<CapiHealth>(emptyHealth);
   const [metaCampaigns, setMetaCampaigns] = useState<MetaCampaignRoi[]>([]);
   const [metaAudiences, setMetaAudiences] = useState<MetaAudienceStatus[]>([]);
+  const [tenantReport, setTenantReport] = useState<TenantReport | null>(null);
+  const [qualityReport, setQualityReport] = useState<LeadQualityReportRow[]>([]);
+  const [saleDetections, setSaleDetections] = useState<SaleDetection[]>([]);
+  const [whatsappStatus, setWhatsappStatus] = useState<WhatsappIntegrationStatus | null>(null);
+  const [whatsappDraft, setWhatsappDraft] = useState<WhatsappDraft>(emptyWhatsappDraft);
+  const [detectionRevenue, setDetectionRevenue] = useState<Record<string, string>>({});
   const [onboarding, setOnboarding] = useState<TenantOnboarding | null>(null);
   const [draft, setDraft] = useState<DraftLink>(emptyDraft);
   const [toast, setToast] = useState("");
@@ -393,7 +428,8 @@ export function App() {
   const sellerUsers = tenantUsers.filter((user) => user.role === "operator");
   const hasOperationalData = tenantLinks.length > 0 || tenantLeads.length > 0;
   const needsOperationalOnboarding = Boolean(tenant && !loading && !hasOperationalData);
-  const qualityRows = useMemo(() => buildQualityRows(tenantLeads, tenantMetaCampaigns), [tenantLeads, tenantMetaCampaigns]);
+  const tenantQualityReport = qualityReport.filter((item) => item.tenant_id === tenant?.id);
+  const qualityRows = useMemo(() => buildQualityRows(tenantQualityReport, tenantMetaCampaigns), [tenantQualityReport, tenantMetaCampaigns]);
   const tenantSummary = tenantSummaries.find((item) => item.tenant_id === tenant?.id);
   const currentTenantUser = tenantUsers.find((user) =>
     (currentUserId && user.user_id === currentUserId) ||
@@ -422,16 +458,30 @@ export function App() {
     setToast(`Lead ${lead.ref} destacado no CRM.`);
   }
 
+  // Totais vêm agregados do banco (vw_tenant_report). Antes eram somados a
+  // partir dos últimos 100 registros carregados no navegador.
   const metrics = useMemo(() => {
-    const clicks = tenantLinks.reduce((sum, link) => sum + Number(link.clicks ?? 0), 0);
-    const sales = tenantLeads.filter((lead) => lead.lead_status === "sold").length ||
-      tenantLinks.reduce((sum, link) => sum + Number(link.sales ?? 0), 0);
-    const revenue = tenantLeads.reduce((sum, lead) => sum + Number(lead.revenue ?? 0), 0) ||
-      tenantLinks.reduce((sum, link) => sum + Number(link.revenue ?? 0), 0);
+    const report = tenantReport?.tenant_id === tenant?.id ? tenantReport : null;
+    const clicks = Number(report?.clicks ?? tenantLinks.reduce((sum, link) => sum + Number(link.clicks ?? 0), 0));
+    const leads = Number(report?.whatsapp_leads ?? 0);
+    const sales = Number(report?.sales ?? tenantLinks.reduce((sum, link) => sum + Number(link.sales ?? 0), 0));
+    const revenue = Number(report?.revenue ?? tenantLinks.reduce((sum, link) => sum + Number(link.revenue ?? 0), 0));
     const waiting = tenantLeads.filter((lead) => lead.lead_status === "new").length;
-    const conversion = clicks ? (sales / clicks) * 100 : 0;
-    return { clicks, sales, revenue, waiting, conversion };
-  }, [tenantLeads, tenantLinks]);
+    const conversion = leads ? (sales / leads) * 100 : 0;
+    return {
+      clicks,
+      leads,
+      sales,
+      revenue,
+      waiting,
+      conversion,
+      duplicateClicks: Number(report?.duplicate_clicks ?? 0),
+      conversations: Number(report?.whatsapp_conversations ?? 0),
+      unattributed: Number(report?.unattributed_conversations ?? 0),
+      aiSales: Number(report?.ai_sales ?? 0),
+      aiPending: Number(report?.ai_pending_sales ?? 0),
+    };
+  }, [tenant?.id, tenantLeads, tenantLinks, tenantReport]);
 
   const crmVisibleLeads = useMemo(() => {
     const q = crmSearch.trim().toLowerCase();
@@ -819,7 +869,8 @@ export function App() {
 
   async function loadTenantData(nextTenantId = tenantId) {
     if (!supabase || !nextTenantId) return;
-    const [offerRes, linkRes, leadRes, eventRes, activityRes, userRes, healthRes, metaRoiRes, audienceRes, onboardingRes] = await Promise.all([
+    void loadWhatsappStatus(nextTenantId);
+    const [offerRes, linkRes, leadRes, eventRes, activityRes, userRes, healthRes, metaRoiRes, audienceRes, onboardingRes, reportRes, detectionRes, qualityRes] = await Promise.all([
       supabase.from("offers").select("*").eq("tenant_id", nextTenantId).order("created_at", { ascending: false }),
       supabase.from("vw_smart_link_performance").select("*").eq("tenant_id", nextTenantId),
       supabase.from("vw_lead_queue").select("*").eq("tenant_id", nextTenantId).order("clicked_at", { ascending: false }).limit(100),
@@ -830,6 +881,9 @@ export function App() {
       supabase.from("vw_meta_campaign_roi").select("*").eq("tenant_id", nextTenantId).order("spend", { ascending: false }).limit(100),
       supabase.from("vw_meta_audience_status").select("*").eq("tenant_id", nextTenantId).order("audience_key", { ascending: true }),
       supabase.from("tenant_onboarding").select("*").eq("tenant_id", nextTenantId).maybeSingle(),
+      supabase.from("vw_tenant_report").select("*").eq("tenant_id", nextTenantId).maybeSingle(),
+      supabase.from("vw_sale_detections").select("*").eq("tenant_id", nextTenantId).order("created_at", { ascending: false }).limit(40),
+      supabase.from("vw_lead_quality_report").select("*").eq("tenant_id", nextTenantId),
     ]);
 
     if (offerRes.data) setOffers(offerRes.data as Offer[]);
@@ -842,6 +896,99 @@ export function App() {
     if (metaRoiRes.data) setMetaCampaigns(metaRoiRes.data as MetaCampaignRoi[]);
     if (audienceRes.data) setMetaAudiences(audienceRes.data as MetaAudienceStatus[]);
     setOnboarding((onboardingRes.data as TenantOnboarding | null) ?? null);
+    setTenantReport((reportRes.data as TenantReport | null) ?? null);
+    if (detectionRes.data) setSaleDetections(detectionRes.data as SaleDetection[]);
+    if (qualityRes.data) setQualityReport(qualityRes.data as LeadQualityReportRow[]);
+  }
+
+  async function loadWhatsappStatus(nextTenantId = tenantId) {
+    if (!supabase || !nextTenantId) return;
+    try {
+      const res = await authFetch(`whatsapp?tenant_id=${encodeURIComponent(nextTenantId)}`, { method: "GET" });
+      const data = await res.json();
+      if (!res.ok) return;
+      const status = (data.integration ?? { configured: false }) as WhatsappIntegrationStatus;
+      setWhatsappStatus(status);
+      setWhatsappDraft({
+        apiUrl: status.api_url ?? "",
+        instanceName: status.instance_name ?? "",
+        apiKey: "",
+        aiEnabled: status.ai_enabled ?? true,
+        aiAutoConfirm: status.ai_auto_confirm ?? true,
+        aiMinConfidence: String(status.ai_min_confidence ?? 0.85),
+      });
+    } catch {
+      setWhatsappStatus(null);
+    }
+  }
+
+  async function saveWhatsappIntegration() {
+    if (!tenant) return;
+    if (!whatsappDraft.apiUrl.trim() || !whatsappDraft.instanceName.trim() || (!whatsappStatus?.configured && !whatsappDraft.apiKey.trim())) {
+      setToast("Informe URL da Evolution API, nome da instância e API key.");
+      return;
+    }
+    setIntegrationBusy(true);
+    const res = await authFetch("whatsapp", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "save",
+        tenant_id: tenant.id,
+        api_url: whatsappDraft.apiUrl.trim(),
+        instance_name: whatsappDraft.instanceName.trim(),
+        api_key: whatsappDraft.apiKey.trim() || undefined,
+        ai_enabled: whatsappDraft.aiEnabled,
+        ai_auto_confirm: whatsappDraft.aiAutoConfirm,
+        ai_min_confidence: Number(whatsappDraft.aiMinConfidence.replace(",", ".")),
+      }),
+    });
+    const data = await res.json();
+    setIntegrationBusy(false);
+    if (!res.ok) return setToast(data.error || "Erro ao salvar WhatsApp.");
+    await loadWhatsappStatus(tenant.id);
+    setToast(data.integration?.integration_status === "connected" ? "WhatsApp conectado. Leads passam a contar pela primeira mensagem." : "Integração salva, mas precisa de atenção. Veja o aviso.");
+  }
+
+  async function runSaleAnalysis() {
+    if (!tenant) return;
+    setIntegrationBusy(true);
+    const res = await authFetch("whatsapp", {
+      method: "POST",
+      body: JSON.stringify({ action: "analyze", tenant_id: tenant.id }),
+    });
+    const data = await res.json();
+    setIntegrationBusy(false);
+    if (!res.ok) return setToast(data.error || "Erro ao analisar conversas.");
+    const outcomes = (data.outcomes ?? {}) as Record<string, number>;
+    const found = Number(outcomes.pending ?? 0) + Number(outcomes.auto_confirmed ?? 0);
+    setToast(data.analyzed ? `${data.analyzed} conversa(s) analisada(s), ${found} venda(s) encontrada(s).` : "Nenhuma conversa nova para analisar.");
+    await loadTenantData();
+  }
+
+  async function reviewSaleDetection(detection: SaleDetection, decision: "confirm" | "dismiss") {
+    if (!tenant) return;
+    setIntegrationBusy(true);
+    const res = await authFetch("whatsapp", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "review",
+        tenant_id: tenant.id,
+        detection_id: detection.id,
+        decision,
+        revenue: detectionRevenue[detection.id] || undefined,
+      }),
+    });
+    const data = await res.json();
+    setIntegrationBusy(false);
+    if (!res.ok) {
+      const messages: Record<string, string> = {
+        invalid_revenue: "Informe o valor da venda.",
+        already_sold: "Esse lead já está como vendido.",
+      };
+      return setToast(messages[data.error] ?? data.error ?? "Erro ao revisar venda.");
+    }
+    setToast(decision === "confirm" ? "Venda confirmada e enviada ao Meta." : "Sugestão descartada.");
+    await loadTenantData();
   }
 
   async function createSmartLink() {
@@ -1681,11 +1828,28 @@ export function App() {
           <section className="page-grid">
             <div className="kpi-grid">
               <Kpi label="Cliques" value={metrics.clicks.toLocaleString("pt-BR")} />
-              <Kpi label="Aguardando" value={metrics.waiting.toString()} />
+              <Kpi label="Leads reais" value={metrics.leads.toLocaleString("pt-BR")} />
               <Kpi label="Vendas" value={metrics.sales.toString()} />
               <Kpi label="Receita" value={formatMoney(metrics.revenue)} />
               <Kpi label="Conversão" value={`${metrics.conversion.toFixed(1)}%`} />
             </div>
+
+            <section className="panel wide">
+              <div className="panel-head">
+                <div>
+                  <h2>Vendas detectadas pela IA</h2>
+                  <p>{whatsappStatus?.configured ? "A IA lê as conversas do WhatsApp e aponta quem comprou." : "Conecte o WhatsApp (Evolution API) em Integrações para a IA detectar vendas nas conversas."}</p>
+                </div>
+                <button className="ghost-dark-button" onClick={runSaleAnalysis} disabled={integrationBusy || !whatsappStatus?.configured}>Analisar agora</button>
+              </div>
+              <SaleDetectionsList
+                detections={saleDetections}
+                revenues={detectionRevenue}
+                busy={integrationBusy}
+                onRevenueChange={(id, value) => setDetectionRevenue((items) => ({ ...items, [id]: value }))}
+                onReview={reviewSaleDetection}
+              />
+            </section>
 
             <section className="panel wide">
               <div className="panel-head">
@@ -1788,6 +1952,24 @@ export function App() {
 
         {active === "leads" && (
           <section className="stack">
+            {whatsappStatus?.configured && (
+              <section className="panel">
+                <div className="panel-head">
+                  <div>
+                    <h2>Vendas detectadas pela IA</h2>
+                    <p>Confirme ou descarte as vendas que a IA encontrou nas conversas.</p>
+                  </div>
+                  <button className="ghost-dark-button" onClick={runSaleAnalysis} disabled={integrationBusy}>Analisar agora</button>
+                </div>
+                <SaleDetectionsList
+                  detections={saleDetections}
+                  revenues={detectionRevenue}
+                  busy={integrationBusy}
+                  onRevenueChange={(id, value) => setDetectionRevenue((items) => ({ ...items, [id]: value }))}
+                  onReview={reviewSaleDetection}
+                />
+              </section>
+            )}
             <section className="panel">
               <div className="panel-head">
                 <div>
@@ -1809,7 +1991,7 @@ export function App() {
               <div className="panel-head">
                 <div>
                   <h2>Atendimentos</h2>
-                  <p>Todos os cliques que chegaram ao WhatsApp.</p>
+                  <p>Leads reais: pessoas que entraram em contato pelo WhatsApp.</p>
                 </div>
                 <div className="search-box">
                   <Search size={15} />
@@ -1964,6 +2146,78 @@ export function App() {
                   <button className="ghost-dark-button" onClick={startMetaLogin} disabled={integrationBusy}>
                     Conectar Facebook <ArrowRight size={16} />
                   </button>
+                </article>
+              </div>
+            </section>
+
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <h2>WhatsApp (Evolution API)</h2>
+                  <p>Conecta o WhatsApp da empresa. O lead passa a contar só quando a mensagem chega, e a IA lê as conversas para lançar as vendas.</p>
+                </div>
+                <WhatsappStatusPill status={whatsappStatus} />
+              </div>
+              {whatsappStatus?.last_error && (
+                <div className="inline-alert">
+                  <strong>Precisa de atenção</strong>
+                  <span>{whatsappStatus.last_error}</span>
+                </div>
+              )}
+              {whatsappStatus?.configured && whatsappStatus.ai_ready === false && (
+                <div className="inline-alert">
+                  <strong>IA sem chave</strong>
+                  <span>Configure o secret ANTHROPIC_API_KEY no Supabase para a detecção de vendas funcionar.</span>
+                </div>
+              )}
+              <div className="integration-grid">
+                <article className="integration-card">
+                  <span className="step-number">1</span>
+                  <h3>Instância</h3>
+                  <p>Dados da instância da Evolution API onde o WhatsApp da empresa está conectado.</p>
+                  <div className="mini-form">
+                    <input placeholder="URL da Evolution API, ex: https://evo.seudominio.com" value={whatsappDraft.apiUrl} onChange={(event) => setWhatsappDraft({ ...whatsappDraft, apiUrl: event.target.value })} />
+                    <input placeholder="Nome da instância" value={whatsappDraft.instanceName} onChange={(event) => setWhatsappDraft({ ...whatsappDraft, instanceName: event.target.value })} />
+                    <input placeholder={whatsappStatus?.configured ? "API key (em branco mantém a atual)" : "API key"} value={whatsappDraft.apiKey} onChange={(event) => setWhatsappDraft({ ...whatsappDraft, apiKey: event.target.value })} type="password" />
+                  </div>
+                </article>
+                <article className="integration-card">
+                  <span className="step-number">2</span>
+                  <h3>IA de vendas</h3>
+                  <p>Com confiança acima do mínimo e valor identificado, a venda é lançada sozinha e enviada ao Meta. Abaixo disso, fica para o atendente confirmar.</p>
+                  <div className="mini-form">
+                    <label className="check-line">
+                      <input type="checkbox" checked={whatsappDraft.aiEnabled} onChange={(event) => setWhatsappDraft({ ...whatsappDraft, aiEnabled: event.target.checked })} />
+                      Detectar vendas nas conversas
+                    </label>
+                    <label className="check-line">
+                      <input type="checkbox" checked={whatsappDraft.aiAutoConfirm} onChange={(event) => setWhatsappDraft({ ...whatsappDraft, aiAutoConfirm: event.target.checked })} />
+                      Lançar venda automaticamente quando a confiança for alta
+                    </label>
+                    <select value={whatsappDraft.aiMinConfidence} onChange={(event) => setWhatsappDraft({ ...whatsappDraft, aiMinConfidence: event.target.value })}>
+                      <option value="0.95">Confiança mínima: 95% (mais rigoroso)</option>
+                      <option value="0.9">Confiança mínima: 90%</option>
+                      <option value="0.85">Confiança mínima: 85% (recomendado)</option>
+                      <option value="0.75">Confiança mínima: 75%</option>
+                    </select>
+                  </div>
+                </article>
+                <article className="integration-card">
+                  <span className="step-number">3</span>
+                  <h3>Conectar</h3>
+                  <p>Salvar registra o webhook na Evolution API e confere se o WhatsApp está conectado.</p>
+                  <button className="primary-button" onClick={saveWhatsappIntegration} disabled={integrationBusy}>
+                    Salvar e conectar
+                  </button>
+                  {whatsappStatus?.webhook_url && (
+                    <div className="oauth-callback-box">
+                      <span>Webhook (registrado automaticamente)</span>
+                      <div className="copy-line">
+                        <code>{whatsappStatus.webhook_url.replace(/secret=.*/, "secret=••••")}</code>
+                      </div>
+                    </div>
+                  )}
+                  {whatsappStatus?.last_event_at && <p>Último evento recebido: {timeAgo(whatsappStatus.last_event_at)}</p>}
                 </article>
               </div>
             </section>
@@ -2220,11 +2474,29 @@ export function App() {
           <section className="page-grid">
             <div className="kpi-grid">
               <Kpi label="Cliques" value={metrics.clicks.toLocaleString("pt-BR")} />
-              <Kpi label="Leads WhatsApp" value={String(tenantLeads.length)} />
+              <Kpi label="Leads reais" value={metrics.leads.toLocaleString("pt-BR")} />
               <Kpi label="Vendas" value={String(metrics.sales)} />
               <Kpi label="Receita" value={formatMoney(metrics.revenue)} />
               <Kpi label="Conv." value={`${metrics.conversion.toFixed(1)}%`} />
             </div>
+            <section className="panel wide">
+              <div className="panel-head">
+                <div>
+                  <h2>Como os leads são contados</h2>
+                  <p>Para o número do painel bater com o que chega no WhatsApp da empresa.</p>
+                </div>
+              </div>
+              <div className="settings-grid compact-grid">
+                <ReadOnly label="Cliques no link" value={`${metrics.clicks.toLocaleString("pt-BR")} (sem robôs e sem cliques repetidos)`} />
+                <ReadOnly label="Cliques repetidos ignorados" value={metrics.duplicateClicks.toLocaleString("pt-BR")} />
+                <ReadOnly
+                  label="Lead real"
+                  value={whatsappStatus?.integration_status === "connected" ? "Primeira mensagem recebida no WhatsApp" : "Entrada confirmada no WhatsApp (conecte a Evolution API para contar pela mensagem)"}
+                />
+                <ReadOnly label="Conversas no WhatsApp" value={whatsappStatus?.configured ? `${metrics.conversations} (${metrics.unattributed} sem origem rastreada)` : "WhatsApp não conectado"} />
+                <ReadOnly label="Vendas lançadas pela IA" value={`${metrics.aiSales} (${metrics.aiPending} aguardando revisão)`} />
+              </div>
+            </section>
             <section className="panel wide">
               <div className="panel-head">
                 <div>
@@ -3450,6 +3722,92 @@ function StatusPill({ text, tone }: { text: string; tone: "good" | "muted" }) {
   return <span className={`status-pill status-pill-${tone}`}>{text}</span>;
 }
 
+function WhatsappStatusPill({ status }: { status: WhatsappIntegrationStatus | null }) {
+  if (!status?.configured) return <StatusPill text="Não conectado" tone="muted" />;
+  if (status.integration_status === "connected") return <StatusPill text="Conectado" tone="good" />;
+  if (status.integration_status === "needs_attention") return <StatusPill text="Precisa de atenção" tone="muted" />;
+  return <StatusPill text="Pendente" tone="muted" />;
+}
+
+const detectionStatusLabel: Record<SaleDetection["status"], string> = {
+  pending: "Aguardando revisão",
+  auto_confirmed: "Lançada pela IA",
+  confirmed: "Confirmada",
+  dismissed: "Descartada",
+};
+
+function SaleDetectionsList({
+  detections,
+  revenues,
+  busy,
+  onRevenueChange,
+  onReview,
+}: {
+  detections: SaleDetection[];
+  revenues: Record<string, string>;
+  busy: boolean;
+  onRevenueChange: (id: string, value: string) => void;
+  onReview: (detection: SaleDetection, decision: "confirm" | "dismiss") => void;
+}) {
+  if (!detections.length) return <EmptyState text="Nenhuma venda detectada nas conversas ainda." />;
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>Venda</th>
+            <th>Origem</th>
+            <th>Confiança</th>
+            <th>Evidência</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {detections.map((detection) => (
+            <tr key={detection.id}>
+              <td>
+                <strong>{detection.customer_name || "Sem nome"}</strong>
+                <small>{detection.customer_phone ?? "-"}</small>
+              </td>
+              <td>
+                <strong>{detection.sale_value ? formatMoney(detection.sale_value) : "Valor não identificado"}</strong>
+                <small>{detection.product ?? ""}</small>
+              </td>
+              <td>
+                <strong>{detection.utm_campaign || (detection.match_method === "none" ? "Sem origem rastreada" : "Sem campanha")}</strong>
+                <small>{detection.ref ? `Ref ${detection.ref}` : ""}</small>
+              </td>
+              <td>{Math.round(Number(detection.confidence) * 100)}%</td>
+              <td>
+                <small>{detection.summary}</small>
+                {(detection.evidence ?? []).slice(0, 2).map((quote) => (
+                  <small key={quote}>“{quote}”</small>
+                ))}
+              </td>
+              <td>
+                {detection.status === "pending" ? (
+                  <div className="mini-form">
+                    <input
+                      placeholder={detection.sale_value ? `Valor: ${detection.sale_value}` : "Valor da venda"}
+                      value={revenues[detection.id] ?? ""}
+                      onChange={(event) => onRevenueChange(detection.id, event.target.value)}
+                    />
+                    <button className="primary-button" disabled={busy} onClick={() => onReview(detection, "confirm")}>Confirmar venda</button>
+                    <button className="ghost-button" disabled={busy} onClick={() => onReview(detection, "dismiss")}>Não foi venda</button>
+                  </div>
+                ) : (
+                  <StatusPill text={detectionStatusLabel[detection.status]} tone={detection.status === "dismissed" ? "muted" : "good"} />
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function statusLabel(status: LeadStatus | string): string {
   return {
     new: "Aguardando",
@@ -3612,35 +3970,26 @@ function buildExecutiveInsights(
   return insights.slice(0, 4);
 }
 
-function buildQualityRows(leads: Lead[], campaigns: MetaCampaignRoi[]): QualityRow[] {
+function buildQualityRows(reportRows: LeadQualityReportRow[], campaigns: MetaCampaignRoi[]): QualityRow[] {
   const rows = new Map<string, QualityRow>();
 
-  for (const lead of leads) {
-    const campaign = lead.utm_campaign || "sem-campanha";
-    const row = rows.get(campaign) ?? {
+  // Agregado no banco (vw_lead_quality_report), não só os leads carregados na tela.
+  for (const item of reportRows) {
+    const campaign = item.campaign_key || "sem-campanha";
+    rows.set(campaign, {
       campaign,
       spend: 0,
-      leads: 0,
-      contacted: 0,
-      qualified: 0,
-      bad: 0,
-      sales: 0,
-      revenue: 0,
+      leads: Number(item.leads ?? 0),
+      contacted: Number(item.contacted_leads ?? 0),
+      qualified: Number(item.qualified_leads ?? 0),
+      bad: Number(item.bad_leads ?? 0),
+      sales: Number(item.sales ?? 0),
+      revenue: Number(item.revenue ?? 0),
       qualityRate: 0,
       cpl: null,
       costPerQualified: null,
       roas: null,
-    };
-
-    row.leads += 1;
-    if (lead.lead_status === "contacted") row.contacted += 1;
-    if (lead.lead_status === "qualified") row.qualified += 1;
-    if (lead.lead_status === "bad") row.bad += 1;
-    if (lead.lead_status === "sold") {
-      row.sales += 1;
-      row.revenue += Number(lead.revenue ?? 0);
-    }
-    rows.set(campaign, row);
+    });
   }
 
   for (const campaign of campaigns) {
