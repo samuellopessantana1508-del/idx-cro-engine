@@ -7,7 +7,7 @@ const supa = createClient(
 );
 
 const cors = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") || "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
@@ -113,8 +113,17 @@ async function handleDashboard(f: Filters) {
   const repeatBuyers = customers.filter((c) => Number(c.purchase_count) > 1);
   const avgTicket = totalSales > 0 ? totalRevenue / totalSales : 0;
 
+  const newCustomers = customers.filter((c) => {
+    if (!c.first_purchase_at) return false;
+    if (Number(c.purchase_count) < 1) return false;
+    if (f.since && c.first_purchase_at < f.since) return false;
+    if (f.until && c.first_purchase_at > f.until) return false;
+    return true;
+  });
+  const newCustomerCount = newCustomers.length;
+
   const ltvRealized = uniqueBuyers > 0 ? totalRevenue / uniqueBuyers : 0;
-  const cac = uniqueBuyers > 0 && totalSpend > 0 ? totalSpend / uniqueBuyers : null;
+  const cac = newCustomerCount > 0 && totalSpend > 0 ? totalSpend / newCustomerCount : null;
   const roas = totalSpend > 0 ? totalRevenue / totalSpend : null;
   const cpl = totalLeads > 0 && totalSpend > 0 ? totalSpend / totalLeads : null;
   const cpa = totalSales > 0 && totalSpend > 0 ? totalSpend / totalSales : null;
@@ -151,6 +160,7 @@ async function handleDashboard(f: Filters) {
       total_qualified: totalQualified,
       total_sales: totalSales,
       unique_buyers: uniqueBuyers,
+      new_customers: newCustomerCount,
       repeat_buyers: repeatBuyers.length,
       avg_ticket: round2(avgTicket),
       ltv_realized: round2(ltvRealized),

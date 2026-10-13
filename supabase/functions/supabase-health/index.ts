@@ -6,7 +6,7 @@ const supa = createClient(
 );
 
 const cors = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") || "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
@@ -104,8 +104,7 @@ Deno.serve(async (req: Request) => {
     tenant_isolation: "tenant_id + rls + edge_functions",
     tenant_scope: isPlatform ? "platform" : "member",
     platform_role: role,
-    project_url: Deno.env.get("SUPABASE_URL"),
-    app_url: Deno.env.get("APP_URL") ?? null,
+    project_connected: !!Deno.env.get("SUPABASE_URL"),
     tables: {
       tenants: tenantCount.count ?? 0,
       smart_links: linkCount.count ?? 0,

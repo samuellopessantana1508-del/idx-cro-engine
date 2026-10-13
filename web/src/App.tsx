@@ -3489,15 +3489,15 @@ export function App() {
               <>
                 <div className="kpi-grid">
                   <Kpi label="Faturamento" value={formatMoney(fiSummary.total_revenue)} />
-                  <Kpi label="Investimento" value={formatMoney(fiSummary.total_spend)} />
+                  <Kpi label="Investimento" value={fiSummary.total_spend > 0 ? formatMoney(fiSummary.total_spend) : "—"} />
                   <Kpi label="ROAS" value={fiSummary.roas != null ? `${fiSummary.roas.toFixed(2)}x` : "—"} />
                   <Kpi label="CAC" value={fiSummary.cac != null ? formatMoney(fiSummary.cac) : "—"} />
-                  <Kpi label="LTV Realizado" value={formatMoney(fiSummary.ltv_realized)} />
+                  <Kpi label="LTV Realizado" value={fiSummary.unique_buyers > 0 ? formatMoney(fiSummary.ltv_realized) : "—"} />
                 </div>
                 <div className="kpi-grid">
                   <Kpi label="Leads" value={String(fiSummary.total_leads)} />
                   <Kpi label="Vendas" value={String(fiSummary.total_sales)} />
-                  <Kpi label="Ticket Médio" value={formatMoney(fiSummary.avg_ticket)} />
+                  <Kpi label="Ticket Médio" value={fiSummary.total_sales > 0 ? formatMoney(fiSummary.avg_ticket) : "—"} />
                   <Kpi label="CPL" value={fiSummary.cpl != null ? formatMoney(fiSummary.cpl) : "—"} />
                   <Kpi label="CPA" value={fiSummary.cpa != null ? formatMoney(fiSummary.cpa) : "—"} />
                 </div>

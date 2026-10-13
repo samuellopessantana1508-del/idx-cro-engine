@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { canOperateTenantOrPlatform } from "../_shared/access.ts";
 import { syncSessionToMetaAudience } from "../_shared/meta-audiences.ts";
+import { validateWebhookKey } from "../_shared/webhook-auth.ts";
 
 const supa = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -8,7 +9,7 @@ const supa = createClient(
 );
 
 const cors = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") || "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-api-key",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -45,27 +46,8 @@ async function authenticate(req: Request) {
   }
   const apiKey = req.headers.get("x-api-key");
   if (apiKey) {
-    const { data } = await supa
-      .from("webhook_keys")
-      .select("tenant_id")
-      .eq("plain_key", apiKey)
-      .eq("status", "active")
-      .maybeSingle();
-    if (data) return { webhookTenantId: data.tenant_id, isWebhook: true };
-    const hashBuf = await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(apiKey),
-    );
-    const hash = Array.from(new Uint8Array(hashBuf))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-    const { data: byHash } = await supa
-      .from("webhook_keys")
-      .select("tenant_id")
-      .eq("key_hash", hash)
-      .eq("status", "active")
-      .maybeSingle();
-    if (byHash) return { webhookTenantId: byHash.tenant_id, isWebhook: true };
+    const result = await validateWebhookKey(apiKey);
+    if (result.ok) return { webhookTenantId: result.tenantId, isWebhook: true };
   }
   return null;
 }
@@ -524,6 +506,17 @@ Deno.serve(async (req: Request) => {
     if (!conversationId)
       return json({ error: "missing_conversation_id" }, 400);
 
+    const { count: alreadyConfirmed } = await supa
+      .from("sale_signals")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("conversation_id", conversationId)
+      .in("status", ["confirmed", "converted"])
+      .in("capi_status", ["success", "sending"]);
+    if ((alreadyConfirmed ?? 0) > 0) {
+      return json({ ok: true, processed: 0, skipped: "conversation_already_has_confirmed_signal" });
+    }
+
     const { data: signals } = await supa
       .from("sale_signals")
       .select("*")
@@ -531,7 +524,8 @@ Deno.serve(async (req: Request) => {
       .eq("conversation_id", conversationId)
       .eq("status", "detected")
       .eq("capi_status", "pending")
-      .order("confidence", { ascending: false });
+      .order("confidence", { ascending: false })
+      .limit(1);
 
     if (!signals?.length) return json({ ok: true, processed: 0 });
 
@@ -540,7 +534,7 @@ Deno.serve(async (req: Request) => {
       const isAutoConfirmable =
         signal.signal_type === "confirmed_sale" &&
         (signal.confidence ?? 0) >= 0.9 &&
-        signal.evidence_text;
+        (signal.evidence_text ?? "").trim().length > 0;
 
       if (isAutoConfirmable) {
         const now = new Date().toISOString();

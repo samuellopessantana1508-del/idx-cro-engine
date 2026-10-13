@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validateWebhookKey } from "../_shared/webhook-auth.ts";
 import { normalizePhone } from "../_shared/phone-utils.ts";
+import { canOperateTenantOrPlatform } from "../_shared/access.ts";
 
 const supa = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -8,7 +9,7 @@ const supa = createClient(
 );
 
 const cors = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") || "*",
   "Access-Control-Allow-Headers": "authorization, x-api-key, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
@@ -24,20 +25,23 @@ const MIN_INTERVAL_MS = Number(Deno.env.get("AI_MIN_INTERVAL_MINUTES") ?? "3") *
 const MIN_NEW_MESSAGES = Number(Deno.env.get("AI_MIN_NEW_MESSAGES") ?? "1");
 const MAX_CONTEXT_MESSAGES = 80;
 
-type AuthResult = { ok: true; tenantId: string; userId?: string } | { ok: false; error: string };
+type AuthResult =
+  | { ok: true; isWebhook: false; userId: string; userEmail: string | null }
+  | { ok: true; isWebhook: true; tenantId: string }
+  | { ok: false; error: string };
 
 async function authenticate(req: Request): Promise<AuthResult> {
   const jwt = req.headers.get("Authorization")?.replace("Bearer ", "");
   if (jwt) {
     const { data, error } = await supa.auth.getUser(jwt);
     if (!error && data.user) {
-      return { ok: true, tenantId: "", userId: data.user.id };
+      return { ok: true, isWebhook: false, userId: data.user.id, userEmail: data.user.email ?? null };
     }
   }
   const apiKey = req.headers.get("x-api-key");
   if (apiKey) {
     const result = await validateWebhookKey(apiKey);
-    if (result.ok) return { ok: true, tenantId: result.tenantId };
+    if (result.ok) return { ok: true, isWebhook: true, tenantId: result.tenantId };
   }
   return { ok: false, error: "unauthorized" };
 }
@@ -333,6 +337,18 @@ async function upsertInsight(
       const conf = Math.min(1, Math.max(0, Number(sig.confidence ?? 0)));
       if (conf < 0.3) continue;
 
+      const productName = sig.product ? String(sig.product) : null;
+      const { data: existing } = await supa
+        .from("sale_signals")
+        .select("id")
+        .eq("conversation_id", conversationId)
+        .eq("signal_type", signalType)
+        .eq("tenant_id", tenantId)
+        .in("status", ["detected", "confirmed"])
+        .limit(1)
+        .maybeSingle();
+      if (existing) continue;
+
       const isAutoConfirmable = signalType === "confirmed_sale" && conf >= 0.9 && sig.evidence;
 
       const { error: insertErr } = await supa.from("sale_signals").insert({
@@ -370,14 +386,20 @@ Deno.serve(async (req: Request) => {
 
   const body = await req.json().catch(() => ({}));
   const action = String(body.action ?? "analyze_conversation");
-  const tenantId = String(body.tenant_id ?? auth.tenantId ?? "");
+  const tenantId = String(body.tenant_id ?? (auth.isWebhook ? auth.tenantId : "") ?? "");
   const conversationId = String(body.conversation_id ?? "");
 
   if (!tenantId) return json({ error: "missing_tenant_id" }, 400);
   if (!conversationId) return json({ error: "missing_conversation_id" }, 400);
 
-  if (auth.tenantId && auth.tenantId !== tenantId) {
-    return json({ error: "tenant_mismatch" }, 403);
+  if (auth.isWebhook) {
+    if (auth.tenantId !== tenantId) {
+      return json({ error: "tenant_mismatch" }, 403);
+    }
+  } else {
+    if (!(await canOperateTenantOrPlatform(supa, tenantId, auth.userId, auth.userEmail))) {
+      return json({ error: "forbidden" }, 403);
+    }
   }
 
   const { data: conv } = await supa
@@ -441,7 +463,8 @@ Deno.serve(async (req: Request) => {
     try {
       aiResult = await callAI(SYSTEM_PROMPT, prompt);
     } catch (err) {
-      return json({ error: "ai_call_failed", details: String(err) }, 502);
+      console.error("ai_call_failed", err);
+      return json({ error: "ai_call_failed" }, 502);
     }
 
     const analysis = parseAIResponse(aiResult.text);
