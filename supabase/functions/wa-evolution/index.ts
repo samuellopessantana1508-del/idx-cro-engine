@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { encrypt, isEncryptionConfigured } from "../_shared/encryption.ts";
+import { encrypt, decrypt, isEncryptionConfigured } from "../_shared/encryption.ts";
 
 const supa = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -174,7 +174,10 @@ Deno.serve(async (req: Request) => {
     if (!inst) return json({ error: "instance_not_found" }, 404);
     if (!inst.api_url) return json({ error: "no_api_url" }, 400);
 
-    const apiKey = String(body.api_key ?? "").trim();
+    let apiKey = String(body.api_key ?? "").trim();
+    if (!apiKey && inst.api_key_encrypted && isEncryptionConfigured()) {
+      apiKey = await decrypt(inst.api_key_encrypted);
+    }
     if (!apiKey) return json({ error: "missing_api_key" }, 400);
 
     const result = await evoFetch(inst.api_url, apiKey, `/instance/connect/${inst.instance_name}`);
@@ -207,7 +210,10 @@ Deno.serve(async (req: Request) => {
     if (!inst) return json({ error: "instance_not_found" }, 404);
     if (!inst.api_url) return json({ error: "no_api_url" }, 400);
 
-    const apiKey = String(body.api_key ?? "").trim();
+    let apiKey = String(body.api_key ?? "").trim();
+    if (!apiKey && inst.api_key_encrypted && isEncryptionConfigured()) {
+      apiKey = await decrypt(inst.api_key_encrypted);
+    }
     if (!apiKey) return json({ error: "missing_api_key" }, 400);
 
     const result = await evoFetch(inst.api_url, apiKey, `/instance/connectionState/${inst.instance_name}`);
@@ -247,7 +253,10 @@ Deno.serve(async (req: Request) => {
     if (!inst) return json({ error: "instance_not_found" }, 404);
 
     if (inst.api_url) {
-      const apiKey = String(body.api_key ?? "").trim();
+      let apiKey = String(body.api_key ?? "").trim();
+      if (!apiKey && inst.api_key_encrypted && isEncryptionConfigured()) {
+        apiKey = await decrypt(inst.api_key_encrypted);
+      }
       if (apiKey) {
         await evoFetch(inst.api_url, apiKey, `/instance/logout/${inst.instance_name}`, "DELETE").catch(() => {});
       }

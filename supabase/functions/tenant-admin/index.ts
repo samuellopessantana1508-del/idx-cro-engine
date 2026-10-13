@@ -449,7 +449,7 @@ Deno.serve(async (req: Request) => {
     if (subAction === "list") {
       const { data, error: listErr } = await supa
         .from("whatsapp_instances")
-        .select("id, instance_name, phone_number, provider, status, api_url, qr_code_data, last_seen_at, created_at, updated_at")
+        .select("id, instance_name, phone_number, provider, status, mode, api_url, qr_code_data, last_seen_at, created_at, updated_at")
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: true });
       if (listErr) return json({ error: listErr.message }, 400);
@@ -572,6 +572,115 @@ Deno.serve(async (req: Request) => {
     if (revokeErr) return json({ error: revokeErr.message }, 400);
     await audit(user.id, "webhook_key.revoked", tenantId, "tenant_webhook_key", keyId, {});
     return json({ ok: true });
+  }
+
+  if (action === "set_instance_mode") {
+    const instanceId = String(body.instance_id ?? "");
+    const mode = String(body.mode ?? "");
+    if (!instanceId) return json({ error: "missing_instance_id" }, 400);
+    if (mode !== "test" && mode !== "production") return json({ error: "invalid_mode" }, 400);
+
+    const { data: inst, error: fetchErr } = await supa
+      .from("whatsapp_instances")
+      .select("id, mode, status")
+      .eq("id", instanceId)
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    if (fetchErr || !inst) return json({ error: "instance_not_found" }, 404);
+
+    if (inst.mode === mode) return json({ ok: true, mode, changed: false });
+
+    const { error: updateErr } = await supa
+      .from("whatsapp_instances")
+      .update({ mode, updated_at: new Date().toISOString() })
+      .eq("id", instanceId)
+      .eq("tenant_id", tenantId);
+
+    if (updateErr) return json({ error: updateErr.message }, 400);
+    await audit(user.id, "whatsapp_instance.mode_changed", tenantId, "whatsapp_instance", instanceId, {
+      from: inst.mode,
+      to: mode,
+    });
+    return json({ ok: true, mode, changed: true });
+  }
+
+  if (action === "purge_test_data") {
+    const instanceId = String(body.instance_id ?? "");
+    if (!instanceId) return json({ error: "missing_instance_id" }, 400);
+
+    const { data: inst, error: fetchErr } = await supa
+      .from("whatsapp_instances")
+      .select("id, mode, instance_name")
+      .eq("id", instanceId)
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    if (fetchErr || !inst) return json({ error: "instance_not_found" }, 404);
+    if (inst.mode !== "test") return json({ error: "only_test_instances" }, 400);
+
+    const { data: convos } = await supa
+      .from("whatsapp_conversations")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("instance_id", instanceId);
+    const convoIds = (convos ?? []).map((c: { id: string }) => c.id);
+
+    let deletedMessages = 0;
+    let deletedInsights = 0;
+    let deletedSignals = 0;
+
+    if (convoIds.length > 0) {
+      const { count: msgCount } = await supa
+        .from("whatsapp_messages")
+        .delete({ count: "exact" })
+        .eq("tenant_id", tenantId)
+        .in("conversation_id", convoIds);
+      deletedMessages = msgCount ?? 0;
+
+      const { count: insightCount } = await supa
+        .from("conversation_insights")
+        .delete({ count: "exact" })
+        .eq("tenant_id", tenantId)
+        .in("conversation_id", convoIds);
+      deletedInsights = insightCount ?? 0;
+
+      const { count: signalCount } = await supa
+        .from("sale_signals")
+        .delete({ count: "exact" })
+        .eq("tenant_id", tenantId)
+        .in("conversation_id", convoIds);
+      deletedSignals = signalCount ?? 0;
+    }
+
+    const { count: convoCount } = await supa
+      .from("whatsapp_conversations")
+      .delete({ count: "exact" })
+      .eq("tenant_id", tenantId)
+      .eq("instance_id", instanceId);
+
+    const { count: contactCount } = await supa
+      .from("whatsapp_contacts")
+      .delete({ count: "exact" })
+      .eq("tenant_id", tenantId)
+      .eq("instance_id", instanceId);
+
+    await audit(user.id, "whatsapp_instance.test_data_purged", tenantId, "whatsapp_instance", instanceId, {
+      conversations: convoCount ?? 0,
+      contacts: contactCount ?? 0,
+      messages: deletedMessages,
+      insights: deletedInsights,
+      signals: deletedSignals,
+    });
+
+    return json({
+      ok: true,
+      purged: {
+        conversations: convoCount ?? 0,
+        contacts: contactCount ?? 0,
+        messages: deletedMessages,
+        insights: deletedInsights,
+        signals: deletedSignals,
+      },
+    });
   }
 
   return json({ error: "unknown_action" }, 400);

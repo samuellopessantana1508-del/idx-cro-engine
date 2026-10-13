@@ -48,7 +48,7 @@ async function sendCapi(
 ): Promise<CapiResult> {
   const { data: creds, error } = await supa
     .from("tenant_meta_credentials")
-    .select("pixel_id, access_token, graph_version, enabled")
+    .select("pixel_id, access_token, graph_version, enabled, test_event_code")
     .eq("tenant_id", tenantId)
     .maybeSingle();
 
@@ -60,14 +60,17 @@ async function sendCapi(
   const version = Deno.env.get("META_GRAPH_VERSION") ?? creds.graph_version ?? "v25.0";
   const endpoint = `https://graph.facebook.com/${version}/${creds.pixel_id}/events`;
 
+  const requestBody: Record<string, unknown> = {
+    data: [event],
+    access_token: creds.access_token,
+  };
+  if (creds.test_event_code) requestBody.test_event_code = creds.test_event_code;
+
   try {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        data: [event],
-        access_token: creds.access_token,
-      }),
+      body: JSON.stringify(requestBody),
     });
     const data = await response.json().catch(() => null);
     return { ok: response.ok, status: response.status, data, pixelId: creds.pixel_id };

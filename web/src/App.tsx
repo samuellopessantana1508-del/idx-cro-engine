@@ -1733,17 +1733,17 @@ export function App() {
 
   async function checkEvoStatus(instanceId: string) {
     if (!tenant) return;
-    if (!waEvoApiKey.trim()) { setToast("Informe a API Key."); return; }
     setWaBusy(true);
     try {
+      const payload: Record<string, string> = {
+        action: "check_status",
+        tenant_id: tenant.id,
+        instance_id: instanceId,
+      };
+      if (waEvoApiKey.trim()) payload.api_key = waEvoApiKey;
       const res = await authFetch("wa-evolution", {
         method: "POST",
-        body: JSON.stringify({
-          action: "check_status",
-          tenant_id: tenant.id,
-          instance_id: instanceId,
-          api_key: waEvoApiKey,
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (data.ok) {
@@ -1753,6 +1753,82 @@ export function App() {
         setToast(data.error ?? "Erro ao verificar.");
       }
     } catch { setToast("Erro ao verificar."); }
+    setWaBusy(false);
+  }
+
+  async function disconnectEvoInstance(instanceId: string) {
+    if (!tenant) return;
+    if (!confirm("Deseja desconectar esta instância do WhatsApp?")) return;
+    setWaBusy(true);
+    try {
+      const payload: Record<string, string> = {
+        action: "disconnect_instance",
+        tenant_id: tenant.id,
+        instance_id: instanceId,
+      };
+      if (waEvoApiKey.trim()) payload.api_key = waEvoApiKey;
+      const res = await authFetch("wa-evolution", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setToast("Instância desconectada.");
+        await loadWaInstances();
+      } else {
+        setToast(data.error ?? "Erro ao desconectar.");
+      }
+    } catch { setToast("Erro ao desconectar."); }
+    setWaBusy(false);
+  }
+
+  async function setInstanceMode(instanceId: string, mode: "test" | "production") {
+    if (!tenant) return;
+    if (mode === "production" && !confirm("Ativar modo produção? Eventos CAPI serão enviados ao Meta em tempo real.")) return;
+    setWaBusy(true);
+    try {
+      const res = await authFetch("tenant-admin", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "set_instance_mode",
+          tenant_id: tenant.id,
+          instance_id: instanceId,
+          mode,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setToast(mode === "test" ? "Modo teste ativado." : "Modo produção ativado.");
+        await loadWaInstances();
+      } else {
+        setToast(data.error ?? "Erro ao alterar modo.");
+      }
+    } catch { setToast("Erro ao alterar modo."); }
+    setWaBusy(false);
+  }
+
+  async function purgeTestData(instanceId: string) {
+    if (!tenant) return;
+    if (!confirm("ATENÇÃO: Isso apagará TODAS as conversas, mensagens, insights e sinais de venda desta instância de teste. Essa ação é irreversível. Continuar?")) return;
+    setWaBusy(true);
+    try {
+      const res = await authFetch("tenant-admin", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "purge_test_data",
+          tenant_id: tenant.id,
+          instance_id: instanceId,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        const p = data.purged;
+        setToast(`Dados de teste apagados: ${p.conversations} conversas, ${p.messages} mensagens, ${p.insights} insights, ${p.signals} sinais.`);
+        await loadWaInstances();
+      } else {
+        setToast(data.error ?? "Erro ao limpar dados.");
+      }
+    } catch { setToast("Erro ao limpar dados."); }
     setWaBusy(false);
   }
 
@@ -2862,6 +2938,16 @@ export function App() {
                           <span style={{ marginLeft: 8, fontSize: "0.82rem", color: "var(--muted)" }}>{inst.provider === "evolution" ? "Evolution API" : "Cloud API"}</span>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{
+                            fontSize: "0.72rem",
+                            fontWeight: 600,
+                            padding: "2px 8px",
+                            borderRadius: 6,
+                            background: inst.mode === "production" ? "rgba(37,211,102,0.15)" : "rgba(255,193,7,0.18)",
+                            color: inst.mode === "production" ? "#25d366" : "#d4a017",
+                          }}>
+                            {inst.mode === "production" ? "Produção" : "Teste"}
+                          </span>
                           {inst.status === "connected" ? <Wifi size={14} color="#25d366" /> : <WifiOff size={14} color="var(--muted)" />}
                           <span className={`status-dot ${inst.status === "connected" ? "status-active" : inst.status === "connecting" ? "status-warn" : "status-off"}`} />
                           {inst.status === "connected" ? "Conectado" : inst.status === "connecting" ? "Conectando" : inst.status === "banned" ? "Banido" : "Desconectado"}
@@ -2884,15 +2970,33 @@ export function App() {
                         </div>
                       )}
 
-                      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
+                      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.75rem", alignItems: "center" }}>
                         {inst.status !== "connected" && (
                           <button className="primary-button" onClick={() => connectEvoInstance(inst.id)} disabled={waBusy || !waEvoApiKey.trim()}>
                             {inst.qr_code_data ? "Gerar novo QR" : "Conectar (QR Code)"}
                           </button>
                         )}
-                        <button className="ghost-dark-button" onClick={() => checkEvoStatus(inst.id)} disabled={waBusy || !waEvoApiKey.trim()}>
+                        {inst.status === "connected" && (
+                          <button className="ghost-dark-button" onClick={() => disconnectEvoInstance(inst.id)} disabled={waBusy} style={{ color: "#e74c3c" }}>
+                            <WifiOff size={13} style={{ marginRight: 3 }} /> Desconectar
+                          </button>
+                        )}
+                        <button className="ghost-dark-button" onClick={() => checkEvoStatus(inst.id)} disabled={waBusy}>
                           <RefreshCw size={13} style={{ marginRight: 3 }} /> Verificar status
                         </button>
+                        <button
+                          className="ghost-dark-button"
+                          onClick={() => setInstanceMode(inst.id, inst.mode === "production" ? "test" : "production")}
+                          disabled={waBusy}
+                          style={{ fontSize: "0.82rem" }}
+                        >
+                          {inst.mode === "production" ? "Mudar p/ Teste" : "Mudar p/ Produção"}
+                        </button>
+                        {inst.mode !== "production" && (
+                          <button className="ghost-dark-button" onClick={() => purgeTestData(inst.id)} disabled={waBusy} style={{ fontSize: "0.8rem", color: "#e74c3c" }}>
+                            Limpar dados de teste
+                          </button>
+                        )}
                         <button className="ghost-dark-button" onClick={() => deleteWaInstance(inst.id)} disabled={waBusy} style={{ marginLeft: "auto", fontSize: "0.8rem", opacity: 0.7 }}>
                           Remover
                         </button>

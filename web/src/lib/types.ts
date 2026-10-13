@@ -139,6 +139,7 @@ export type WhatsAppInstance = {
   phone_number?: string | null;
   provider: "evolution" | "cloud_api";
   status: "disconnected" | "connecting" | "connected" | "banned";
+  mode?: "test" | "production";
   api_url?: string | null;
   qr_code_data?: string | null;
   last_seen_at?: string | null;
