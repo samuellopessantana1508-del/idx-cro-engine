@@ -283,3 +283,76 @@ export type MetaAudienceStatus = {
   skipped_members: number;
   total_attempts: number;
 };
+
+export type FinancialSummary = {
+  total_revenue: number;
+  total_spend: number;
+  total_leads: number;
+  total_qualified: number;
+  total_sales: number;
+  unique_buyers: number;
+  repeat_buyers: number;
+  avg_ticket: number;
+  ltv_realized: number;
+  cac: number | null;
+  roas: number | null;
+  cpl: number | null;
+  cpa: number | null;
+  conversion_rate: number;
+  qualification_rate: number;
+  repurchase_rate: number;
+};
+
+export type MonthlyPoint = {
+  month: string;
+  leads: number;
+  qualified: number;
+  sales: number;
+  lost: number;
+  revenue: number;
+  spend: number;
+  unique_buyers: number;
+};
+
+export type CampaignMetric = {
+  campaign_id: string;
+  campaign_name: string;
+  spend: number;
+  leads: number;
+  qualified: number;
+  sales: number;
+  revenue: number;
+  cpl: number | null;
+  cpa: number | null;
+  roas: number | null;
+  conversion_rate: number;
+};
+
+export type CustomerProfile = {
+  customer_key: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_email: string | null;
+  purchase_count: number;
+  total_revenue: number;
+  avg_ticket: number;
+  first_purchase_at: string | null;
+  last_purchase_at: string | null;
+  products: string[];
+  categories: string[];
+  sources: string[];
+  campaigns: string[];
+  is_repeat: boolean;
+};
+
+export type AiPatterns = {
+  top_products: { name: string; count: number }[];
+  top_objections: { text: string; count: number }[];
+  top_intents: { intent: string; count: number }[];
+  sentiment: { positive: number; neutral: number; negative: number };
+  signals_by_type: Record<string, number>;
+  signals_by_status: Record<string, number>;
+  avg_signal_value: number | null;
+  total_conversations_analyzed: number;
+  total_signals: number;
+};

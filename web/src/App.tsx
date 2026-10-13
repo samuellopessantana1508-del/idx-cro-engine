@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowRight,
+  BarChart3,
   Check,
   CircleDot,
   Clipboard,
@@ -27,12 +28,13 @@ import {
   TrendingUp,
   ChevronDown,
   ChevronUp,
+  Download,
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
-import type { CapiEvent, CapiHealth, ConversationInsight, CrmActivity, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, Offer, SaleSignal, SaleSignalCapiStatus, SmartLink, Tenant, TenantUser, WebhookKey, WhatsAppConversation, WhatsAppInstance, WhatsAppMessage } from "./lib/types";
+import type { AiPatterns, CampaignMetric, CapiEvent, CapiHealth, ConversationInsight, CrmActivity, CustomerProfile, FinancialSummary, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, MonthlyPoint, Offer, SaleSignal, SaleSignalCapiStatus, SmartLink, Tenant, TenantUser, WebhookKey, WhatsAppConversation, WhatsAppInstance, WhatsAppMessage } from "./lib/types";
 import { envConfigured, formatDate, formatMoney, linkCode, slugify, smartLinkUrl, timeAgo } from "./lib/utils";
 
-type Section = "dashboard" | "sales" | "links" | "leads" | "crm" | "integrations" | "whatsapp" | "clients" | "users" | "reports" | "capi" | "ai-sales" | "settings";
+type Section = "dashboard" | "sales" | "links" | "leads" | "crm" | "integrations" | "whatsapp" | "clients" | "users" | "reports" | "capi" | "ai-sales" | "intelligence" | "settings";
 
 type PlatformRole = "owner" | "admin" | "support" | "viewer";
 
@@ -160,7 +162,7 @@ type MetaAdAccountAsset = {
 };
 
 const META_OAUTH_CALLBACK_URL = "https://idxparasuaempresa.com.br/meta-oauth-callback.html";
-const validSections: Section[] = ["dashboard", "sales", "links", "leads", "crm", "integrations", "whatsapp", "clients", "users", "reports", "capi", "ai-sales", "settings"];
+const validSections: Section[] = ["dashboard", "sales", "links", "leads", "crm", "integrations", "whatsapp", "clients", "users", "reports", "capi", "ai-sales", "intelligence", "settings"];
 
 const emptyDraft: DraftLink = {
   offerName: "",
@@ -409,6 +411,15 @@ export function App() {
   const [aiSalesFilter, setAiSalesFilter] = useState<SaleSignalCapiStatus | "all">("all");
   const [aiSalesLoading, setAiSalesLoading] = useState(false);
   const [aiSalesBusy, setAiSalesBusy] = useState<string>("");
+
+  const [fiSummary, setFiSummary] = useState<FinancialSummary | null>(null);
+  const [fiMonthly, setFiMonthly] = useState<MonthlyPoint[]>([]);
+  const [fiCampaigns, setFiCampaigns] = useState<CampaignMetric[]>([]);
+  const [fiCustomers, setFiCustomers] = useState<CustomerProfile[]>([]);
+  const [fiPatterns, setFiPatterns] = useState<AiPatterns | null>(null);
+  const [fiLoading, setFiLoading] = useState(false);
+  const [fiTab, setFiTab] = useState<"overview" | "campaigns" | "customers" | "ai">("overview");
+  const [fiExporting, setFiExporting] = useState(false);
 
   const tenant = tenants.find((item) => item.id === tenantId) ?? tenants[0];
   const isPlatformUser = Boolean(platformRole);
@@ -1635,6 +1646,63 @@ export function App() {
     }
   }
 
+  async function loadFinancialDashboard() {
+    if (!tenant) return;
+    setFiLoading(true);
+    try {
+      const [dashRes, custRes, patRes] = await Promise.all([
+        authFetch("financial-intelligence", {
+          method: "POST",
+          body: JSON.stringify({ action: "dashboard", tenant_id: tenant.id }),
+        }),
+        authFetch("financial-intelligence", {
+          method: "POST",
+          body: JSON.stringify({ action: "customers", tenant_id: tenant.id }),
+        }),
+        authFetch("financial-intelligence", {
+          method: "POST",
+          body: JSON.stringify({ action: "ai_patterns", tenant_id: tenant.id }),
+        }),
+      ]);
+      const dash = await dashRes.json();
+      const cust = await custRes.json();
+      const pat = await patRes.json();
+      if (dash.ok) {
+        setFiSummary(dash.summary);
+        setFiMonthly(dash.monthly_chart ?? []);
+        setFiCampaigns(dash.campaigns ?? []);
+      }
+      if (cust.ok) setFiCustomers(cust.customers ?? []);
+      if (pat.ok) setFiPatterns(pat.patterns ?? null);
+    } finally {
+      setFiLoading(false);
+    }
+  }
+
+  async function exportCsv(report: string) {
+    if (!tenant) return;
+    setFiExporting(true);
+    try {
+      const res = await authFetch("financial-intelligence", {
+        method: "POST",
+        body: JSON.stringify({ action: "export_csv", tenant_id: tenant.id, report }),
+      });
+      if (!res.ok) { setToast("Erro ao exportar."); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${report}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setToast("CSV exportado.");
+    } finally {
+      setFiExporting(false);
+    }
+  }
+
   async function connectEvoInstance(instanceId: string) {
     if (!tenant) return;
     const inst = waInstances.find((i) => i.id === instanceId);
@@ -1768,6 +1836,10 @@ export function App() {
   useEffect(() => {
     if (active === "ai-sales" && tenant) loadAiSales();
   }, [active, tenant?.id, aiSalesFilter]);
+
+  useEffect(() => {
+    if (active === "intelligence" && tenant) loadFinancialDashboard();
+  }, [active, tenant?.id]);
 
   useEffect(() => {
     if (waMessages.length > 0) {
@@ -2000,6 +2072,7 @@ export function App() {
             <NavButton icon={<FileText />} label="Relatórios" active={active === "reports"} onClick={() => goToSection("reports")} />
             <NavButton icon={<Activity />} label="CAPI" active={active === "capi"} onClick={() => goToSection("capi")} />
             <NavButton icon={<TrendingUp />} label="Vendas IA" active={active === "ai-sales"} onClick={() => goToSection("ai-sales")} />
+            <NavButton icon={<BarChart3 />} label="Inteligência" active={active === "intelligence"} onClick={() => goToSection("intelligence")} />
             <NavButton icon={<Settings />} label="Config" active={active === "settings"} onClick={() => goToSection("settings")} />
           </nav>
           )}
@@ -3395,6 +3468,306 @@ export function App() {
           </section>
         )}
 
+        {active === "intelligence" && (
+          <section className="page-grid">
+            <div className="fi-tabs">
+              {(["overview", "campaigns", "customers", "ai"] as const).map((t) => (
+                <button key={t} type="button" className={`ghost-button ${fiTab === t ? "active" : ""}`}
+                  onClick={() => setFiTab(t)}>
+                  {t === "overview" ? "Visão Geral" : t === "campaigns" ? "Campanhas" : t === "customers" ? "Clientes" : "IA Patterns"}
+                </button>
+              ))}
+              <button type="button" className="ghost-button" disabled={fiExporting}
+                onClick={() => exportCsv(fiTab === "overview" ? "monthly" : fiTab === "campaigns" ? "campaigns" : fiTab === "customers" ? "customers" : "leads")}>
+                <Download size={14} /> {fiExporting ? "Exportando…" : "CSV"}
+              </button>
+            </div>
+
+            {fiLoading && <p className="empty-state">Carregando inteligência financeira…</p>}
+
+            {!fiLoading && fiTab === "overview" && fiSummary && (
+              <>
+                <div className="kpi-grid">
+                  <Kpi label="Faturamento" value={formatMoney(fiSummary.total_revenue)} />
+                  <Kpi label="Investimento" value={formatMoney(fiSummary.total_spend)} />
+                  <Kpi label="ROAS" value={fiSummary.roas != null ? `${fiSummary.roas.toFixed(2)}x` : "—"} />
+                  <Kpi label="CAC" value={fiSummary.cac != null ? formatMoney(fiSummary.cac) : "—"} />
+                  <Kpi label="LTV Realizado" value={formatMoney(fiSummary.ltv_realized)} />
+                </div>
+                <div className="kpi-grid">
+                  <Kpi label="Leads" value={String(fiSummary.total_leads)} />
+                  <Kpi label="Vendas" value={String(fiSummary.total_sales)} />
+                  <Kpi label="Ticket Médio" value={formatMoney(fiSummary.avg_ticket)} />
+                  <Kpi label="CPL" value={fiSummary.cpl != null ? formatMoney(fiSummary.cpl) : "—"} />
+                  <Kpi label="CPA" value={fiSummary.cpa != null ? formatMoney(fiSummary.cpa) : "—"} />
+                </div>
+                <div className="kpi-grid">
+                  <Kpi label="Qualificados" value={String(fiSummary.total_qualified)} />
+                  <Kpi label="Compradores" value={String(fiSummary.unique_buyers)} />
+                  <Kpi label="Recompra" value={`${fiSummary.repurchase_rate.toFixed(1)}%`} />
+                  <Kpi label="Conversão" value={`${fiSummary.conversion_rate.toFixed(1)}%`} />
+                  <Kpi label="Qualificação" value={`${fiSummary.qualification_rate.toFixed(1)}%`} />
+                </div>
+
+                {fiMonthly.length > 1 && (
+                  <section className="panel wide">
+                    <div className="panel-head">
+                      <div>
+                        <h2>Evolução mensal</h2>
+                        <p>Faturamento, investimento e vendas mês a mês.</p>
+                      </div>
+                      <BarChart3 size={18} />
+                    </div>
+                    <MonthlyChart data={fiMonthly} />
+                  </section>
+                )}
+
+                {fiMonthly.length > 1 && (
+                  <section className="panel wide">
+                    <div className="panel-head">
+                      <div>
+                        <h2>Comparativo mensal</h2>
+                        <p>Evolução de CAC, ROAS e conversão entre períodos.</p>
+                      </div>
+                    </div>
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Mês</th>
+                            <th>Leads</th>
+                            <th>Vendas</th>
+                            <th>Receita</th>
+                            <th>Invest.</th>
+                            <th>ROAS</th>
+                            <th>CAC</th>
+                            <th>Conv.</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {fiMonthly.map((m) => (
+                            <tr key={m.month}>
+                              <td>{new Date(m.month).toLocaleDateString("pt-BR", { month: "short", year: "2-digit" })}</td>
+                              <td>{m.leads}</td>
+                              <td>{m.sales}</td>
+                              <td>{formatMoney(m.revenue)}</td>
+                              <td>{formatMoney(m.spend)}</td>
+                              <td>{m.spend > 0 ? `${(m.revenue / m.spend).toFixed(2)}x` : "—"}</td>
+                              <td>{m.unique_buyers > 0 && m.spend > 0 ? formatMoney(m.spend / m.unique_buyers) : "—"}</td>
+                              <td>{m.leads > 0 ? `${((m.sales / m.leads) * 100).toFixed(1)}%` : "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                )}
+              </>
+            )}
+
+            {!fiLoading && fiTab === "campaigns" && (
+              <section className="panel wide">
+                <div className="panel-head">
+                  <div>
+                    <h2>Performance por campanha</h2>
+                    <p>CAC, CPA, ROAS e conversão detalhados por campanha Meta Ads.</p>
+                  </div>
+                </div>
+                {fiCampaigns.length === 0 ? (
+                  <p className="empty-state">Nenhuma campanha com dados financeiros.</p>
+                ) : (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Campanha</th>
+                          <th>Invest.</th>
+                          <th>Leads</th>
+                          <th>Qual.</th>
+                          <th>Vendas</th>
+                          <th>Receita</th>
+                          <th>CPL</th>
+                          <th>CPA</th>
+                          <th>ROAS</th>
+                          <th>Conv.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fiCampaigns.map((c) => (
+                          <tr key={c.campaign_id}>
+                            <td>
+                              <strong>{c.campaign_name}</strong>
+                              <small>{c.campaign_id}</small>
+                            </td>
+                            <td>{formatMoney(c.spend)}</td>
+                            <td>{c.leads}</td>
+                            <td>{c.qualified}</td>
+                            <td>{c.sales}</td>
+                            <td>{formatMoney(c.revenue)}</td>
+                            <td>{c.cpl != null ? formatMoney(c.cpl) : "—"}</td>
+                            <td>{c.cpa != null ? formatMoney(c.cpa) : "—"}</td>
+                            <td>{c.roas != null ? `${c.roas.toFixed(2)}x` : "—"}</td>
+                            <td>{`${c.conversion_rate.toFixed(1)}%`}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {!fiLoading && fiTab === "customers" && (
+              <section className="panel wide">
+                <div className="panel-head">
+                  <div>
+                    <h2>Histórico de clientes</h2>
+                    <p>Compras, LTV realizado, ticket médio e recompra por cliente.</p>
+                  </div>
+                </div>
+                {fiCustomers.length === 0 ? (
+                  <p className="empty-state">Nenhum cliente com compra confirmada.</p>
+                ) : (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Cliente</th>
+                          <th>Telefone</th>
+                          <th>Compras</th>
+                          <th>Receita total</th>
+                          <th>Ticket médio</th>
+                          <th>Primeira</th>
+                          <th>Última</th>
+                          <th>Produtos</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fiCustomers.map((c) => (
+                          <tr key={c.customer_key}>
+                            <td>
+                              <strong>{c.customer_name || "—"}</strong>
+                              {c.is_repeat && <span className="badge badge-ok" style={{ marginLeft: 6 }}>Recompra</span>}
+                            </td>
+                            <td>{c.customer_phone || "—"}</td>
+                            <td>{c.purchase_count}</td>
+                            <td>{formatMoney(c.total_revenue)}</td>
+                            <td>{formatMoney(c.avg_ticket)}</td>
+                            <td>{c.first_purchase_at ? new Date(c.first_purchase_at).toLocaleDateString("pt-BR") : "—"}</td>
+                            <td>{c.last_purchase_at ? new Date(c.last_purchase_at).toLocaleDateString("pt-BR") : "—"}</td>
+                            <td>{c.products.length > 0 ? c.products.join(", ") : "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {!fiLoading && fiTab === "ai" && fiPatterns && (
+              <>
+                <div className="kpi-grid">
+                  <Kpi label="Conversas analisadas" value={String(fiPatterns.total_conversations_analyzed)} />
+                  <Kpi label="Sinais detectados" value={String(fiPatterns.total_signals)} />
+                  <Kpi label="Ticket médio IA" value={fiPatterns.avg_signal_value != null ? formatMoney(fiPatterns.avg_signal_value) : "—"} />
+                  <Kpi label="Sentimento +" value={String(fiPatterns.sentiment.positive)} />
+                  <Kpi label="Sentimento −" value={String(fiPatterns.sentiment.negative)} />
+                </div>
+
+                <section className="panel wide">
+                  <div className="panel-head">
+                    <div>
+                      <h2>Produtos mais procurados</h2>
+                      <p>Frequência de menção em conversas analisadas pela IA.</p>
+                    </div>
+                  </div>
+                  {fiPatterns.top_products.length === 0 ? (
+                    <p className="empty-state">Sem dados de produtos.</p>
+                  ) : (
+                    <div className="fi-bar-list">
+                      {fiPatterns.top_products.map((p) => (
+                        <div key={p.name} className="fi-bar-row">
+                          <span className="fi-bar-label">{p.name}</span>
+                          <div className="fi-bar-track">
+                            <div className="fi-bar-fill" style={{ width: `${Math.min((p.count / (fiPatterns.top_products[0]?.count || 1)) * 100, 100)}%` }} />
+                          </div>
+                          <span className="fi-bar-count">{p.count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="panel wide">
+                  <div className="panel-head">
+                    <div>
+                      <h2>Objeções mais frequentes</h2>
+                      <p>Motivos de resistência identificados pela IA nas conversas.</p>
+                    </div>
+                  </div>
+                  {fiPatterns.top_objections.length === 0 ? (
+                    <p className="empty-state">Sem objeções registradas.</p>
+                  ) : (
+                    <div className="fi-bar-list">
+                      {fiPatterns.top_objections.map((o) => (
+                        <div key={o.text} className="fi-bar-row">
+                          <span className="fi-bar-label">{o.text}</span>
+                          <div className="fi-bar-track">
+                            <div className="fi-bar-fill fi-bar-warn" style={{ width: `${Math.min((o.count / (fiPatterns.top_objections[0]?.count || 1)) * 100, 100)}%` }} />
+                          </div>
+                          <span className="fi-bar-count">{o.count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="panel wide">
+                  <div className="panel-head">
+                    <div>
+                      <h2>Intenções detectadas</h2>
+                      <p>Distribuição de intenções identificadas nas conversas.</p>
+                    </div>
+                  </div>
+                  {fiPatterns.top_intents.length === 0 ? (
+                    <p className="empty-state">Sem dados de intenção.</p>
+                  ) : (
+                    <div className="fi-bar-list">
+                      {fiPatterns.top_intents.map((i) => (
+                        <div key={i.intent} className="fi-bar-row">
+                          <span className="fi-bar-label">{i.intent}</span>
+                          <div className="fi-bar-track">
+                            <div className="fi-bar-fill fi-bar-info" style={{ width: `${Math.min((i.count / (fiPatterns.top_intents[0]?.count || 1)) * 100, 100)}%` }} />
+                          </div>
+                          <span className="fi-bar-count">{i.count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="panel wide">
+                  <div className="panel-head">
+                    <div>
+                      <h2>Sinais de venda por tipo</h2>
+                      <p>Distribuição dos sinais detectados automaticamente.</p>
+                    </div>
+                  </div>
+                  <div className="insight-grid">
+                    {Object.entries(fiPatterns.signals_by_type).map(([type, count]) => (
+                      <article key={type} className="insight-card">
+                        <strong>{type === "interest" ? "Interesse" : type === "negotiation" ? "Negociação" : type === "commitment" ? "Compromisso" : type === "confirmed_sale" ? "Confirmada" : type === "post_sale" ? "Pós-venda" : type}</strong>
+                        <p>{count} sinais</p>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              </>
+            )}
+          </section>
+        )}
+
         {active === "settings" && (
           <section className="stack">
             <section className="panel">
@@ -3512,6 +3885,7 @@ export function App() {
           <button type="button" onClick={() => goToSection("reports")} className={active === "reports" ? "active" : ""}><FileText size={17} /> Relatórios</button>
           <button type="button" onClick={() => goToSection("capi")} className={active === "capi" ? "active" : ""}><Activity size={17} /> CAPI</button>
           <button type="button" onClick={() => goToSection("ai-sales")} className={active === "ai-sales" ? "active" : ""}><TrendingUp size={17} /> Vendas IA</button>
+          <button type="button" onClick={() => goToSection("intelligence")} className={active === "intelligence" ? "active" : ""}><BarChart3 size={17} /> Inteligência</button>
           <button type="button" onClick={() => goToSection("settings")} className={active === "settings" ? "active" : ""}><Settings size={17} /> Config</button>
           <button type="button" onClick={logout}><LogOut size={17} /> Sair</button>
         </section>
@@ -4820,6 +5194,47 @@ function sectionTitle(section: Section): string {
     reports: "Relatórios",
     capi: "CAPI Health",
     "ai-sales": "Vendas IA",
+    intelligence: "Inteligência Financeira",
     settings: "Configuração",
   }[section];
+}
+
+function MonthlyChart({ data }: { data: MonthlyPoint[] }) {
+  if (data.length < 2) return null;
+  const maxRevenue = Math.max(...data.map((d) => d.revenue), 1);
+  const maxSpend = Math.max(...data.map((d) => d.spend), 1);
+  const maxVal = Math.max(maxRevenue, maxSpend);
+  const w = 720;
+  const h = 220;
+  const pad = { top: 20, right: 16, bottom: 40, left: 16 };
+  const cw = w - pad.left - pad.right;
+  const ch = h - pad.top - pad.bottom;
+  const step = cw / (data.length - 1);
+
+  function yScale(v: number) {
+    return pad.top + ch - (v / maxVal) * ch;
+  }
+
+  const revLine = data.map((d, i) => `${i === 0 ? "M" : "L"}${pad.left + i * step},${yScale(d.revenue)}`).join(" ");
+  const spendLine = data.map((d, i) => `${i === 0 ? "M" : "L"}${pad.left + i * step},${yScale(d.spend)}`).join(" ");
+
+  return (
+    <div className="fi-chart-wrap">
+      <svg viewBox={`0 0 ${w} ${h}`} className="fi-chart">
+        <path d={revLine} fill="none" stroke="#111" strokeWidth="2.5" />
+        <path d={spendLine} fill="none" stroke="#c0392b" strokeWidth="2" strokeDasharray="6 4" />
+        {data.map((d, i) => (
+          <g key={d.month}>
+            <circle cx={pad.left + i * step} cy={yScale(d.revenue)} r="4" fill="#111" />
+            <circle cx={pad.left + i * step} cy={yScale(d.spend)} r="3" fill="#c0392b" />
+            <text x={pad.left + i * step} y={h - 8} textAnchor="middle" fontSize="10" fill="#6f6f6f">
+              {new Date(d.month).toLocaleDateString("pt-BR", { month: "short" })}
+            </text>
+          </g>
+        ))}
+        <text x={pad.left} y={pad.top - 6} fontSize="10" fill="#111" fontWeight="600">Receita</text>
+        <text x={pad.left + 60} y={pad.top - 6} fontSize="10" fill="#c0392b">Investimento</text>
+      </svg>
+    </div>
+  );
 }

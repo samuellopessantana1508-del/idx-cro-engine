@@ -2737,6 +2737,19 @@ td small {
   .ai-sale-actions {
     flex-direction: column;
   }
+
+  .fi-tabs {
+    flex-wrap: wrap;
+  }
+
+  .fi-bar-row {
+    grid-template-columns: 120px 1fr 36px;
+    gap: 6px;
+  }
+
+  .fi-bar-label {
+    font-size: 0.78rem;
+  }
 }
 
 /* AI Sales */
@@ -2848,4 +2861,90 @@ td small {
   display: flex;
   gap: 10px;
   padding-top: 4px;
+}
+
+/* Financial Intelligence */
+.fi-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  grid-column: 1 / -1;
+}
+
+.fi-tabs .ghost-button {
+  font-size: 0.82rem;
+  padding: 7px 14px;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: transparent;
+}
+
+.fi-tabs .ghost-button.active {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+.fi-chart-wrap {
+  overflow-x: auto;
+  padding: 8px 0;
+}
+
+.fi-chart {
+  width: 100%;
+  max-width: 720px;
+  height: auto;
+  min-height: 180px;
+}
+
+.fi-bar-list {
+  display: grid;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.fi-bar-row {
+  display: grid;
+  grid-template-columns: 180px 1fr 40px;
+  gap: 10px;
+  align-items: center;
+}
+
+.fi-bar-label {
+  font-size: 0.85rem;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fi-bar-track {
+  height: 18px;
+  background: var(--soft);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.fi-bar-fill {
+  height: 100%;
+  background: var(--ink);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.fi-bar-fill.fi-bar-warn {
+  background: #e67e22;
+}
+
+.fi-bar-fill.fi-bar-info {
+  background: #2980b9;
+}
+
+.fi-bar-count {
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }

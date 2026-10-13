@@ -41,3 +41,6 @@ verify_jwt = false
 
 [functions.sale-confirm]
 verify_jwt = false
+
+[functions.financial-intelligence]
+verify_jwt = true
