@@ -32,3 +32,6 @@ verify_jwt = true
 
 [functions.n8n-webhook]
 verify_jwt = false
+
+[functions.wa-evolution]
+verify_jwt = true

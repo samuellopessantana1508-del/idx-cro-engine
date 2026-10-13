@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowRight,
@@ -14,15 +14,18 @@ import {
   MoreHorizontal,
   PhoneCall,
   Plus,
+  RefreshCw,
   Search,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
   UserPlus,
   Users,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
-import type { CapiEvent, CapiHealth, CrmActivity, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, Offer, SmartLink, Tenant, TenantUser, WebhookKey, WhatsAppInstance } from "./lib/types";
+import type { CapiEvent, CapiHealth, CrmActivity, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, Offer, SmartLink, Tenant, TenantUser, WebhookKey, WhatsAppConversation, WhatsAppInstance, WhatsAppMessage } from "./lib/types";
 import { envConfigured, formatDate, formatMoney, linkCode, slugify, smartLinkUrl, timeAgo } from "./lib/utils";
 
 type Section = "dashboard" | "sales" | "links" | "leads" | "crm" | "integrations" | "whatsapp" | "clients" | "users" | "reports" | "capi" | "settings";
@@ -387,6 +390,13 @@ export function App() {
   const [waNewKeyLabel, setWaNewKeyLabel] = useState("");
   const [waGeneratedKey, setWaGeneratedKey] = useState("");
   const [waBusy, setWaBusy] = useState(false);
+  const [waTab, setWaTab] = useState<"conversations" | "instances" | "config">("conversations");
+  const [waConversations, setWaConversations] = useState<WhatsAppConversation[]>([]);
+  const [waMessages, setWaMessages] = useState<WhatsAppMessage[]>([]);
+  const [waSelectedConvId, setWaSelectedConvId] = useState("");
+  const [waConvSearch, setWaConvSearch] = useState("");
+  const [waEvoApiKey, setWaEvoApiKey] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const tenant = tenants.find((item) => item.id === tenantId) ?? tenants[0];
   const isPlatformUser = Boolean(platformRole);
@@ -1473,6 +1483,194 @@ export function App() {
     setWaBusy(false);
   }
 
+  async function loadWaConversations() {
+    if (!tenant || !supabase) return;
+    const { data } = await supabase
+      .from("whatsapp_conversations")
+      .select("*, contact:whatsapp_contacts(*)")
+      .eq("tenant_id", tenant.id)
+      .order("last_message_at", { ascending: false, nullsFirst: false });
+    if (data) setWaConversations(data);
+  }
+
+  async function loadWaMessages(conversationId: string) {
+    if (!supabase) return;
+    const { data } = await supabase
+      .from("whatsapp_messages")
+      .select("*")
+      .eq("conversation_id", conversationId)
+      .order("timestamp", { ascending: true })
+      .limit(500);
+    if (data) setWaMessages(data);
+  }
+
+  const selectConversation = useCallback(async (convId: string) => {
+    setWaSelectedConvId(convId);
+    await loadWaMessages(convId);
+    if (supabase) {
+      const conv = waConversations.find((c) => c.id === convId);
+      if (conv && conv.unread_count > 0) {
+        await supabase
+          .from("whatsapp_conversations")
+          .update({ unread_count: 0 })
+          .eq("id", convId);
+      }
+    }
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+  }, [waConversations]);
+
+  async function connectEvoInstance(instanceId: string) {
+    if (!tenant) return;
+    const inst = waInstances.find((i) => i.id === instanceId);
+    if (!inst) return;
+    if (!waEvoApiKey.trim()) { setToast("Informe a API Key da Evolution API."); return; }
+    setWaBusy(true);
+    try {
+      const res = await authFetch("wa-evolution", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "connect_instance",
+          tenant_id: tenant.id,
+          instance_id: instanceId,
+          api_url: inst.api_url || waNewInstanceUrl || undefined,
+          api_key: waEvoApiKey,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setToast("QR Code gerado. Escaneie com o WhatsApp.");
+        await loadWaInstances();
+      } else {
+        setToast(data.error ?? "Erro ao conectar.");
+      }
+    } catch { setToast("Erro ao conectar."); }
+    setWaBusy(false);
+  }
+
+  async function checkEvoStatus(instanceId: string) {
+    if (!tenant) return;
+    if (!waEvoApiKey.trim()) { setToast("Informe a API Key."); return; }
+    setWaBusy(true);
+    try {
+      const res = await authFetch("wa-evolution", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "check_status",
+          tenant_id: tenant.id,
+          instance_id: instanceId,
+          api_key: waEvoApiKey,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setToast(`Status: ${data.status}`);
+        await loadWaInstances();
+      } else {
+        setToast(data.error ?? "Erro ao verificar.");
+      }
+    } catch { setToast("Erro ao verificar."); }
+    setWaBusy(false);
+  }
+
+  useEffect(() => {
+    if (!supabase || !tenant || active !== "whatsapp") return;
+
+    const channel = supabase
+      .channel(`wa-messages-${tenant.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "whatsapp_messages",
+          filter: `tenant_id=eq.${tenant.id}`,
+        },
+        (payload) => {
+          const newMsg = payload.new as WhatsAppMessage;
+          if (newMsg.conversation_id === waSelectedConvId) {
+            setWaMessages((prev) => {
+              if (prev.some((m) => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg];
+            });
+            setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+          }
+          loadWaConversations();
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "whatsapp_messages",
+          filter: `tenant_id=eq.${tenant.id}`,
+        },
+        (payload) => {
+          const updated = payload.new as WhatsAppMessage;
+          setWaMessages((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "whatsapp_instances",
+          filter: `tenant_id=eq.${tenant.id}`,
+        },
+        () => { loadWaInstances(); },
+      )
+      .subscribe();
+
+    return () => { supabase?.removeChannel(channel); };
+  }, [tenant?.id, active, waSelectedConvId]);
+
+  useEffect(() => {
+    if (active === "whatsapp" && tenant) {
+      loadWaConversations();
+      loadWaInstances();
+      loadWaKeys();
+    }
+  }, [active, tenant?.id]);
+
+  useEffect(() => {
+    if (waMessages.length > 0) {
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    }
+  }, [waMessages.length]);
+
+  const filteredConversations = waConversations.filter((conv) => {
+    if (!waConvSearch.trim()) return true;
+    const q = waConvSearch.toLowerCase();
+    const c = conv.contact;
+    return [c?.push_name, c?.phone, c?.wa_id].some((v) => String(v ?? "").toLowerCase().includes(q));
+  });
+
+  const selectedConv = waConversations.find((c) => c.id === waSelectedConvId);
+  const selectedContact = selectedConv?.contact;
+
+  function waConvLeadLink(conv: WhatsAppConversation) {
+    if (!conv.tracking_session_id) return null;
+    const lead = tenantLeads.find((l) => l.id === conv.tracking_session_id);
+    return lead ?? null;
+  }
+
+  function formatMsgTime(ts: string) {
+    return new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function formatMsgDate(ts: string) {
+    return new Date(ts).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  }
+
+  function msgStatusIcon(status: string) {
+    if (status === "read") return "✓✓";
+    if (status === "delivered") return "✓✓";
+    if (status === "sent") return "✓";
+    if (status === "failed") return "✗";
+    return "";
+  }
+
   async function checkSupabaseHealth() {
     if (!isConfigured || !supabase) {
       setSupabaseStatus("error");
@@ -2162,170 +2360,327 @@ export function App() {
 
         {active === "whatsapp" && (
           <section className="stack">
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <h2>Instâncias WhatsApp</h2>
-                  <p>Gerencie conexões com a Evolution API. Cada empresa pode ter uma ou mais instâncias.</p>
+            <div className="wa-tab-bar">
+              <button className={waTab === "conversations" ? "active" : ""} onClick={() => setWaTab("conversations")}>
+                <MessageCircle size={15} style={{ verticalAlign: "middle", marginRight: 4 }} /> Conversas
+              </button>
+              <button className={waTab === "instances" ? "active" : ""} onClick={() => setWaTab("instances")}>
+                <Wifi size={15} style={{ verticalAlign: "middle", marginRight: 4 }} /> Instâncias
+              </button>
+              <button className={waTab === "config" ? "active" : ""} onClick={() => setWaTab("config")}>
+                <SlidersHorizontal size={15} style={{ verticalAlign: "middle", marginRight: 4 }} /> Config
+              </button>
+            </div>
+
+            {waTab === "conversations" && (
+              <div className="wa-chat-layout">
+                <div className="wa-contact-list">
+                  <div className="wa-contact-search">
+                    <input placeholder="Buscar contato..." value={waConvSearch} onChange={(e) => setWaConvSearch(e.target.value)} />
+                  </div>
+                  {filteredConversations.length === 0 && (
+                    <div style={{ padding: "2rem 1rem", textAlign: "center", color: "var(--muted)" }}>
+                      {waConversations.length === 0 ? "Nenhuma conversa ainda. Conecte uma instância e aguarde mensagens." : "Nenhum resultado."}
+                    </div>
+                  )}
+                  {filteredConversations.map((conv) => {
+                    const c = conv.contact;
+                    const initials = (c?.push_name ?? c?.wa_id ?? "?").slice(0, 2).toUpperCase();
+                    const linkedLead = waConvLeadLink(conv);
+                    return (
+                      <div
+                        key={conv.id}
+                        className={`wa-contact-item${conv.id === waSelectedConvId ? " active" : ""}`}
+                        onClick={() => selectConversation(conv.id)}
+                      >
+                        <div className="wa-contact-avatar">{initials}</div>
+                        <div className="wa-contact-info">
+                          <div className="wa-contact-name">
+                            {c?.push_name || c?.phone || c?.wa_id || "Desconhecido"}
+                            {linkedLead && <span className="wa-link-pill" style={{ marginLeft: 6 }}>CRM</span>}
+                          </div>
+                          <div className="wa-contact-preview">
+                            {c?.phone ? c.phone : c?.wa_id}
+                          </div>
+                        </div>
+                        <div className="wa-contact-meta">
+                          {conv.last_message_at && <div className="wa-contact-time">{timeAgo(conv.last_message_at)}</div>}
+                          {conv.unread_count > 0 && <div className="wa-contact-badge">{conv.unread_count}</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                <MessageCircle size={18} />
-              </div>
 
-              <div className="mini-form" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "flex-end" }}>
-                <input placeholder="Nome da instância" value={waNewInstanceName} onChange={(e) => setWaNewInstanceName(e.target.value)} style={{ flex: "1 1 180px" }} />
-                <input placeholder="URL da API (ex: https://evo.seudominio.com)" value={waNewInstanceUrl} onChange={(e) => setWaNewInstanceUrl(e.target.value)} style={{ flex: "1 1 240px" }} />
-                <button className="primary-button" onClick={createWaInstance} disabled={waBusy || !waNewInstanceName.trim()}>Criar instância</button>
-              </div>
+                {!waSelectedConvId ? (
+                  <div className="wa-empty-thread">
+                    <div style={{ textAlign: "center" }}>
+                      <MessageCircle size={48} style={{ opacity: 0.3, marginBottom: 12 }} />
+                      <div>Selecione uma conversa para ver as mensagens</div>
+                      <button className="ghost-dark-button" onClick={loadWaConversations} style={{ marginTop: 12 }}>
+                        <RefreshCw size={14} style={{ marginRight: 4 }} /> Atualizar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="wa-thread">
+                    <div className="wa-thread-header">
+                      <div className="wa-contact-avatar" style={{ width: 36, height: 36, fontSize: "0.8rem" }}>
+                        {(selectedContact?.push_name ?? selectedContact?.wa_id ?? "?").slice(0, 2).toUpperCase()}
+                      </div>
+                      <div>
+                        <div className="wa-thread-header-name">
+                          {selectedContact?.push_name || selectedContact?.phone || selectedContact?.wa_id || "Contato"}
+                        </div>
+                        <div className="wa-thread-header-sub">
+                          {selectedContact?.phone || selectedContact?.wa_id}
+                          {selectedConv?.tracking_session_id && (() => {
+                            const lead = waConvLeadLink(selectedConv);
+                            return lead ? ` · Lead: ${lead.ref} (${lead.lead_status})` : " · Vinculado ao CRM";
+                          })()}
+                        </div>
+                      </div>
+                    </div>
 
-              {waInstances.length === 0 && !waBusy && (
-                <p style={{ opacity: 0.6, marginTop: "0.75rem" }}>Nenhuma instância cadastrada. Crie a primeira acima.</p>
-              )}
-
-              {waInstances.length > 0 && (
-                <div className="table-wrap" style={{ marginTop: "0.75rem" }}>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Nome</th>
-                        <th>Provedor</th>
-                        <th>Status</th>
-                        <th>Telefone</th>
-                        <th>Último acesso</th>
-                        <th>QR Code</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {waInstances.map((inst) => (
-                        <tr key={inst.id}>
-                          <td>{inst.instance_name}</td>
-                          <td>{inst.provider === "evolution" ? "Evolution API" : "Cloud API"}</td>
-                          <td>
-                            <span className={`status-dot ${inst.status === "connected" ? "status-active" : inst.status === "connecting" ? "status-warn" : "status-off"}`} />
-                            {inst.status === "connected" ? "Conectado" : inst.status === "connecting" ? "Conectando" : inst.status === "banned" ? "Banido" : "Desconectado"}
-                          </td>
-                          <td>{inst.phone_number ?? "-"}</td>
-                          <td>{inst.last_seen_at ? timeAgo(inst.last_seen_at) : "-"}</td>
-                          <td>
-                            {inst.qr_code_data ? (
-                              <img src={inst.qr_code_data.startsWith("data:") ? inst.qr_code_data : `data:image/png;base64,${inst.qr_code_data}`} alt="QR Code" style={{ width: 120, height: 120, borderRadius: 8, background: "#fff", padding: 4 }} />
+                    <div className="wa-thread-messages">
+                      {waMessages.reduce<{ elements: React.ReactNode[]; lastDate: string }>((acc, msg) => {
+                        const msgDate = formatMsgDate(msg.timestamp);
+                        if (msgDate !== acc.lastDate) {
+                          acc.elements.push(
+                            <div key={`date-${msgDate}`} className="wa-date-sep"><span>{msgDate}</span></div>
+                          );
+                          acc.lastDate = msgDate;
+                        }
+                        acc.elements.push(
+                          <div key={msg.id} className={`wa-msg ${msg.direction}`}>
+                            {msg.content_type === "text" ? (
+                              <div>{msg.body}</div>
+                            ) : msg.content_type === "image" && msg.media_url ? (
+                              <>
+                                <img src={msg.media_url} alt="Imagem" className="wa-msg-media" />
+                                {msg.body && <div>{msg.body}</div>}
+                              </>
+                            ) : msg.content_type === "audio" ? (
+                              <div className="wa-msg-type-badge">Áudio {msg.media_url && <audio controls src={msg.media_url} style={{ maxWidth: 220 }} />}</div>
+                            ) : msg.content_type === "video" && msg.media_url ? (
+                              <video controls src={msg.media_url} className="wa-msg-media" />
+                            ) : msg.content_type === "document" ? (
+                              <div className="wa-msg-type-badge">Documento{msg.body ? `: ${msg.body}` : ""}</div>
+                            ) : msg.content_type === "sticker" ? (
+                              <div className="wa-msg-type-badge">Sticker</div>
+                            ) : msg.content_type === "location" ? (
+                              <div className="wa-msg-type-badge">Localização</div>
+                            ) : msg.content_type === "contact" ? (
+                              <div className="wa-msg-type-badge">Contato compartilhado</div>
+                            ) : msg.content_type === "reaction" ? (
+                              <div style={{ fontSize: "1.4rem" }}>{msg.body}</div>
                             ) : (
-                              <span style={{ opacity: 0.5 }}>-</span>
+                              <div className="wa-msg-type-badge">{msg.content_type}{msg.body ? `: ${msg.body}` : ""}</div>
                             )}
-                          </td>
-                          <td>
-                            <button className="ghost-dark-button" onClick={() => deleteWaInstance(inst.id)} disabled={waBusy} style={{ fontSize: "0.8rem" }}>Remover</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                            <div className="wa-msg-time">
+                              {formatMsgTime(msg.timestamp)}
+                              {msg.direction === "outbound" && (
+                                <span className="wa-msg-status" style={{ color: msg.status === "read" ? "#53bdeb" : undefined }}>
+                                  {msgStatusIcon(msg.status)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                        return acc;
+                      }, { elements: [], lastDate: "" }).elements}
+                      <div ref={messagesEndRef} />
+                    </div>
 
-              <button className="ghost-dark-button" onClick={loadWaInstances} disabled={waBusy} style={{ marginTop: "0.5rem" }}>Atualizar lista</button>
-            </section>
-
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <h2>Chaves de API (Webhook)</h2>
-                  <p>Gere chaves para autenticar os webhooks do n8n. Cada chave identifica a empresa automaticamente.</p>
-                </div>
-                <ShieldCheck size={18} />
+                    <div className="wa-readonly-bar">
+                      Modo leitura — o IDX não envia mensagens pelo WhatsApp
+                    </div>
+                  </div>
+                )}
               </div>
+            )}
 
-              <div className="mini-form" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "flex-end" }}>
-                <input placeholder="Rótulo (ex: n8n-producao)" value={waNewKeyLabel} onChange={(e) => setWaNewKeyLabel(e.target.value)} style={{ flex: "1 1 200px" }} />
-                <button className="primary-button" onClick={generateWaKey} disabled={waBusy}>Gerar chave</button>
-              </div>
+            {waTab === "instances" && (
+              <section className="stack">
+                <section className="panel">
+                  <div className="panel-head">
+                    <div>
+                      <h2>Instâncias WhatsApp</h2>
+                      <p>Gerencie conexões com a Evolution API. Cada empresa pode ter uma ou mais instâncias.</p>
+                    </div>
+                    <MessageCircle size={18} />
+                  </div>
 
-              {waGeneratedKey && (
-                <div style={{ marginTop: "0.75rem", padding: "0.75rem", background: "var(--surface, #f1f5f9)", borderRadius: 8, wordBreak: "break-all" }}>
-                  <label className="mini-label">Chave gerada (copie agora)</label>
-                  <div className="copy-line">
-                    <code style={{ fontSize: "0.85rem" }}>{waGeneratedKey}</code>
-                    <button className="icon-button" onClick={() => { navigator.clipboard.writeText(waGeneratedKey); setToast("Chave copiada."); }} title="Copiar chave" type="button">
-                      <Clipboard size={15} />
-                    </button>
+                  <div className="mini-form" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "flex-end" }}>
+                    <input placeholder="Nome da instância" value={waNewInstanceName} onChange={(e) => setWaNewInstanceName(e.target.value)} style={{ flex: "1 1 180px" }} />
+                    <input placeholder="URL da Evolution API" value={waNewInstanceUrl} onChange={(e) => setWaNewInstanceUrl(e.target.value)} style={{ flex: "1 1 240px" }} />
+                    <button className="primary-button" onClick={createWaInstance} disabled={waBusy || !waNewInstanceName.trim()}>Criar instância</button>
                   </div>
-                </div>
-              )}
 
-              {waKeys.length > 0 && (
-                <div className="table-wrap" style={{ marginTop: "0.75rem" }}>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Rótulo</th>
-                        <th>Status</th>
-                        <th>Último uso</th>
-                        <th>Criada em</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {waKeys.map((k) => (
-                        <tr key={k.id}>
-                          <td>{k.label}</td>
-                          <td>
-                            <span className={`status-dot ${k.status === "active" ? "status-active" : "status-off"}`} />
-                            {k.status === "active" ? "Ativa" : "Revogada"}
-                          </td>
-                          <td>{k.last_used_at ? timeAgo(k.last_used_at) : "Nunca"}</td>
-                          <td>{formatDate(k.created_at)}</td>
-                          <td>
-                            {k.status === "active" && (
-                              <button className="ghost-dark-button" onClick={() => revokeWaKey(k.id)} disabled={waBusy} style={{ fontSize: "0.8rem" }}>Revogar</button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
+                  <div style={{ marginTop: "0.75rem" }}>
+                    <label className="mini-label">API Key da Evolution (necessária para conectar)</label>
+                    <input
+                      type="password"
+                      placeholder="Cole aqui a API Key da sua Evolution API"
+                      value={waEvoApiKey}
+                      onChange={(e) => setWaEvoApiKey(e.target.value)}
+                      style={{ width: "100%", maxWidth: 480 }}
+                    />
+                  </div>
 
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <h2>Configuração n8n</h2>
-                  <p>Use o endpoint abaixo no n8n para enviar eventos da Evolution API ao IDX.</p>
-                </div>
-                <SlidersHorizontal size={18} />
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                <div>
-                  <label className="mini-label">URL do Webhook</label>
-                  <div className="copy-line">
-                    <code style={{ fontSize: "0.85rem" }}>{String(import.meta.env.VITE_SUPABASE_URL || "https://tykeycwworjtfpssjevw.supabase.co")}/functions/v1/n8n-webhook</code>
-                    <button className="icon-button" onClick={() => { navigator.clipboard.writeText(`${String(import.meta.env.VITE_SUPABASE_URL || "https://tykeycwworjtfpssjevw.supabase.co")}/functions/v1/n8n-webhook`); setToast("URL copiada."); }} title="Copiar URL" type="button">
-                      <Clipboard size={15} />
-                    </button>
+                  {waInstances.length === 0 && !waBusy && (
+                    <p style={{ opacity: 0.6, marginTop: "0.75rem" }}>Nenhuma instância cadastrada.</p>
+                  )}
+
+                  {waInstances.map((inst) => (
+                    <div key={inst.id} className="panel" style={{ marginTop: "0.75rem", padding: "1rem", border: "1px solid var(--line)", borderRadius: 10 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
+                        <div>
+                          <strong>{inst.instance_name}</strong>
+                          <span style={{ marginLeft: 8, fontSize: "0.82rem", color: "var(--muted)" }}>{inst.provider === "evolution" ? "Evolution API" : "Cloud API"}</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          {inst.status === "connected" ? <Wifi size={14} color="#25d366" /> : <WifiOff size={14} color="var(--muted)" />}
+                          <span className={`status-dot ${inst.status === "connected" ? "status-active" : inst.status === "connecting" ? "status-warn" : "status-off"}`} />
+                          {inst.status === "connected" ? "Conectado" : inst.status === "connecting" ? "Conectando" : inst.status === "banned" ? "Banido" : "Desconectado"}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginTop: "0.5rem", fontSize: "0.85rem", color: "var(--muted)" }}>
+                        <span>Tel: {inst.phone_number ?? "-"}</span>
+                        <span>Último: {inst.last_seen_at ? timeAgo(inst.last_seen_at) : "-"}</span>
+                        {inst.api_url && <span>API: {inst.api_url}</span>}
+                      </div>
+
+                      {inst.qr_code_data && inst.status !== "connected" && (
+                        <div style={{ marginTop: "0.75rem", textAlign: "center" }}>
+                          <p style={{ fontSize: "0.85rem", marginBottom: 8 }}>Escaneie o QR Code abaixo com o WhatsApp:</p>
+                          <img
+                            src={inst.qr_code_data.startsWith("data:") ? inst.qr_code_data : `data:image/png;base64,${inst.qr_code_data}`}
+                            alt="QR Code"
+                            style={{ width: 200, height: 200, borderRadius: 10, background: "#fff", padding: 8, border: "1px solid var(--line)" }}
+                          />
+                        </div>
+                      )}
+
+                      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
+                        {inst.status !== "connected" && (
+                          <button className="primary-button" onClick={() => connectEvoInstance(inst.id)} disabled={waBusy || !waEvoApiKey.trim()}>
+                            {inst.qr_code_data ? "Gerar novo QR" : "Conectar (QR Code)"}
+                          </button>
+                        )}
+                        <button className="ghost-dark-button" onClick={() => checkEvoStatus(inst.id)} disabled={waBusy || !waEvoApiKey.trim()}>
+                          <RefreshCw size={13} style={{ marginRight: 3 }} /> Verificar status
+                        </button>
+                        <button className="ghost-dark-button" onClick={() => deleteWaInstance(inst.id)} disabled={waBusy} style={{ marginLeft: "auto", fontSize: "0.8rem", opacity: 0.7 }}>
+                          Remover
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  <button className="ghost-dark-button" onClick={loadWaInstances} disabled={waBusy} style={{ marginTop: "0.75rem" }}>
+                    <RefreshCw size={13} style={{ marginRight: 3 }} /> Atualizar lista
+                  </button>
+                </section>
+
+                <section className="panel">
+                  <div className="panel-head">
+                    <div>
+                      <h2>Chaves de API (Webhook)</h2>
+                      <p>Gere chaves para autenticar os webhooks do n8n.</p>
+                    </div>
+                    <ShieldCheck size={18} />
                   </div>
-                </div>
-                <div>
-                  <label className="mini-label">Header de autenticação</label>
-                  <div className="copy-line">
-                    <code style={{ fontSize: "0.85rem" }}>x-api-key: [sua chave gerada acima]</code>
+
+                  <div className="mini-form" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "flex-end" }}>
+                    <input placeholder="Rótulo (ex: n8n-producao)" value={waNewKeyLabel} onChange={(e) => setWaNewKeyLabel(e.target.value)} style={{ flex: "1 1 200px" }} />
+                    <button className="primary-button" onClick={generateWaKey} disabled={waBusy}>Gerar chave</button>
                   </div>
-                </div>
-                <div>
-                  <label className="mini-label">Método</label>
-                  <code style={{ fontSize: "0.85rem" }}>POST</code>
-                </div>
-                <div>
-                  <label className="mini-label">Ações disponíveis</label>
-                  <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-                    {["connection_status", "message_received", "message_sent", "message_status"].map((a) => (
-                      <span key={a} className="tag-pill">{a}</span>
-                    ))}
+
+                  {waGeneratedKey && (
+                    <div style={{ marginTop: "0.75rem", padding: "0.75rem", background: "var(--soft)", borderRadius: 8, wordBreak: "break-all" }}>
+                      <label className="mini-label">Chave gerada (copie agora)</label>
+                      <div className="copy-line">
+                        <code style={{ fontSize: "0.85rem" }}>{waGeneratedKey}</code>
+                        <button className="icon-button" onClick={() => { navigator.clipboard.writeText(waGeneratedKey); setToast("Chave copiada."); }} title="Copiar chave" type="button">
+                          <Clipboard size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {waKeys.length > 0 && (
+                    <div className="table-wrap" style={{ marginTop: "0.75rem" }}>
+                      <table>
+                        <thead>
+                          <tr><th>Rótulo</th><th>Status</th><th>Último uso</th><th>Criada em</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                          {waKeys.map((k) => (
+                            <tr key={k.id}>
+                              <td>{k.label}</td>
+                              <td>
+                                <span className={`status-dot ${k.status === "active" ? "status-active" : "status-off"}`} />
+                                {k.status === "active" ? "Ativa" : "Revogada"}
+                              </td>
+                              <td>{k.last_used_at ? timeAgo(k.last_used_at) : "Nunca"}</td>
+                              <td>{formatDate(k.created_at)}</td>
+                              <td>
+                                {k.status === "active" && (
+                                  <button className="ghost-dark-button" onClick={() => revokeWaKey(k.id)} disabled={waBusy} style={{ fontSize: "0.8rem" }}>Revogar</button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+              </section>
+            )}
+
+            {waTab === "config" && (
+              <section className="stack">
+                <section className="panel">
+                  <div className="panel-head">
+                    <div>
+                      <h2>Configuração n8n</h2>
+                      <p>Use o endpoint abaixo no n8n para enviar eventos da Evolution API ao IDX.</p>
+                    </div>
+                    <SlidersHorizontal size={18} />
                   </div>
-                </div>
-                <details style={{ marginTop: "0.25rem" }}>
-                  <summary style={{ cursor: "pointer", fontWeight: 500 }}>Exemplo de payload</summary>
-                  <pre style={{ fontSize: "0.8rem", padding: "0.75rem", background: "var(--surface, #f1f5f9)", borderRadius: 8, overflowX: "auto", marginTop: "0.5rem" }}>{`{
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                    <div>
+                      <label className="mini-label">URL do Webhook</label>
+                      <div className="copy-line">
+                        <code style={{ fontSize: "0.85rem" }}>{String(import.meta.env.VITE_SUPABASE_URL || "https://tykeycwworjtfpssjevw.supabase.co")}/functions/v1/n8n-webhook</code>
+                        <button className="icon-button" onClick={() => { navigator.clipboard.writeText(`${String(import.meta.env.VITE_SUPABASE_URL || "https://tykeycwworjtfpssjevw.supabase.co")}/functions/v1/n8n-webhook`); setToast("URL copiada."); }} title="Copiar URL" type="button">
+                          <Clipboard size={15} />
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="mini-label">Header de autenticação</label>
+                      <div className="copy-line">
+                        <code style={{ fontSize: "0.85rem" }}>x-api-key: [sua chave gerada na aba Instâncias]</code>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="mini-label">Método</label>
+                      <code style={{ fontSize: "0.85rem" }}>POST</code>
+                    </div>
+                    <div>
+                      <label className="mini-label">Ações disponíveis</label>
+                      <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                        {["connection_status", "message_received", "message_sent", "message_status"].map((a) => (
+                          <span key={a} className="tag-pill">{a}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <details style={{ marginTop: "0.25rem" }}>
+                      <summary style={{ cursor: "pointer", fontWeight: 500 }}>Exemplo de payload</summary>
+                      <pre style={{ fontSize: "0.8rem", padding: "0.75rem", background: "var(--soft)", borderRadius: 8, overflowX: "auto", marginTop: "0.5rem" }}>{`{
   "action": "message_received",
   "instance": "nome-da-instancia",
   "data": {
@@ -2342,9 +2697,38 @@ export function App() {
     "messageTimestamp": 1697200000
   }
 }`}</pre>
-                </details>
-              </div>
-            </section>
+                    </details>
+                  </div>
+                </section>
+
+                <section className="panel">
+                  <div className="panel-head">
+                    <div>
+                      <h2>Fluxo da integração</h2>
+                      <p>Como o WhatsApp chega ao IDX CRO Engine.</p>
+                    </div>
+                    <ArrowRight size={18} />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.88rem" }}>
+                    <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                      <span className="tag-pill">1</span> Crie uma instância na aba Instâncias e conecte via QR Code
+                    </div>
+                    <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                      <span className="tag-pill">2</span> Configure o webhook da Evolution API para enviar eventos ao n8n
+                    </div>
+                    <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                      <span className="tag-pill">3</span> No n8n, crie um workflow que receba os eventos e envie ao endpoint acima com a API Key
+                    </div>
+                    <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                      <span className="tag-pill">4</span> As mensagens aparecem automaticamente na aba Conversas em tempo real
+                    </div>
+                    <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                      <span className="tag-pill">5</span> Contatos são vinculados ao CRM pelo telefone quando há correspondência
+                    </div>
+                  </div>
+                </section>
+              </section>
+            )}
           </section>
         )}
 
