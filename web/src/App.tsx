@@ -23,9 +23,13 @@ import {
   Users,
   Wifi,
   WifiOff,
+  Brain,
+  TrendingUp,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
-import type { CapiEvent, CapiHealth, CrmActivity, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, Offer, SmartLink, Tenant, TenantUser, WebhookKey, WhatsAppConversation, WhatsAppInstance, WhatsAppMessage } from "./lib/types";
+import type { CapiEvent, CapiHealth, ConversationInsight, CrmActivity, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, Offer, SaleSignal, SmartLink, Tenant, TenantUser, WebhookKey, WhatsAppConversation, WhatsAppInstance, WhatsAppMessage } from "./lib/types";
 import { envConfigured, formatDate, formatMoney, linkCode, slugify, smartLinkUrl, timeAgo } from "./lib/utils";
 
 type Section = "dashboard" | "sales" | "links" | "leads" | "crm" | "integrations" | "whatsapp" | "clients" | "users" | "reports" | "capi" | "settings";
@@ -396,6 +400,9 @@ export function App() {
   const [waSelectedConvId, setWaSelectedConvId] = useState("");
   const [waConvSearch, setWaConvSearch] = useState("");
   const [waEvoApiKey, setWaEvoApiKey] = useState("");
+  const [waInsight, setWaInsight] = useState<ConversationInsight | null>(null);
+  const [waSaleSignals, setWaSaleSignals] = useState<SaleSignal[]>([]);
+  const [waInsightOpen, setWaInsightOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const tenant = tenants.find((item) => item.id === tenantId) ?? tenants[0];
@@ -1506,7 +1513,11 @@ export function App() {
 
   const selectConversation = useCallback(async (convId: string) => {
     setWaSelectedConvId(convId);
+    setWaInsight(null);
+    setWaSaleSignals([]);
+    setWaInsightOpen(false);
     await loadWaMessages(convId);
+    loadWaInsights(convId);
     if (supabase) {
       const conv = waConversations.find((c) => c.id === convId);
       if (conv && conv.unread_count > 0) {
@@ -1518,6 +1529,22 @@ export function App() {
     }
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
   }, [waConversations]);
+
+  async function loadWaInsights(conversationId: string) {
+    if (!supabase) return;
+    const { data: insight } = await supabase
+      .from("conversation_insights")
+      .select("*")
+      .eq("conversation_id", conversationId)
+      .maybeSingle();
+    setWaInsight(insight);
+    const { data: signals } = await supabase
+      .from("sale_signals")
+      .select("*")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false });
+    setWaSaleSignals(signals ?? []);
+  }
 
   async function connectEvoInstance(instanceId: string) {
     if (!tenant) return;
@@ -1619,6 +1646,22 @@ export function App() {
           filter: `tenant_id=eq.${tenant.id}`,
         },
         () => { loadWaInstances(); },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "whatsapp_conversations",
+          filter: `tenant_id=eq.${tenant.id}`,
+        },
+        (payload) => {
+          const updated = payload.new as WhatsAppConversation;
+          if (updated.id === waSelectedConvId && updated.ai_analyzed_at) {
+            loadWaInsights(updated.id);
+          }
+          loadWaConversations();
+        },
       )
       .subscribe();
 
@@ -2387,6 +2430,7 @@ export function App() {
                     const c = conv.contact;
                     const initials = (c?.push_name ?? c?.wa_id ?? "?").slice(0, 2).toUpperCase();
                     const linkedLead = waConvLeadLink(conv);
+                    const sentimentEmoji = conv.ai_sentiment === "positive" ? "+" : conv.ai_sentiment === "negative" ? "-" : "";
                     return (
                       <div
                         key={conv.id}
@@ -2398,14 +2442,22 @@ export function App() {
                           <div className="wa-contact-name">
                             {c?.push_name || c?.phone || c?.wa_id || "Desconhecido"}
                             {linkedLead && <span className="wa-link-pill" style={{ marginLeft: 6 }}>CRM</span>}
+                            {conv.ai_analyzed_at && sentimentEmoji && (
+                              <span className={`wa-sentiment-dot ${conv.ai_sentiment}`} title={`Sentimento: ${conv.ai_sentiment}`}>{sentimentEmoji}</span>
+                            )}
                           </div>
                           <div className="wa-contact-preview">
-                            {c?.phone ? c.phone : c?.wa_id}
+                            {conv.ai_summary || (c?.phone ? c.phone : c?.wa_id)}
                           </div>
                         </div>
                         <div className="wa-contact-meta">
                           {conv.last_message_at && <div className="wa-contact-time">{timeAgo(conv.last_message_at)}</div>}
                           {conv.unread_count > 0 && <div className="wa-contact-badge">{conv.unread_count}</div>}
+                          {conv.ai_purchase_probability != null && conv.ai_purchase_probability > 0.3 && (
+                            <div className="wa-purchase-badge" title={`Probabilidade: ${Math.round(conv.ai_purchase_probability * 100)}%`}>
+                              {Math.round(conv.ai_purchase_probability * 100)}%
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -2441,6 +2493,109 @@ export function App() {
                         </div>
                       </div>
                     </div>
+
+                    {waInsight && (
+                      <div className="wa-ai-panel">
+                        <button className="wa-ai-panel-toggle" onClick={() => setWaInsightOpen(!waInsightOpen)}>
+                          <Brain size={16} />
+                          <span>Análise IA</span>
+                          {waInsight.sentiment && (
+                            <span className={`wa-ai-sentiment-chip ${waInsight.sentiment}`}>
+                              {waInsight.sentiment === "positive" ? "Positivo" : waInsight.sentiment === "negative" ? "Negativo" : "Neutro"}
+                            </span>
+                          )}
+                          {(waInsight.purchase_probability ?? 0) > 0.3 && (
+                            <span className="wa-ai-prob-chip">
+                              <TrendingUp size={12} /> {Math.round((waInsight.purchase_probability ?? 0) * 100)}%
+                            </span>
+                          )}
+                          {waInsightOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        </button>
+                        {waInsightOpen && (
+                          <div className="wa-ai-panel-body">
+                            {waInsight.summary && (
+                              <div className="wa-ai-section">
+                                <div className="wa-ai-section-title">Resumo</div>
+                                <div className="wa-ai-section-text">{waInsight.summary}</div>
+                              </div>
+                            )}
+                            {waInsight.intent && (
+                              <div className="wa-ai-section">
+                                <div className="wa-ai-section-title">Intenção</div>
+                                <div className="wa-ai-section-text">{waInsight.intent}</div>
+                              </div>
+                            )}
+                            {(waInsight.purchase_probability ?? 0) > 0 && (
+                              <div className="wa-ai-section">
+                                <div className="wa-ai-section-title">Probabilidade de compra</div>
+                                <div className="wa-ai-prob-bar-wrap">
+                                  <div className="wa-ai-prob-bar" style={{ width: `${Math.round((waInsight.purchase_probability ?? 0) * 100)}%` }} />
+                                  <span>{Math.round((waInsight.purchase_probability ?? 0) * 100)}%</span>
+                                </div>
+                              </div>
+                            )}
+                            {(waInsight.extracted_name || waInsight.extracted_email || waInsight.extracted_phone || waInsight.extracted_address) && (
+                              <div className="wa-ai-section">
+                                <div className="wa-ai-section-title">Dados extraídos</div>
+                                <div className="wa-ai-extracted-grid">
+                                  {waInsight.extracted_name && <div><strong>Nome:</strong> {waInsight.extracted_name}</div>}
+                                  {waInsight.extracted_phone && <div><strong>Telefone:</strong> {waInsight.extracted_phone}</div>}
+                                  {waInsight.extracted_email && <div><strong>Email:</strong> {waInsight.extracted_email}</div>}
+                                  {waInsight.extracted_address && <div><strong>Endereço:</strong> {waInsight.extracted_address}</div>}
+                                </div>
+                              </div>
+                            )}
+                            {(waInsight.products_of_interest?.length ?? 0) > 0 && (
+                              <div className="wa-ai-section">
+                                <div className="wa-ai-section-title">Produtos de interesse</div>
+                                <div className="wa-ai-tags">
+                                  {waInsight.products_of_interest!.map((p, i) => <span key={i} className="wa-ai-tag">{p}</span>)}
+                                </div>
+                              </div>
+                            )}
+                            {(waInsight.objections?.length ?? 0) > 0 && (
+                              <div className="wa-ai-section">
+                                <div className="wa-ai-section-title">Objeções</div>
+                                <div className="wa-ai-tags">
+                                  {waInsight.objections!.map((o, i) => <span key={i} className="wa-ai-tag objection">{o}</span>)}
+                                </div>
+                              </div>
+                            )}
+                            {waInsight.commercial_notes && (
+                              <div className="wa-ai-section">
+                                <div className="wa-ai-section-title">Notas comerciais</div>
+                                <div className="wa-ai-section-text">{waInsight.commercial_notes}</div>
+                              </div>
+                            )}
+                            {waSaleSignals.length > 0 && (
+                              <div className="wa-ai-section">
+                                <div className="wa-ai-section-title">Sinais de venda</div>
+                                {waSaleSignals.map((sig) => (
+                                  <div key={sig.id} className={`wa-ai-signal wa-ai-signal-${sig.signal_type}`}>
+                                    <div className="wa-ai-signal-header">
+                                      <span className="wa-ai-signal-type">
+                                        {sig.signal_type === "interest" ? "Interesse" : sig.signal_type === "negotiation" ? "Negociação" : sig.signal_type === "commitment" ? "Compromisso" : sig.signal_type === "confirmed_sale" ? "Venda confirmada" : "Pós-venda"}
+                                      </span>
+                                      {sig.confidence != null && <span className="wa-ai-signal-conf">{Math.round(sig.confidence * 100)}% confiança</span>}
+                                      <span className={`wa-ai-signal-status ${sig.status}`}>
+                                        {sig.status === "detected" ? "Detectado" : sig.status === "confirmed" ? "Confirmado" : sig.status === "rejected" ? "Rejeitado" : "Convertido"}
+                                      </span>
+                                    </div>
+                                    {sig.product_name && <div className="wa-ai-signal-product">{sig.product_name}{sig.estimated_value ? ` · ${formatMoney(sig.estimated_value)}` : ""}</div>}
+                                    {sig.evidence_text && <div className="wa-ai-signal-evidence">"{sig.evidence_text}"</div>}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <div className="wa-ai-footer">
+                              {waInsight.messages_analyzed_count != null && <span>{waInsight.messages_analyzed_count} mensagens analisadas</span>}
+                              {waInsight.model_used && <span>Modelo: {waInsight.model_used}</span>}
+                              {waInsight.updated_at && <span>Última análise: {timeAgo(waInsight.updated_at)}</span>}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     <div className="wa-thread-messages">
                       {waMessages.reduce<{ elements: React.ReactNode[]; lastDate: string }>((acc, msg) => {

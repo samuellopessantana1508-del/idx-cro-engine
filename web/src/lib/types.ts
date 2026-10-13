@@ -207,6 +207,52 @@ export type WebhookKey = {
   plain_key?: string;
 };
 
+export type ConversationInsight = {
+  id: string;
+  tenant_id: string;
+  conversation_id: string;
+  extracted_name?: string | null;
+  extracted_email?: string | null;
+  extracted_phone?: string | null;
+  extracted_address?: string | null;
+  products_of_interest?: string[];
+  objections?: string[];
+  preferences?: Record<string, unknown>;
+  commercial_notes?: string | null;
+  summary?: string | null;
+  intent?: string | null;
+  sentiment?: "positive" | "neutral" | "negative" | null;
+  purchase_probability?: number | null;
+  confidence_score?: number | null;
+  last_analyzed_message_id?: string | null;
+  messages_analyzed_count?: number;
+  model_used?: string | null;
+  extracted_data?: Record<string, unknown>;
+  evidence?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SaleSignal = {
+  id: string;
+  tenant_id: string;
+  conversation_id: string;
+  tracking_session_id?: string | null;
+  product_name?: string | null;
+  product_category?: string | null;
+  estimated_value?: number | null;
+  currency?: string;
+  signal_type: "interest" | "negotiation" | "commitment" | "confirmed_sale" | "post_sale";
+  confidence?: number | null;
+  evidence_text?: string | null;
+  evidence_messages?: unknown[];
+  status: "detected" | "confirmed" | "rejected" | "converted";
+  purchase_data?: Record<string, unknown> | null;
+  capi_sent: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 export type MetaAudienceStatus = {
   tenant_id: string;
   audience_key: "qualified" | "purchased";

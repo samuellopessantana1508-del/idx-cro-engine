@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { encrypt, isEncryptionConfigured } from "../_shared/encryption.ts";
 
 const supa = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -143,9 +144,15 @@ Deno.serve(async (req: Request) => {
     const hashBuf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(apiKey));
     const apiKeyHash = Array.from(new Uint8Array(hashBuf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 
+    let apiKeyEncrypted: string | null = null;
+    if (isEncryptionConfigured()) {
+      apiKeyEncrypted = await encrypt(apiKey);
+    }
+
     await supa.from("whatsapp_instances").update({
       api_url: apiUrl,
       api_key_hash: apiKeyHash,
+      api_key_encrypted: apiKeyEncrypted,
       status: "connecting",
       qr_code_data: qrBase64 || null,
       metadata: { ...(inst.metadata ?? {}), pairing_code: pairingCode || undefined },

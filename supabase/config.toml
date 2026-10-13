@@ -35,3 +35,6 @@ verify_jwt = false
 
 [functions.wa-evolution]
 verify_jwt = true
+
+[functions.ai-analyze]
+verify_jwt = false

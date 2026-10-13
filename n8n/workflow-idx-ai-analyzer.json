@@ -1,0 +1,429 @@
+{
+  "name": "IDX CRO Engine — WhatsApp AI Analyzer",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "idx-evolution-webhook",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "webhook-trigger",
+      "name": "Evolution API Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "webhookId": "idx-evolution-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-messages",
+              "leftValue": "={{ $json.body.event }}",
+              "rightValue": "messages.upsert",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "is-message",
+      "name": "Is Message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-status",
+              "leftValue": "={{ $json.body.event }}",
+              "rightValue": "connection.update",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "is-connection",
+      "name": "Is Connection?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [440, 540]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-ack",
+              "leftValue": "={{ $json.body.event }}",
+              "rightValue": "messages.update",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "is-status-update",
+      "name": "Is Status Update?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [440, 760]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_FUNCTIONS_URL }}/n8n-webhook",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.IDX_WEBHOOK_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"action\": \"message_received\",\n  \"instance\": \"{{ $json.body.instance }}\",\n  \"data\": {{ JSON.stringify($json.body.data) }}\n}",
+        "options": {
+          "timeout": 30000,
+          "allowUnauthorizedCerts": false
+        }
+      },
+      "id": "ingest-message",
+      "name": "Ingest Message (n8n-webhook)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_FUNCTIONS_URL }}/n8n-webhook",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.IDX_WEBHOOK_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"action\": \"message_sent\",\n  \"instance\": \"{{ $json.body.instance }}\",\n  \"data\": {{ JSON.stringify($json.body.data) }}\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "ingest-sent-message",
+      "name": "Ingest Sent Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 380]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-conversation-id",
+              "leftValue": "={{ $json.conversation_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "has-conversation",
+      "name": "Has Conversation ID?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [960, 200]
+    },
+    {
+      "parameters": {
+        "amount": 5,
+        "unit": "seconds"
+      },
+      "id": "wait-before-ai",
+      "name": "Wait 5s (batch window)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1180, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_FUNCTIONS_URL }}/ai-analyze",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.IDX_WEBHOOK_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"action\": \"analyze_conversation\",\n  \"tenant_id\": \"{{ $node['Ingest Message (n8n-webhook)'].json.tenant_id || '' }}\",\n  \"conversation_id\": \"{{ $node['Ingest Message (n8n-webhook)'].json.conversation_id }}\"\n}",
+        "options": {
+          "timeout": 60000,
+          "allowUnauthorizedCerts": false
+        }
+      },
+      "id": "ai-analyze",
+      "name": "AI Analyze Conversation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1400, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_FUNCTIONS_URL }}/n8n-webhook",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.IDX_WEBHOOK_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"action\": \"connection_status\",\n  \"instance\": \"{{ $json.body.instance }}\",\n  \"state\": \"{{ $json.body.data?.state || $json.body.data?.status || '' }}\",\n  \"qrcode\": \"{{ $json.body.data?.qrcode?.base64 || '' }}\",\n  \"phoneNumber\": \"{{ $json.body.data?.phoneNumber || '' }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "connection-update",
+      "name": "Connection Status Update",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 540]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_FUNCTIONS_URL }}/n8n-webhook",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.IDX_WEBHOOK_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"action\": \"message_status\",\n  \"instance\": \"{{ $json.body.instance }}\",\n  \"data\": {{ JSON.stringify($json.body.data) }}\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "status-update",
+      "name": "Message Status Update",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 760]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-from-me",
+              "leftValue": "={{ $json.body.data?.key?.fromMe }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "is-from-me",
+      "name": "Is From Me?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {},
+      "id": "noop-end",
+      "name": "No Operation",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1180, 400]
+    }
+  ],
+  "connections": {
+    "Evolution API Webhook": {
+      "main": [
+        [
+          { "node": "Is Message?", "type": "main", "index": 0 },
+          { "node": "Is Connection?", "type": "main", "index": 0 },
+          { "node": "Is Status Update?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Is Message?": {
+      "main": [
+        [
+          { "node": "Is From Me?", "type": "main", "index": 0 }
+        ],
+        []
+      ]
+    },
+    "Is From Me?": {
+      "main": [
+        [
+          { "node": "Ingest Sent Message", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Ingest Message (n8n-webhook)", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Ingest Message (n8n-webhook)": {
+      "main": [
+        [
+          { "node": "Has Conversation ID?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Ingest Sent Message": {
+      "main": [
+        [
+          { "node": "Has Conversation ID?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Has Conversation ID?": {
+      "main": [
+        [
+          { "node": "Wait 5s (batch window)", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "No Operation", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Wait 5s (batch window)": {
+      "main": [
+        [
+          { "node": "AI Analyze Conversation", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Is Connection?": {
+      "main": [
+        [
+          { "node": "Connection Status Update", "type": "main", "index": 0 }
+        ],
+        []
+      ]
+    },
+    "Is Status Update?": {
+      "main": [
+        [
+          { "node": "Message Status Update", "type": "main", "index": 0 }
+        ],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataSuccessExecution": "all",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "idx" },
+    { "name": "whatsapp" },
+    { "name": "ai" }
+  ],
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "idx-cro-engine"
+  }
+}
