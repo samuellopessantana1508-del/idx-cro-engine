@@ -29,3 +29,6 @@ verify_jwt = true
 
 [functions.meta-audiences]
 verify_jwt = true
+
+[functions.n8n-webhook]
+verify_jwt = false

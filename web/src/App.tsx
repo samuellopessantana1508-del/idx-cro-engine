@@ -22,10 +22,10 @@ import {
   Users,
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
-import type { CapiEvent, CapiHealth, CrmActivity, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, Offer, SmartLink, Tenant, TenantUser } from "./lib/types";
+import type { CapiEvent, CapiHealth, CrmActivity, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, Offer, SmartLink, Tenant, TenantUser, WebhookKey, WhatsAppInstance } from "./lib/types";
 import { envConfigured, formatDate, formatMoney, linkCode, slugify, smartLinkUrl, timeAgo } from "./lib/utils";
 
-type Section = "dashboard" | "sales" | "links" | "leads" | "crm" | "integrations" | "clients" | "users" | "reports" | "capi" | "settings";
+type Section = "dashboard" | "sales" | "links" | "leads" | "crm" | "integrations" | "whatsapp" | "clients" | "users" | "reports" | "capi" | "settings";
 
 type PlatformRole = "owner" | "admin" | "support" | "viewer";
 
@@ -153,7 +153,7 @@ type MetaAdAccountAsset = {
 };
 
 const META_OAUTH_CALLBACK_URL = "https://idxparasuaempresa.com.br/meta-oauth-callback.html";
-const validSections: Section[] = ["dashboard", "sales", "links", "leads", "crm", "integrations", "clients", "users", "reports", "capi", "settings"];
+const validSections: Section[] = ["dashboard", "sales", "links", "leads", "crm", "integrations", "whatsapp", "clients", "users", "reports", "capi", "settings"];
 
 const emptyDraft: DraftLink = {
   offerName: "",
@@ -380,6 +380,13 @@ export function App() {
   });
   const [tenantRouteWarning, setTenantRouteWarning] = useState("");
   const [loading, setLoading] = useState(false);
+  const [waInstances, setWaInstances] = useState<WhatsAppInstance[]>([]);
+  const [waKeys, setWaKeys] = useState<WebhookKey[]>([]);
+  const [waNewInstanceName, setWaNewInstanceName] = useState("");
+  const [waNewInstanceUrl, setWaNewInstanceUrl] = useState("");
+  const [waNewKeyLabel, setWaNewKeyLabel] = useState("");
+  const [waGeneratedKey, setWaGeneratedKey] = useState("");
+  const [waBusy, setWaBusy] = useState(false);
 
   const tenant = tenants.find((item) => item.id === tenantId) ?? tenants[0];
   const isPlatformUser = Boolean(platformRole);
@@ -401,7 +408,7 @@ export function App() {
   );
   const currentTenantRole = currentTenantUser?.role ?? (isPlatformUser ? "owner" : null);
   const isSellerExperience = currentTenantRole === "operator" && !isPlatformUser;
-  const secondaryMobileSections: Section[] = isSellerExperience ? ["leads"] : ["integrations", "leads", "clients", "users", "reports", "capi", "settings"];
+  const secondaryMobileSections: Section[] = isSellerExperience ? ["leads"] : ["integrations", "whatsapp", "leads", "clients", "users", "reports", "capi", "settings"];
   const moreActive = secondaryMobileSections.includes(active);
 
   function goToSection(section: Section) {
@@ -1347,6 +1354,125 @@ export function App() {
     setToast(`${totals.synced} pessoas sincronizadas. ${totals.skipped} sem telefone/email. ${totals.failed} falhas.`);
   }
 
+  async function loadWaInstances() {
+    if (!tenant) return;
+    setWaBusy(true);
+    try {
+      const res = await authFetch("tenant-admin", {
+        method: "POST",
+        body: JSON.stringify({ action: "manage_whatsapp_instance", sub_action: "list", tenant_id: tenant.id }),
+      });
+      const data = await res.json();
+      if (data.ok) setWaInstances(data.instances ?? []);
+    } catch { /* */ }
+    setWaBusy(false);
+  }
+
+  async function createWaInstance() {
+    if (!tenant || !waNewInstanceName.trim()) return;
+    setWaBusy(true);
+    try {
+      const res = await authFetch("tenant-admin", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "manage_whatsapp_instance",
+          sub_action: "create",
+          tenant_id: tenant.id,
+          instance_name: waNewInstanceName.trim(),
+          api_url: waNewInstanceUrl.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setWaNewInstanceName("");
+        setWaNewInstanceUrl("");
+        setToast("Instância criada.");
+        await loadWaInstances();
+      } else {
+        setToast(data.error ?? "Erro ao criar instância.");
+      }
+    } catch { setToast("Erro ao criar instância."); }
+    setWaBusy(false);
+  }
+
+  async function deleteWaInstance(instanceId: string) {
+    if (!tenant) return;
+    setWaBusy(true);
+    try {
+      const res = await authFetch("tenant-admin", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "manage_whatsapp_instance",
+          sub_action: "delete",
+          tenant_id: tenant.id,
+          instance_id: instanceId,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setToast("Instância removida.");
+        await loadWaInstances();
+      } else {
+        setToast(data.error ?? "Erro ao remover.");
+      }
+    } catch { setToast("Erro ao remover."); }
+    setWaBusy(false);
+  }
+
+  async function loadWaKeys() {
+    if (!tenant) return;
+    try {
+      const res = await authFetch("tenant-admin", {
+        method: "POST",
+        body: JSON.stringify({ action: "list_webhook_keys", tenant_id: tenant.id }),
+      });
+      const data = await res.json();
+      if (data.ok) setWaKeys(data.keys ?? []);
+    } catch { /* */ }
+  }
+
+  async function generateWaKey() {
+    if (!tenant) return;
+    setWaBusy(true);
+    try {
+      const res = await authFetch("tenant-admin", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "generate_webhook_key",
+          tenant_id: tenant.id,
+          label: waNewKeyLabel.trim() || "default",
+        }),
+      });
+      const data = await res.json();
+      if (data.ok && data.key) {
+        setWaGeneratedKey(data.key.plain_key);
+        setWaNewKeyLabel("");
+        setToast("Chave gerada. Copie agora — ela não será exibida novamente.");
+        await loadWaKeys();
+      } else {
+        setToast(data.error ?? "Erro ao gerar chave.");
+      }
+    } catch { setToast("Erro ao gerar chave."); }
+    setWaBusy(false);
+  }
+
+  async function revokeWaKey(keyId: string) {
+    if (!tenant) return;
+    setWaBusy(true);
+    try {
+      const res = await authFetch("tenant-admin", {
+        method: "POST",
+        body: JSON.stringify({ action: "revoke_webhook_key", tenant_id: tenant.id, key_id: keyId }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setToast("Chave revogada.");
+        await loadWaKeys();
+      }
+    } catch { /* */ }
+    setWaBusy(false);
+  }
+
   async function checkSupabaseHealth() {
     if (!isConfigured || !supabase) {
       setSupabaseStatus("error");
@@ -1534,6 +1660,7 @@ export function App() {
             <NavButton icon={<MessageCircle />} label="Atendimentos" active={active === "leads"} onClick={() => goToSection("leads")} />
             <NavButton icon={<LayoutList />} label="CRM" active={active === "crm"} onClick={() => goToSection("crm")} />
             <NavButton icon={<ShieldCheck />} label="Integrações" active={active === "integrations"} onClick={() => goToSection("integrations")} />
+            <NavButton icon={<MessageCircle />} label="WhatsApp" active={active === "whatsapp"} onClick={() => { goToSection("whatsapp"); loadWaInstances(); loadWaKeys(); }} />
             <NavButton icon={<LayoutList />} label="Clientes" active={active === "clients"} onClick={() => goToSection("clients")} />
             <NavButton icon={<Users />} label="Usuários" active={active === "users"} onClick={() => goToSection("users")} />
             <NavButton icon={<FileText />} label="Relatórios" active={active === "reports"} onClick={() => goToSection("reports")} />
@@ -2033,6 +2160,194 @@ export function App() {
           </section>
         )}
 
+        {active === "whatsapp" && (
+          <section className="stack">
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <h2>Instâncias WhatsApp</h2>
+                  <p>Gerencie conexões com a Evolution API. Cada empresa pode ter uma ou mais instâncias.</p>
+                </div>
+                <MessageCircle size={18} />
+              </div>
+
+              <div className="mini-form" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "flex-end" }}>
+                <input placeholder="Nome da instância" value={waNewInstanceName} onChange={(e) => setWaNewInstanceName(e.target.value)} style={{ flex: "1 1 180px" }} />
+                <input placeholder="URL da API (ex: https://evo.seudominio.com)" value={waNewInstanceUrl} onChange={(e) => setWaNewInstanceUrl(e.target.value)} style={{ flex: "1 1 240px" }} />
+                <button className="primary-button" onClick={createWaInstance} disabled={waBusy || !waNewInstanceName.trim()}>Criar instância</button>
+              </div>
+
+              {waInstances.length === 0 && !waBusy && (
+                <p style={{ opacity: 0.6, marginTop: "0.75rem" }}>Nenhuma instância cadastrada. Crie a primeira acima.</p>
+              )}
+
+              {waInstances.length > 0 && (
+                <div className="table-wrap" style={{ marginTop: "0.75rem" }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Nome</th>
+                        <th>Provedor</th>
+                        <th>Status</th>
+                        <th>Telefone</th>
+                        <th>Último acesso</th>
+                        <th>QR Code</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {waInstances.map((inst) => (
+                        <tr key={inst.id}>
+                          <td>{inst.instance_name}</td>
+                          <td>{inst.provider === "evolution" ? "Evolution API" : "Cloud API"}</td>
+                          <td>
+                            <span className={`status-dot ${inst.status === "connected" ? "status-active" : inst.status === "connecting" ? "status-warn" : "status-off"}`} />
+                            {inst.status === "connected" ? "Conectado" : inst.status === "connecting" ? "Conectando" : inst.status === "banned" ? "Banido" : "Desconectado"}
+                          </td>
+                          <td>{inst.phone_number ?? "-"}</td>
+                          <td>{inst.last_seen_at ? timeAgo(inst.last_seen_at) : "-"}</td>
+                          <td>
+                            {inst.qr_code_data ? (
+                              <img src={inst.qr_code_data.startsWith("data:") ? inst.qr_code_data : `data:image/png;base64,${inst.qr_code_data}`} alt="QR Code" style={{ width: 120, height: 120, borderRadius: 8, background: "#fff", padding: 4 }} />
+                            ) : (
+                              <span style={{ opacity: 0.5 }}>-</span>
+                            )}
+                          </td>
+                          <td>
+                            <button className="ghost-dark-button" onClick={() => deleteWaInstance(inst.id)} disabled={waBusy} style={{ fontSize: "0.8rem" }}>Remover</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <button className="ghost-dark-button" onClick={loadWaInstances} disabled={waBusy} style={{ marginTop: "0.5rem" }}>Atualizar lista</button>
+            </section>
+
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <h2>Chaves de API (Webhook)</h2>
+                  <p>Gere chaves para autenticar os webhooks do n8n. Cada chave identifica a empresa automaticamente.</p>
+                </div>
+                <ShieldCheck size={18} />
+              </div>
+
+              <div className="mini-form" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "flex-end" }}>
+                <input placeholder="Rótulo (ex: n8n-producao)" value={waNewKeyLabel} onChange={(e) => setWaNewKeyLabel(e.target.value)} style={{ flex: "1 1 200px" }} />
+                <button className="primary-button" onClick={generateWaKey} disabled={waBusy}>Gerar chave</button>
+              </div>
+
+              {waGeneratedKey && (
+                <div style={{ marginTop: "0.75rem", padding: "0.75rem", background: "var(--surface, #f1f5f9)", borderRadius: 8, wordBreak: "break-all" }}>
+                  <label className="mini-label">Chave gerada (copie agora)</label>
+                  <div className="copy-line">
+                    <code style={{ fontSize: "0.85rem" }}>{waGeneratedKey}</code>
+                    <button className="icon-button" onClick={() => { navigator.clipboard.writeText(waGeneratedKey); setToast("Chave copiada."); }} title="Copiar chave" type="button">
+                      <Clipboard size={15} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {waKeys.length > 0 && (
+                <div className="table-wrap" style={{ marginTop: "0.75rem" }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Rótulo</th>
+                        <th>Status</th>
+                        <th>Último uso</th>
+                        <th>Criada em</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {waKeys.map((k) => (
+                        <tr key={k.id}>
+                          <td>{k.label}</td>
+                          <td>
+                            <span className={`status-dot ${k.status === "active" ? "status-active" : "status-off"}`} />
+                            {k.status === "active" ? "Ativa" : "Revogada"}
+                          </td>
+                          <td>{k.last_used_at ? timeAgo(k.last_used_at) : "Nunca"}</td>
+                          <td>{formatDate(k.created_at)}</td>
+                          <td>
+                            {k.status === "active" && (
+                              <button className="ghost-dark-button" onClick={() => revokeWaKey(k.id)} disabled={waBusy} style={{ fontSize: "0.8rem" }}>Revogar</button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <h2>Configuração n8n</h2>
+                  <p>Use o endpoint abaixo no n8n para enviar eventos da Evolution API ao IDX.</p>
+                </div>
+                <SlidersHorizontal size={18} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <div>
+                  <label className="mini-label">URL do Webhook</label>
+                  <div className="copy-line">
+                    <code style={{ fontSize: "0.85rem" }}>{String(import.meta.env.VITE_SUPABASE_URL || "https://tykeycwworjtfpssjevw.supabase.co")}/functions/v1/n8n-webhook</code>
+                    <button className="icon-button" onClick={() => { navigator.clipboard.writeText(`${String(import.meta.env.VITE_SUPABASE_URL || "https://tykeycwworjtfpssjevw.supabase.co")}/functions/v1/n8n-webhook`); setToast("URL copiada."); }} title="Copiar URL" type="button">
+                      <Clipboard size={15} />
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="mini-label">Header de autenticação</label>
+                  <div className="copy-line">
+                    <code style={{ fontSize: "0.85rem" }}>x-api-key: [sua chave gerada acima]</code>
+                  </div>
+                </div>
+                <div>
+                  <label className="mini-label">Método</label>
+                  <code style={{ fontSize: "0.85rem" }}>POST</code>
+                </div>
+                <div>
+                  <label className="mini-label">Ações disponíveis</label>
+                  <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                    {["connection_status", "message_received", "message_sent", "message_status"].map((a) => (
+                      <span key={a} className="tag-pill">{a}</span>
+                    ))}
+                  </div>
+                </div>
+                <details style={{ marginTop: "0.25rem" }}>
+                  <summary style={{ cursor: "pointer", fontWeight: 500 }}>Exemplo de payload</summary>
+                  <pre style={{ fontSize: "0.8rem", padding: "0.75rem", background: "var(--surface, #f1f5f9)", borderRadius: 8, overflowX: "auto", marginTop: "0.5rem" }}>{`{
+  "action": "message_received",
+  "instance": "nome-da-instancia",
+  "data": {
+    "key": {
+      "remoteJid": "5511999998888@s.whatsapp.net",
+      "fromMe": false,
+      "id": "ABC123"
+    },
+    "pushName": "Cliente",
+    "messageType": "conversation",
+    "message": {
+      "conversation": "Olá, tenho interesse!"
+    },
+    "messageTimestamp": 1697200000
+  }
+}`}</pre>
+                </details>
+              </div>
+            </section>
+          </section>
+        )}
+
         {active === "clients" && (
           <section className="stack">
             <section className="panel">
@@ -2405,6 +2720,7 @@ export function App() {
       {mobileMenuOpen && !isSellerExperience && (
         <section className="mobile-more-sheet" aria-label="Mais opções">
           <button type="button" onClick={() => goToSection("integrations")} className={active === "integrations" ? "active" : ""}><ShieldCheck size={17} /> Meta</button>
+          <button type="button" onClick={() => { goToSection("whatsapp"); loadWaInstances(); loadWaKeys(); }} className={active === "whatsapp" ? "active" : ""}><MessageCircle size={17} /> WhatsApp</button>
           <button type="button" onClick={() => goToSection("leads")} className={active === "leads" ? "active" : ""}><MessageCircle size={17} /> Atendimentos</button>
           <button type="button" onClick={() => goToSection("clients")} className={active === "clients" ? "active" : ""}><LayoutList size={17} /> Clientes</button>
           <button type="button" onClick={() => goToSection("users")} className={active === "users" ? "active" : ""}><Users size={17} /> Usuários</button>
@@ -3712,6 +4028,7 @@ function sectionTitle(section: Section): string {
     leads: "Atendimentos",
     crm: "CRM",
     integrations: "Integrações",
+    whatsapp: "WhatsApp",
     clients: "Clientes",
     users: "Usuários",
     reports: "Relatórios",

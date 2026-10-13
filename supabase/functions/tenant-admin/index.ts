@@ -443,5 +443,136 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true, invite });
   }
 
+  if (action === "manage_whatsapp_instance") {
+    const subAction = String(body.sub_action ?? "list");
+
+    if (subAction === "list") {
+      const { data, error: listErr } = await supa
+        .from("whatsapp_instances")
+        .select("id, instance_name, phone_number, provider, status, api_url, qr_code_data, last_seen_at, created_at, updated_at")
+        .eq("tenant_id", tenantId)
+        .order("created_at", { ascending: true });
+      if (listErr) return json({ error: listErr.message }, 400);
+      return json({ ok: true, instances: data ?? [] });
+    }
+
+    if (subAction === "create") {
+      const instanceName = cleanText(body.instance_name);
+      const apiUrl = cleanText(body.api_url);
+      if (!instanceName) return json({ error: "missing_instance_name" }, 400);
+
+      const { data: inst, error: createErr } = await supa
+        .from("whatsapp_instances")
+        .insert({
+          tenant_id: tenantId,
+          instance_name: instanceName,
+          provider: body.provider === "cloud_api" ? "cloud_api" : "evolution",
+          api_url: apiUrl || null,
+          status: "disconnected",
+        })
+        .select("*")
+        .single();
+
+      if (createErr) return json({ error: createErr.message }, 400);
+      await audit(user.id, "whatsapp_instance.created", tenantId, "whatsapp_instance", inst.id, { instance_name: instanceName });
+      return json({ ok: true, instance: inst });
+    }
+
+    if (subAction === "update") {
+      const instanceId = String(body.instance_id ?? "");
+      if (!instanceId) return json({ error: "missing_instance_id" }, 400);
+
+      const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (body.api_url !== undefined) updates.api_url = cleanText(body.api_url) || null;
+      if (body.instance_name !== undefined) updates.instance_name = cleanText(body.instance_name);
+      if (body.status !== undefined && ["disconnected", "connecting", "connected", "banned"].includes(body.status)) {
+        updates.status = body.status;
+      }
+
+      const { data: updated, error: updateErr } = await supa
+        .from("whatsapp_instances")
+        .update(updates)
+        .eq("id", instanceId)
+        .eq("tenant_id", tenantId)
+        .select("*")
+        .single();
+
+      if (updateErr) return json({ error: updateErr.message }, 400);
+      await audit(user.id, "whatsapp_instance.updated", tenantId, "whatsapp_instance", instanceId, updates);
+      return json({ ok: true, instance: updated });
+    }
+
+    if (subAction === "delete") {
+      const instanceId = String(body.instance_id ?? "");
+      if (!instanceId) return json({ error: "missing_instance_id" }, 400);
+
+      const { error: delErr } = await supa
+        .from("whatsapp_instances")
+        .delete()
+        .eq("id", instanceId)
+        .eq("tenant_id", tenantId);
+
+      if (delErr) return json({ error: delErr.message }, 400);
+      await audit(user.id, "whatsapp_instance.deleted", tenantId, "whatsapp_instance", instanceId, {});
+      return json({ ok: true });
+    }
+
+    return json({ error: "unknown_sub_action" }, 400);
+  }
+
+  if (action === "generate_webhook_key") {
+    const label = cleanText(body.label) || "default";
+
+    const rawKey = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+
+    const encoded = new TextEncoder().encode(rawKey);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", encoded);
+    const keyHash = Array.from(new Uint8Array(hashBuffer))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+
+    const { data: keyRow, error: keyErr } = await supa
+      .from("tenant_webhook_keys")
+      .insert({
+        tenant_id: tenantId,
+        key_hash: keyHash,
+        label,
+        status: "active",
+      })
+      .select("id, tenant_id, label, status, created_at")
+      .single();
+
+    if (keyErr) return json({ error: keyErr.message }, 400);
+    await audit(user.id, "webhook_key.generated", tenantId, "tenant_webhook_key", keyRow.id, { label });
+    return json({ ok: true, key: { ...keyRow, plain_key: rawKey } });
+  }
+
+  if (action === "list_webhook_keys") {
+    const { data, error: listErr } = await supa
+      .from("tenant_webhook_keys")
+      .select("id, tenant_id, label, last_used_at, status, created_at")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false });
+    if (listErr) return json({ error: listErr.message }, 400);
+    return json({ ok: true, keys: data ?? [] });
+  }
+
+  if (action === "revoke_webhook_key") {
+    const keyId = String(body.key_id ?? "");
+    if (!keyId) return json({ error: "missing_key_id" }, 400);
+
+    const { error: revokeErr } = await supa
+      .from("tenant_webhook_keys")
+      .update({ status: "revoked" })
+      .eq("id", keyId)
+      .eq("tenant_id", tenantId);
+
+    if (revokeErr) return json({ error: revokeErr.message }, 400);
+    await audit(user.id, "webhook_key.revoked", tenantId, "tenant_webhook_key", keyId, {});
+    return json({ ok: true });
+  }
+
   return json({ error: "unknown_action" }, 400);
 });

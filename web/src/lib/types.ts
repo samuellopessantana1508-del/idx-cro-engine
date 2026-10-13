@@ -132,6 +132,81 @@ export type MetaCampaignRoi = {
   date_stop?: string | null;
 };
 
+export type WhatsAppInstance = {
+  id: string;
+  tenant_id: string;
+  instance_name: string;
+  phone_number?: string | null;
+  provider: "evolution" | "cloud_api";
+  status: "disconnected" | "connecting" | "connected" | "banned";
+  api_url?: string | null;
+  qr_code_data?: string | null;
+  last_seen_at?: string | null;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WhatsAppContact = {
+  id: string;
+  tenant_id: string;
+  instance_id: string;
+  wa_id: string;
+  phone?: string | null;
+  push_name?: string | null;
+  profile_pic_url?: string | null;
+  is_business: boolean;
+  tags?: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type WhatsAppConversation = {
+  id: string;
+  tenant_id: string;
+  instance_id: string;
+  contact_id: string;
+  tracking_session_id?: string | null;
+  status: "active" | "archived" | "spam";
+  last_message_at?: string | null;
+  unread_count: number;
+  ai_summary?: string | null;
+  ai_intent?: string | null;
+  ai_sentiment?: "positive" | "neutral" | "negative" | null;
+  ai_purchase_probability?: number | null;
+  ai_analyzed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  contact?: WhatsAppContact;
+};
+
+export type WhatsAppMessage = {
+  id: string;
+  tenant_id: string;
+  conversation_id: string;
+  wa_message_id?: string | null;
+  direction: "inbound" | "outbound";
+  sender_phone?: string | null;
+  content_type: "text" | "image" | "audio" | "video" | "document" | "location" | "contact" | "sticker" | "reaction" | "unknown";
+  body?: string | null;
+  media_url?: string | null;
+  media_mime?: string | null;
+  quoted_message_id?: string | null;
+  timestamp: string;
+  status: "sent" | "delivered" | "read" | "failed" | "pending";
+  created_at: string;
+};
+
+export type WebhookKey = {
+  id: string;
+  tenant_id: string;
+  label: string;
+  last_used_at?: string | null;
+  status: "active" | "revoked";
+  created_at: string;
+  plain_key?: string;
+};
+
 export type MetaAudienceStatus = {
   tenant_id: string;
   audience_key: "qualified" | "purchased";
