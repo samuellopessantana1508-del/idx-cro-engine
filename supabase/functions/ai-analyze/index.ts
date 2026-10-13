@@ -318,6 +318,7 @@ async function upsertInsight(
     updated_at: new Date().toISOString(),
   }).eq("id", conversationId);
 
+  let signalsCreated = 0;
   if (saleSignals && saleSignals.length > 0) {
     const { data: conv } = await supa
       .from("whatsapp_conversations")
@@ -332,16 +333,20 @@ async function upsertInsight(
       const conf = Math.min(1, Math.max(0, Number(sig.confidence ?? 0)));
       if (conf < 0.3) continue;
 
-      await supa.from("sale_signals").insert({
+      const isAutoConfirmable = signalType === "confirmed_sale" && conf >= 0.9 && sig.evidence;
+
+      const { error: insertErr } = await supa.from("sale_signals").insert({
         tenant_id: tenantId,
         conversation_id: conversationId,
         tracking_session_id: conv?.tracking_session_id ?? null,
         product_name: sig.product ? String(sig.product) : null,
+        product_category: sig.category ? String(sig.category) : null,
         estimated_value: sig.estimated_value ? Number(sig.estimated_value) : null,
         signal_type: signalType,
         confidence: conf,
         evidence_text: sig.evidence ? String(sig.evidence) : null,
         evidence_messages: sig.source_msg_ids ?? [],
+        requires_human_confirmation: !isAutoConfirmable,
         purchase_data: signalType === "confirmed_sale" ? {
           product: sig.product,
           value: sig.estimated_value,
@@ -350,8 +355,10 @@ async function upsertInsight(
           ready_for_capi: true,
         } : null,
       });
+      if (!insertErr) signalsCreated++;
     }
   }
+  return signalsCreated;
 }
 
 Deno.serve(async (req: Request) => {
@@ -443,7 +450,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const lastMsgId = allMessages[allMessages.length - 1].id;
-    await upsertInsight(tenantId, conversationId, analysis, lastMsgId, unanalyzedIds.length, aiResult.model);
+    const signalsCreated = await upsertInsight(tenantId, conversationId, analysis, lastMsgId, unanalyzedIds.length, aiResult.model);
     await updateCRM(tenantId, conversationId, analysis);
 
     if (unanalyzedIds.length > 0) {
@@ -465,6 +472,7 @@ Deno.serve(async (req: Request) => {
       sentiment: analysis.sentiment,
       purchase_probability: analysis.purchase_probability,
       sale_signals_count: Array.isArray(analysis.sale_signals) ? analysis.sale_signals.length : 0,
+      sale_signals_created: signalsCreated,
     });
   }
 

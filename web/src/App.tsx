@@ -29,10 +29,10 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
-import type { CapiEvent, CapiHealth, ConversationInsight, CrmActivity, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, Offer, SaleSignal, SmartLink, Tenant, TenantUser, WebhookKey, WhatsAppConversation, WhatsAppInstance, WhatsAppMessage } from "./lib/types";
+import type { CapiEvent, CapiHealth, ConversationInsight, CrmActivity, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, Offer, SaleSignal, SaleSignalCapiStatus, SmartLink, Tenant, TenantUser, WebhookKey, WhatsAppConversation, WhatsAppInstance, WhatsAppMessage } from "./lib/types";
 import { envConfigured, formatDate, formatMoney, linkCode, slugify, smartLinkUrl, timeAgo } from "./lib/utils";
 
-type Section = "dashboard" | "sales" | "links" | "leads" | "crm" | "integrations" | "whatsapp" | "clients" | "users" | "reports" | "capi" | "settings";
+type Section = "dashboard" | "sales" | "links" | "leads" | "crm" | "integrations" | "whatsapp" | "clients" | "users" | "reports" | "capi" | "ai-sales" | "settings";
 
 type PlatformRole = "owner" | "admin" | "support" | "viewer";
 
@@ -160,7 +160,7 @@ type MetaAdAccountAsset = {
 };
 
 const META_OAUTH_CALLBACK_URL = "https://idxparasuaempresa.com.br/meta-oauth-callback.html";
-const validSections: Section[] = ["dashboard", "sales", "links", "leads", "crm", "integrations", "whatsapp", "clients", "users", "reports", "capi", "settings"];
+const validSections: Section[] = ["dashboard", "sales", "links", "leads", "crm", "integrations", "whatsapp", "clients", "users", "reports", "capi", "ai-sales", "settings"];
 
 const emptyDraft: DraftLink = {
   offerName: "",
@@ -404,6 +404,11 @@ export function App() {
   const [waSaleSignals, setWaSaleSignals] = useState<SaleSignal[]>([]);
   const [waInsightOpen, setWaInsightOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const [aiSales, setAiSales] = useState<SaleSignal[]>([]);
+  const [aiSalesFilter, setAiSalesFilter] = useState<SaleSignalCapiStatus | "all">("all");
+  const [aiSalesLoading, setAiSalesLoading] = useState(false);
+  const [aiSalesBusy, setAiSalesBusy] = useState<string>("");
 
   const tenant = tenants.find((item) => item.id === tenantId) ?? tenants[0];
   const isPlatformUser = Boolean(platformRole);
@@ -1546,6 +1551,90 @@ export function App() {
     setWaSaleSignals(signals ?? []);
   }
 
+  async function loadAiSales() {
+    if (!tenant || !supabase) return;
+    setAiSalesLoading(true);
+    try {
+      let query = supabase
+        .from("sale_signals")
+        .select("*")
+        .eq("tenant_id", tenant.id)
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (aiSalesFilter !== "all") query = query.eq("capi_status", aiSalesFilter);
+      const { data } = await query;
+      setAiSales(data ?? []);
+    } finally {
+      setAiSalesLoading(false);
+    }
+  }
+
+  async function confirmAiSale(signalId: string, revenue?: number) {
+    if (!tenant) return;
+    setAiSalesBusy(signalId);
+    try {
+      const payload: Record<string, unknown> = {
+        action: "confirm_sale",
+        tenant_id: tenant.id,
+        signal_id: signalId,
+      };
+      if (revenue && revenue > 0) payload.revenue = revenue;
+      const res = await authFetch("sale-confirm", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setToast(data.already_sent ? "Venda já enviada ao Meta anteriormente." : data.error ? `CAPI falhou: ${data.error}` : "Venda confirmada e enviada ao Meta.");
+        loadAiSales();
+      } else {
+        setToast(data.error ?? "Erro ao confirmar venda.");
+      }
+    } finally {
+      setAiSalesBusy("");
+    }
+  }
+
+  async function rejectAiSale(signalId: string) {
+    if (!tenant) return;
+    setAiSalesBusy(signalId);
+    try {
+      const res = await authFetch("sale-confirm", {
+        method: "POST",
+        body: JSON.stringify({ action: "reject_sale", tenant_id: tenant.id, signal_id: signalId }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setToast("Sinal rejeitado.");
+        loadAiSales();
+      } else {
+        setToast(data.error ?? "Erro ao rejeitar.");
+      }
+    } finally {
+      setAiSalesBusy("");
+    }
+  }
+
+  async function retryAiSaleCapi(signalId: string) {
+    if (!tenant) return;
+    setAiSalesBusy(signalId);
+    try {
+      const res = await authFetch("sale-confirm", {
+        method: "POST",
+        body: JSON.stringify({ action: "retry_capi", tenant_id: tenant.id, signal_id: signalId }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setToast(data.error ? `CAPI falhou novamente: ${data.error}` : "Evento reenviado ao Meta.");
+        loadAiSales();
+      } else {
+        setToast(data.error ?? "Erro ao reenviar.");
+      }
+    } finally {
+      setAiSalesBusy("");
+    }
+  }
+
   async function connectEvoInstance(instanceId: string) {
     if (!tenant) return;
     const inst = waInstances.find((i) => i.id === instanceId);
@@ -1675,6 +1764,10 @@ export function App() {
       loadWaKeys();
     }
   }, [active, tenant?.id]);
+
+  useEffect(() => {
+    if (active === "ai-sales" && tenant) loadAiSales();
+  }, [active, tenant?.id, aiSalesFilter]);
 
   useEffect(() => {
     if (waMessages.length > 0) {
@@ -1906,6 +1999,7 @@ export function App() {
             <NavButton icon={<Users />} label="Usuários" active={active === "users"} onClick={() => goToSection("users")} />
             <NavButton icon={<FileText />} label="Relatórios" active={active === "reports"} onClick={() => goToSection("reports")} />
             <NavButton icon={<Activity />} label="CAPI" active={active === "capi"} onClick={() => goToSection("capi")} />
+            <NavButton icon={<TrendingUp />} label="Vendas IA" active={active === "ai-sales"} onClick={() => goToSection("ai-sales")} />
             <NavButton icon={<Settings />} label="Config" active={active === "settings"} onClick={() => goToSection("settings")} />
           </nav>
           )}
@@ -3149,6 +3243,158 @@ export function App() {
           </section>
         )}
 
+        {active === "ai-sales" && (
+          <section className="page-grid">
+            <div className="ai-sales-filters">
+              {(["all", "pending", "success", "failed", "skipped"] as const).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  className={`ghost-button ${aiSalesFilter === f ? "active" : ""}`}
+                  onClick={() => setAiSalesFilter(f)}
+                >
+                  {f === "all" ? "Todos" : f === "pending" ? "Pendentes" : f === "success" ? "Enviadas" : f === "failed" ? "Falhas" : "Rejeitadas"}
+                </button>
+              ))}
+            </div>
+
+            <div className="kpi-grid">
+              <Kpi label="Total" value={String(aiSales.length)} />
+              <Kpi label="Pendentes" value={String(aiSales.filter((s) => s.capi_status === "pending").length)} />
+              <Kpi label="Confirmadas" value={String(aiSales.filter((s) => s.status === "confirmed" || s.status === "converted").length)} />
+              <Kpi label="Enviadas ao Meta" value={String(aiSales.filter((s) => s.capi_status === "success").length)} />
+              <Kpi label="Falhas" value={String(aiSales.filter((s) => s.capi_status === "failed").length)} />
+            </div>
+
+            {aiSalesLoading && <p className="empty-state">Carregando sinais de venda…</p>}
+
+            {!aiSalesLoading && aiSales.length === 0 && (
+              <p className="empty-state">Nenhum sinal de venda encontrado.</p>
+            )}
+
+            {!aiSalesLoading && aiSales.length > 0 && (
+              <section className="ai-sales-list">
+                {aiSales.map((sig) => {
+                  const busy = aiSalesBusy === sig.id;
+                  const isPending = sig.status === "detected" && sig.capi_status === "pending";
+                  const isFailed = sig.capi_status === "failed";
+                  const signalLabel: Record<string, string> = {
+                    interest: "Interesse",
+                    negotiation: "Negociação",
+                    commitment: "Compromisso",
+                    confirmed_sale: "Venda confirmada",
+                    post_sale: "Pós-venda",
+                  };
+                  const statusLabel: Record<string, string> = {
+                    pending: "Pendente",
+                    sending: "Enviando…",
+                    success: "Enviado ao Meta",
+                    failed: "Falha no envio",
+                    skipped: "Rejeitado",
+                  };
+                  const statusClass: Record<string, string> = {
+                    pending: "badge-warn",
+                    sending: "badge-info",
+                    success: "badge-ok",
+                    failed: "badge-bad",
+                    skipped: "badge-muted",
+                  };
+                  return (
+                    <article key={sig.id} className="ai-sale-card">
+                      <div className="ai-sale-header">
+                        <div className="ai-sale-title">
+                          <strong>{sig.product_name || "Produto não identificado"}</strong>
+                          {sig.estimated_value != null && sig.estimated_value > 0 && (
+                            <span className="ai-sale-value">R$ {sig.estimated_value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                          )}
+                        </div>
+                        <span className={`badge ${statusClass[sig.capi_status] ?? "badge-muted"}`}>
+                          {statusLabel[sig.capi_status] ?? sig.capi_status}
+                        </span>
+                      </div>
+
+                      <div className="ai-sale-meta">
+                        <span className="badge badge-info">{signalLabel[sig.signal_type] ?? sig.signal_type}</span>
+                        {sig.confidence != null && (
+                          <span className="ai-sale-confidence">
+                            Confiança: {Math.round(sig.confidence * 100)}%
+                          </span>
+                        )}
+                        {sig.auto_confirmed && <span className="badge badge-ok">Auto-confirmado</span>}
+                        {sig.requires_human_confirmation && sig.status === "detected" && (
+                          <span className="badge badge-warn">Requer confirmação</span>
+                        )}
+                        {sig.product_category && <span className="ai-sale-cat">{sig.product_category}</span>}
+                      </div>
+
+                      {sig.evidence_text && (
+                        <p className="ai-sale-evidence">"{sig.evidence_text}"</p>
+                      )}
+
+                      {isFailed && sig.capi_error && (
+                        <p className="ai-sale-error">Erro: {sig.capi_error} (tentativas: {sig.capi_attempts})</p>
+                      )}
+
+                      {sig.confirmed_at && (
+                        <p className="ai-sale-ts">
+                          Confirmado em {new Date(sig.confirmed_at).toLocaleString("pt-BR")}
+                          {sig.confirmed_by ? ` por ${sig.confirmed_by}` : ""}
+                        </p>
+                      )}
+                      {sig.rejected_at && (
+                        <p className="ai-sale-ts">
+                          Rejeitado em {new Date(sig.rejected_at).toLocaleString("pt-BR")}
+                        </p>
+                      )}
+
+                      <p className="ai-sale-ts">
+                        Detectado em {new Date(sig.created_at).toLocaleString("pt-BR")}
+                      </p>
+
+                      <div className="ai-sale-actions">
+                        {isPending && (
+                          <>
+                            <button
+                              type="button"
+                              className="primary-button"
+                              disabled={busy}
+                              onClick={() => {
+                                const raw = prompt("Valor da venda (R$)? Deixe vazio para manter o estimado.");
+                                const rev = raw ? parseFloat(raw.replace(",", ".")) : undefined;
+                                confirmAiSale(sig.id, rev);
+                              }}
+                            >
+                              {busy ? "Confirmando…" : "Confirmar venda"}
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button"
+                              disabled={busy}
+                              onClick={() => rejectAiSale(sig.id)}
+                            >
+                              Rejeitar
+                            </button>
+                          </>
+                        )}
+                        {isFailed && (
+                          <button
+                            type="button"
+                            className="primary-button"
+                            disabled={busy}
+                            onClick={() => retryAiSaleCapi(sig.id)}
+                          >
+                            {busy ? "Reenviando…" : "Reenviar ao Meta"}
+                          </button>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </section>
+            )}
+          </section>
+        )}
+
         {active === "settings" && (
           <section className="stack">
             <section className="panel">
@@ -3265,6 +3511,7 @@ export function App() {
           <button type="button" onClick={() => goToSection("users")} className={active === "users" ? "active" : ""}><Users size={17} /> Usuários</button>
           <button type="button" onClick={() => goToSection("reports")} className={active === "reports" ? "active" : ""}><FileText size={17} /> Relatórios</button>
           <button type="button" onClick={() => goToSection("capi")} className={active === "capi" ? "active" : ""}><Activity size={17} /> CAPI</button>
+          <button type="button" onClick={() => goToSection("ai-sales")} className={active === "ai-sales" ? "active" : ""}><TrendingUp size={17} /> Vendas IA</button>
           <button type="button" onClick={() => goToSection("settings")} className={active === "settings" ? "active" : ""}><Settings size={17} /> Config</button>
           <button type="button" onClick={logout}><LogOut size={17} /> Sair</button>
         </section>
@@ -4572,6 +4819,7 @@ function sectionTitle(section: Section): string {
     users: "Usuários",
     reports: "Relatórios",
     capi: "CAPI Health",
+    "ai-sales": "Vendas IA",
     settings: "Configuração",
   }[section];
 }

@@ -2723,4 +2723,129 @@ td small {
   .wa-thread-header {
     position: static;
   }
+
+  .ai-sales-filters {
+    flex-wrap: wrap;
+  }
+
+  .ai-sale-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .ai-sale-actions {
+    flex-direction: column;
+  }
+}
+
+/* AI Sales */
+.ai-sales-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ai-sales-filters .ghost-button {
+  font-size: 0.82rem;
+  padding: 7px 14px;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: transparent;
+}
+
+.ai-sales-filters .ghost-button.active {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+.ai-sales-list {
+  display: grid;
+  gap: 14px;
+}
+
+.ai-sale-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px 20px;
+  display: grid;
+  gap: 10px;
+}
+
+.ai-sale-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.ai-sale-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ai-sale-title strong {
+  font-size: 1rem;
+}
+
+.ai-sale-value {
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-sale-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.ai-sale-confidence {
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-sale-cat {
+  font-size: 0.78rem;
+  color: var(--muted-2);
+}
+
+.ai-sale-evidence {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-style: italic;
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--soft);
+  border-radius: 8px;
+  line-height: 1.5;
+}
+
+.ai-sale-error {
+  font-size: 0.82rem;
+  color: #c0392b;
+  margin: 0;
+  padding: 6px 10px;
+  background: #fdecea;
+  border-radius: 6px;
+}
+
+.ai-sale-ts {
+  font-size: 0.78rem;
+  color: var(--muted-2);
+  margin: 0;
+}
+
+.ai-sale-actions {
+  display: flex;
+  gap: 10px;
+  padding-top: 4px;
 }

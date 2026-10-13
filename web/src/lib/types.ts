@@ -233,6 +233,8 @@ export type ConversationInsight = {
   updated_at: string;
 };
 
+export type SaleSignalCapiStatus = "pending" | "sending" | "success" | "failed" | "skipped";
+
 export type SaleSignal = {
   id: string;
   tenant_id: string;
@@ -249,6 +251,18 @@ export type SaleSignal = {
   status: "detected" | "confirmed" | "rejected" | "converted";
   purchase_data?: Record<string, unknown> | null;
   capi_sent: boolean;
+  confirmed_by?: string | null;
+  confirmed_at?: string | null;
+  rejected_by?: string | null;
+  rejected_at?: string | null;
+  capi_event_id?: string | null;
+  capi_status: SaleSignalCapiStatus;
+  capi_attempts: number;
+  capi_last_attempt_at?: string | null;
+  capi_error?: string | null;
+  meta_event_id?: string | null;
+  requires_human_confirmation: boolean;
+  auto_confirmed: boolean;
   created_at: string;
   updated_at: string;
 };

@@ -331,6 +331,66 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [1180, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-sale-signals",
+              "leftValue": "={{ $json.sale_signals_created }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "has-sale-signals",
+      "name": "Has Sale Signals?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1640, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_FUNCTIONS_URL }}/sale-confirm",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.IDX_WEBHOOK_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"action\": \"auto_process\",\n  \"tenant_id\": \"{{ $node['Ingest Message (n8n-webhook)'].json.tenant_id || $node['Ingest Sent Message'].json.tenant_id || '' }}\",\n  \"conversation_id\": \"{{ $node['Ingest Message (n8n-webhook)'].json.conversation_id || $node['Ingest Sent Message'].json.conversation_id || '' }}\"\n}",
+        "options": {
+          "timeout": 60000,
+          "allowUnauthorizedCerts": false
+        }
+      },
+      "id": "process-sales",
+      "name": "Process Sale Signals",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1880, 200]
     }
   ],
   "connections": {
@@ -390,6 +450,21 @@
         [
           { "node": "AI Analyze Conversation", "type": "main", "index": 0 }
         ]
+      ]
+    },
+    "AI Analyze Conversation": {
+      "main": [
+        [
+          { "node": "Has Sale Signals?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Has Sale Signals?": {
+      "main": [
+        [
+          { "node": "Process Sale Signals", "type": "main", "index": 0 }
+        ],
+        []
       ]
     },
     "Is Connection?": {
