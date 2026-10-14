@@ -463,8 +463,10 @@ Deno.serve(async (req: Request) => {
     try {
       aiResult = await callAI(SYSTEM_PROMPT, prompt);
     } catch (err) {
-      console.error("ai_call_failed", err);
-      return json({ error: "ai_call_failed" }, 502);
+      const errMsg = err instanceof Error ? err.message : "unknown_error";
+      const safeMsg = errMsg.replace(/sk-[a-zA-Z0-9_-]+/g, "sk-***").replace(/key[=: ]+\S+/gi, "key=***");
+      console.error("ai_call_failed:", safeMsg);
+      return json({ error: "ai_call_failed", reason: safeMsg }, 502);
     }
 
     const analysis = parseAIResponse(aiResult.text);
