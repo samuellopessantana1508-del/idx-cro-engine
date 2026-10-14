@@ -277,7 +277,7 @@ async function handleMessageReceived(tenantId: string, payload: Record<string, u
       .eq("wa_message_id", waMessageId)
       .maybeSingle();
     if (dup) {
-      return json({ ok: true, duplicate: true, message_id: dup.id });
+      return json({ ok: true, duplicate: true, message_id: dup.id, tenant_id: tenantId });
     }
   }
 
@@ -320,7 +320,7 @@ async function handleMessageReceived(tenantId: string, payload: Record<string, u
   }
 
   await logEvent(tenantId, "message_received", { message_id: msg.id, wa_message_id: waMessageId }, "processed");
-  return json({ ok: true, message_id: msg.id, conversation_id: conversation.id });
+  return json({ ok: true, message_id: msg.id, conversation_id: conversation.id, tenant_id: tenantId });
 }
 
 async function handleMessageStatus(tenantId: string, payload: Record<string, unknown>) {
