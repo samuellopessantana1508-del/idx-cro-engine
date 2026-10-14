@@ -22,7 +22,7 @@
           "options": {
             "caseSensitive": false,
             "leftValue": "",
-            "typeValidation": "strict"
+            "typeValidation": "loose"
           },
           "conditions": [
             {
@@ -51,7 +51,7 @@
           "options": {
             "caseSensitive": false,
             "leftValue": "",
-            "typeValidation": "strict"
+            "typeValidation": "loose"
           },
           "conditions": [
             {
@@ -80,7 +80,7 @@
           "options": {
             "caseSensitive": false,
             "leftValue": "",
-            "typeValidation": "strict"
+            "typeValidation": "loose"
           },
           "conditions": [
             {
@@ -170,7 +170,7 @@
           "options": {
             "caseSensitive": false,
             "leftValue": "",
-            "typeValidation": "strict"
+            "typeValidation": "loose"
           },
           "conditions": [
             {
@@ -223,7 +223,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"action\": \"analyze_conversation\",\n  \"tenant_id\": \"{{ $node['Ingest Message (n8n-webhook)'].json.tenant_id || '' }}\",\n  \"conversation_id\": \"{{ $node['Ingest Message (n8n-webhook)'].json.conversation_id }}\"\n}",
+        "jsonBody": "={\n  \"action\": \"analyze_conversation\",\n  \"tenant_id\": \"{{ $node['Ingest Message (n8n-webhook)'].json.tenant_id || $node['Ingest Sent Message'].json.tenant_id || '' }}\",\n  \"conversation_id\": \"{{ $node['Ingest Message (n8n-webhook)'].json.conversation_id || $node['Ingest Sent Message'].json.conversation_id || '' }}\"\n}",
         "options": {
           "timeout": 60000,
           "allowUnauthorizedCerts": false
@@ -301,7 +301,7 @@
           "options": {
             "caseSensitive": false,
             "leftValue": "",
-            "typeValidation": "strict"
+            "typeValidation": "loose"
           },
           "conditions": [
             {
@@ -338,7 +338,7 @@
           "options": {
             "caseSensitive": false,
             "leftValue": "",
-            "typeValidation": "strict"
+            "typeValidation": "loose"
           },
           "conditions": [
             {
