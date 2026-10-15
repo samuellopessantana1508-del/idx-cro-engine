@@ -109,6 +109,14 @@ REGRAS CRÍTICAS DE CLASSIFICAÇÃO:
 - Cada sinal deve ter uma evidência textual específica da conversa
 - Não duplique sinais do mesmo tipo para a mesma evidência
 
+REGRAS DE PREENCHIMENTO DO JSON:
+- Se um campo não tem informação real extraída da conversa, use null (não use a palavra "string")
+- Se não há produtos de interesse identificados, retorne um array vazio: "products_of_interest": []
+- Se não há objeções identificadas, retorne um array vazio: "objections": []
+- Se não há preferências identificadas, retorne um objeto vazio: "preferences": {}
+- NUNCA use palavras de exemplo como "string", "value", "key", "ids" como valores reais
+- Cada valor retornado deve ser uma informação REAL extraída da conversa ou null
+
 Retorne EXCLUSIVAMENTE um JSON válido, sem markdown, sem explicações adicionais.`;
 
 function buildUserPrompt(
@@ -130,37 +138,36 @@ function buildUserPrompt(
 MENSAGENS PARA ANALISAR:
 ${msgLines}
 
-Retorne um JSON com esta estrutura exata:
+Retorne um JSON com esta estrutura exata (use null quando não houver dado real, [] para listas vazias, {} para objeto vazio):
 {
   "contact_info": {
-    "name": {"value": "string ou null", "confidence": 0.0-1.0, "source_msg_ids": ["ids"]},
-    "email": {"value": "string ou null", "confidence": 0.0-1.0, "source_msg_ids": ["ids"]},
-    "phone": {"value": "string ou null", "confidence": 0.0-1.0, "source_msg_ids": ["ids"]},
-    "address": {"value": "string ou null", "confidence": 0.0-1.0, "source_msg_ids": ["ids"]}
+    "name": {"value": null, "confidence": 0.0, "source_msg_ids": []},
+    "email": {"value": null, "confidence": 0.0, "source_msg_ids": []},
+    "phone": {"value": null, "confidence": 0.0, "source_msg_ids": []},
+    "address": {"value": null, "confidence": 0.0, "source_msg_ids": []}
   },
   "commercial": {
-    "products_of_interest": [{"name": "string", "confidence": 0.0-1.0, "source_msg_ids": ["ids"]}],
-    "objections": [{"text": "string", "source_msg_ids": ["ids"]}],
-    "preferences": {"key": "value"},
-    "budget_mentioned": "string ou null",
-    "urgency": "low|medium|high|null"
+    "products_of_interest": [],
+    "objections": [],
+    "preferences": {},
+    "budget_mentioned": null,
+    "urgency": null
   },
-  "sale_signals": [
-    {
-      "type": "interest|high_intent|negotiation|declared_purchase|confirmed_sale|abandonment",
-      "product": "string ou null",
-      "estimated_value": null,
-      "evidence": "citação curta da conversa",
-      "confidence": 0.0-1.0,
-      "source_msg_ids": ["ids"]
-    }
-  ],
-  "summary": "resumo conciso da conversa em 1-2 frases",
-  "intent": "intenção principal do cliente",
-  "sentiment": "positive|neutral|negative",
-  "purchase_probability": 0.0-1.0,
-  "commercial_notes": "observações comerciais relevantes ou null"
-}`;
+  "sale_signals": [],
+  "summary": null,
+  "intent": null,
+  "sentiment": "neutral",
+  "purchase_probability": 0.0,
+  "commercial_notes": null
+}
+
+IMPORTANTE: Preencha SOMENTE os campos para os quais houver informação REAL na conversa.
+- contact_info: preencha value com o dado real do cliente (ex: "João Silva") e confidence > 0
+- products_of_interest: adicione apenas produtos REALMENTE mencionados: [{"name": "Corte de cabelo", "confidence": 0.8, "source_msg_ids": ["abc12345"]}]
+- objections: adicione apenas objeções REAIS: [{"text": "Achei caro", "source_msg_ids": ["def67890"]}]
+- sale_signals: adicione sinais com evidence sendo uma CITAÇÃO REAL da conversa
+- summary: escreva um resumo REAL da conversa
+- NUNCA copie palavras de exemplo do template como dados reais`;
 }
 
 async function callAI(systemPrompt: string, userPrompt: string): Promise<{ text: string; model: string }> {
@@ -288,30 +295,97 @@ function parseAIResponse(raw: string): Record<string, unknown> | null {
   }
 }
 
+const PLACEHOLDER_VALUES = new Set([
+  "string", "string ou null", "ids", "key", "value", "null",
+  "citação curta da conversa", "resumo conciso da conversa em 1-2 frases",
+  "intenção principal do cliente", "observações comerciais relevantes ou null",
+  "observações comerciais relevantes",
+]);
+
+function isPlaceholder(v: unknown): boolean {
+  if (v === null || v === undefined) return false;
+  if (typeof v === "string") {
+    const trimmed = v.trim().toLowerCase();
+    return PLACEHOLDER_VALUES.has(trimmed) || trimmed === "";
+  }
+  return false;
+}
+
+function sanitizeContactField(field: unknown): Record<string, unknown> {
+  if (!field || typeof field !== "object") return { value: null, confidence: 0, source_msg_ids: [] };
+  const f = field as Record<string, unknown>;
+  if (isPlaceholder(f.value)) {
+    f.value = null;
+    f.confidence = 0;
+  }
+  if (Array.isArray(f.source_msg_ids)) {
+    f.source_msg_ids = f.source_msg_ids.filter((id) => !isPlaceholder(id));
+  }
+  return f;
+}
+
 function validateAnalysis(obj: unknown): Record<string, unknown> | null {
   if (!obj || typeof obj !== "object") return null;
   const a = obj as Record<string, unknown>;
 
   if (!a.summary && !a.sale_signals && !a.contact_info) return null;
 
+  if (isPlaceholder(a.summary)) a.summary = null;
+  if (isPlaceholder(a.intent)) a.intent = null;
+  if (isPlaceholder(a.commercial_notes)) a.commercial_notes = null;
+
+  const contact = a.contact_info as Record<string, unknown> | undefined;
+  if (contact) {
+    contact.name = sanitizeContactField(contact.name);
+    contact.email = sanitizeContactField(contact.email);
+    contact.phone = sanitizeContactField(contact.phone);
+    contact.address = sanitizeContactField(contact.address);
+  }
+
+  const commercial = a.commercial as Record<string, unknown> | undefined;
+  if (commercial) {
+    if (Array.isArray(commercial.products_of_interest)) {
+      commercial.products_of_interest = (commercial.products_of_interest as Array<Record<string, unknown>>)
+        .filter((p) => p.name && !isPlaceholder(p.name));
+    }
+    if (Array.isArray(commercial.objections)) {
+      commercial.objections = (commercial.objections as Array<Record<string, unknown>>)
+        .filter((o) => o.text && !isPlaceholder(o.text));
+    }
+    if (isPlaceholder(commercial.budget_mentioned)) commercial.budget_mentioned = null;
+    const prefs = commercial.preferences as Record<string, unknown> | undefined;
+    if (prefs) {
+      for (const k of Object.keys(prefs)) {
+        if (isPlaceholder(k) || isPlaceholder(prefs[k])) delete prefs[k];
+      }
+    }
+  }
+
   if (Array.isArray(a.sale_signals)) {
-    a.sale_signals = (a.sale_signals as Array<Record<string, unknown>>).map((sig) => {
-      let rawType = String(sig.type ?? "interest").toLowerCase();
-      if (LEGACY_TYPE_MAP[rawType]) rawType = LEGACY_TYPE_MAP[rawType];
-      if (!(VALID_SIGNAL_TYPES as readonly string[]).includes(rawType)) rawType = "interest";
-      sig.type = rawType;
+    a.sale_signals = (a.sale_signals as Array<Record<string, unknown>>)
+      .filter((sig) => sig.evidence && !isPlaceholder(sig.evidence))
+      .map((sig) => {
+        let rawType = String(sig.type ?? "interest").toLowerCase();
+        if (LEGACY_TYPE_MAP[rawType]) rawType = LEGACY_TYPE_MAP[rawType];
+        if (!(VALID_SIGNAL_TYPES as readonly string[]).includes(rawType)) rawType = "interest";
+        sig.type = rawType;
 
-      sig.confidence = Math.min(1, Math.max(0, Number(sig.confidence ?? 0.5)));
+        if (isPlaceholder(sig.product)) sig.product = null;
+        if (Array.isArray(sig.source_msg_ids)) {
+          sig.source_msg_ids = sig.source_msg_ids.filter((id: unknown) => !isPlaceholder(id));
+        }
 
-      if (rawType === "declared_purchase" && (sig.confidence as number) > 0.85) {
-        sig.confidence = 0.85;
-      }
-      if (rawType === "confirmed_sale" && (sig.confidence as number) < 0.9) {
-        sig.confidence = 0.9;
-      }
+        sig.confidence = Math.min(1, Math.max(0, Number(sig.confidence ?? 0.5)));
 
-      return sig;
-    });
+        if (rawType === "declared_purchase" && (sig.confidence as number) > 0.85) {
+          sig.confidence = 0.85;
+        }
+        if (rawType === "confirmed_sale" && (sig.confidence as number) < 0.9) {
+          sig.confidence = 0.9;
+        }
+
+        return sig;
+      });
   }
 
   a.purchase_probability = Math.min(1, Math.max(0, Number(a.purchase_probability ?? 0)));
@@ -324,10 +398,12 @@ function validateAnalysis(obj: unknown): Record<string, unknown> | null {
 function extractField(obj: unknown): { value: string | null; confidence: number; sources: string[] } {
   if (!obj || typeof obj !== "object") return { value: null, confidence: 0, sources: [] };
   const o = obj as Record<string, unknown>;
+  const raw = o.value ? String(o.value) : null;
+  const value = raw && !isPlaceholder(raw) ? raw : null;
   return {
-    value: o.value ? String(o.value) : null,
-    confidence: Number(o.confidence ?? 0),
-    sources: Array.isArray(o.source_msg_ids) ? o.source_msg_ids.map(String) : [],
+    value,
+    confidence: value ? Number(o.confidence ?? 0) : 0,
+    sources: Array.isArray(o.source_msg_ids) ? o.source_msg_ids.map(String).filter((s) => !isPlaceholder(s)) : [],
   };
 }
 

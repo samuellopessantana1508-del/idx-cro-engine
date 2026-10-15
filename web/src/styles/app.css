@@ -2360,6 +2360,12 @@ td small {
   color: var(--ink);
 }
 
+.wa-ai-section-text.empty-hint {
+  color: var(--muted);
+  font-style: italic;
+  font-size: 0.78rem;
+}
+
 .wa-ai-prob-bar-wrap {
   display: flex;
   align-items: center;

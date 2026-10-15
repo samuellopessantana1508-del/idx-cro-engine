@@ -34,6 +34,30 @@ import { supabase } from "./lib/supabaseClient";
 import type { AiPatterns, CampaignMetric, CapiEvent, CapiHealth, ConversationInsight, CrmActivity, CustomerProfile, FinancialSummary, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, MonthlyPoint, Offer, SaleSignal, SaleSignalCapiStatus, SmartLink, Tenant, TenantUser, WebhookKey, WhatsAppConversation, WhatsAppInstance, WhatsAppMessage } from "./lib/types";
 import { envConfigured, formatDate, formatMoney, linkCode, slugify, smartLinkUrl, timeAgo } from "./lib/utils";
 
+const AI_PLACEHOLDER_VALUES = new Set([
+  "string", "string ou null", "ids", "key", "value", "null",
+  "citação curta da conversa", "resumo conciso da conversa em 1-2 frases",
+  "intenção principal do cliente", "observações comerciais relevantes ou null",
+  "observações comerciais relevantes",
+]);
+
+function isAiPlaceholder(v: unknown): boolean {
+  if (v === null || v === undefined) return true;
+  if (typeof v !== "string") return false;
+  const t = v.trim().toLowerCase();
+  return t === "" || AI_PLACEHOLDER_VALUES.has(t);
+}
+
+function cleanAiText(v: string | null | undefined): string | null {
+  if (!v || isAiPlaceholder(v)) return null;
+  return v;
+}
+
+function cleanAiArray(arr: string[] | null | undefined): string[] {
+  if (!arr) return [];
+  return arr.filter((v) => !isAiPlaceholder(v));
+}
+
 type Section = "dashboard" | "sales" | "links" | "leads" | "crm" | "integrations" | "whatsapp" | "clients" | "users" | "reports" | "capi" | "ai-sales" | "intelligence" | "settings";
 
 type PlatformRole = "owner" | "admin" | "support" | "viewer";
@@ -2690,7 +2714,7 @@ export function App() {
                             )}
                           </div>
                           <div className="wa-contact-preview">
-                            {conv.ai_summary || (c?.phone ? c.phone : c?.wa_id)}
+                            {cleanAiText(conv.ai_summary) || (c?.phone ? c.phone : c?.wa_id)}
                           </div>
                         </div>
                         <div className="wa-contact-meta">
@@ -2756,16 +2780,16 @@ export function App() {
                         </button>
                         {waInsightOpen && (
                           <div className="wa-ai-panel-body">
-                            {waInsight.summary && (
+                            {cleanAiText(waInsight.summary) && (
                               <div className="wa-ai-section">
                                 <div className="wa-ai-section-title">Resumo</div>
-                                <div className="wa-ai-section-text">{waInsight.summary}</div>
+                                <div className="wa-ai-section-text">{cleanAiText(waInsight.summary)}</div>
                               </div>
                             )}
-                            {waInsight.intent && (
+                            {cleanAiText(waInsight.intent) && (
                               <div className="wa-ai-section">
                                 <div className="wa-ai-section-title">Intenção</div>
-                                <div className="wa-ai-section-text">{waInsight.intent}</div>
+                                <div className="wa-ai-section-text">{cleanAiText(waInsight.intent)}</div>
                               </div>
                             )}
                             {(waInsight.purchase_probability ?? 0) > 0 && (
@@ -2777,37 +2801,47 @@ export function App() {
                                 </div>
                               </div>
                             )}
-                            {(waInsight.extracted_name || waInsight.extracted_email || waInsight.extracted_phone || waInsight.extracted_address) && (
+                            {(cleanAiText(waInsight.extracted_name) || cleanAiText(waInsight.extracted_email) || cleanAiText(waInsight.extracted_phone) || cleanAiText(waInsight.extracted_address)) && (
                               <div className="wa-ai-section">
                                 <div className="wa-ai-section-title">Dados extraídos</div>
                                 <div className="wa-ai-extracted-grid">
-                                  {waInsight.extracted_name && <div><strong>Nome:</strong> {waInsight.extracted_name}</div>}
-                                  {waInsight.extracted_phone && <div><strong>Telefone:</strong> {waInsight.extracted_phone}</div>}
-                                  {waInsight.extracted_email && <div><strong>Email:</strong> {waInsight.extracted_email}</div>}
-                                  {waInsight.extracted_address && <div><strong>Endereço:</strong> {waInsight.extracted_address}</div>}
+                                  {cleanAiText(waInsight.extracted_name) && <div><strong>Nome:</strong> {cleanAiText(waInsight.extracted_name)}</div>}
+                                  {cleanAiText(waInsight.extracted_phone) && <div><strong>Telefone:</strong> {cleanAiText(waInsight.extracted_phone)}</div>}
+                                  {cleanAiText(waInsight.extracted_email) && <div><strong>Email:</strong> {cleanAiText(waInsight.extracted_email)}</div>}
+                                  {cleanAiText(waInsight.extracted_address) && <div><strong>Endereço:</strong> {cleanAiText(waInsight.extracted_address)}</div>}
                                 </div>
                               </div>
                             )}
-                            {(waInsight.products_of_interest?.length ?? 0) > 0 && (
+                            {cleanAiArray(waInsight.products_of_interest).length > 0 ? (
                               <div className="wa-ai-section">
                                 <div className="wa-ai-section-title">Produtos de interesse</div>
                                 <div className="wa-ai-tags">
-                                  {waInsight.products_of_interest!.map((p, i) => <span key={i} className="wa-ai-tag">{p}</span>)}
+                                  {cleanAiArray(waInsight.products_of_interest).map((p, i) => <span key={i} className="wa-ai-tag">{p}</span>)}
                                 </div>
                               </div>
-                            )}
-                            {(waInsight.objections?.length ?? 0) > 0 && (
+                            ) : waInsight.updated_at ? (
+                              <div className="wa-ai-section">
+                                <div className="wa-ai-section-title">Produtos de interesse</div>
+                                <div className="wa-ai-section-text empty-hint">Nenhum identificado</div>
+                              </div>
+                            ) : null}
+                            {cleanAiArray(waInsight.objections).length > 0 ? (
                               <div className="wa-ai-section">
                                 <div className="wa-ai-section-title">Objeções</div>
                                 <div className="wa-ai-tags">
-                                  {waInsight.objections!.map((o, i) => <span key={i} className="wa-ai-tag objection">{o}</span>)}
+                                  {cleanAiArray(waInsight.objections).map((o, i) => <span key={i} className="wa-ai-tag objection">{o}</span>)}
                                 </div>
                               </div>
-                            )}
-                            {waInsight.commercial_notes && (
+                            ) : waInsight.updated_at ? (
+                              <div className="wa-ai-section">
+                                <div className="wa-ai-section-title">Objeções</div>
+                                <div className="wa-ai-section-text empty-hint">Nenhum identificado</div>
+                              </div>
+                            ) : null}
+                            {cleanAiText(waInsight.commercial_notes) && (
                               <div className="wa-ai-section">
                                 <div className="wa-ai-section-title">Notas comerciais</div>
-                                <div className="wa-ai-section-text">{waInsight.commercial_notes}</div>
+                                <div className="wa-ai-section-text">{cleanAiText(waInsight.commercial_notes)}</div>
                               </div>
                             )}
                             {waSaleSignals.length > 0 && (
@@ -2824,8 +2858,8 @@ export function App() {
                                         {sig.status === "detected" ? "Detectado" : sig.status === "confirmed" ? "Confirmado" : sig.status === "rejected" ? "Rejeitado" : "Convertido"}
                                       </span>
                                     </div>
-                                    {sig.product_name && <div className="wa-ai-signal-product">{sig.product_name}{sig.estimated_value ? ` · ${formatMoney(sig.estimated_value)}` : ""}</div>}
-                                    {sig.evidence_text && <div className="wa-ai-signal-evidence">"{sig.evidence_text}"</div>}
+                                    {cleanAiText(sig.product_name) && <div className="wa-ai-signal-product">{cleanAiText(sig.product_name)}{sig.estimated_value ? ` · ${formatMoney(sig.estimated_value)}` : ""}</div>}
+                                    {cleanAiText(sig.evidence_text) && <div className="wa-ai-signal-evidence">"{cleanAiText(sig.evidence_text)}"</div>}
                                   </div>
                                 ))}
                               </div>
@@ -3483,7 +3517,7 @@ export function App() {
                     <article key={sig.id} className="ai-sale-card">
                       <div className="ai-sale-header">
                         <div className="ai-sale-title">
-                          <strong>{sig.product_name || "Produto não identificado"}</strong>
+                          <strong>{cleanAiText(sig.product_name) || "Produto não identificado"}</strong>
                           {sig.estimated_value != null && sig.estimated_value > 0 && (
                             <span className="ai-sale-value">R$ {sig.estimated_value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
                           )}
@@ -3514,8 +3548,8 @@ export function App() {
                         {sig.product_category && <span className="ai-sale-cat">{sig.product_category}</span>}
                       </div>
 
-                      {sig.evidence_text && (
-                        <p className="ai-sale-evidence">"{sig.evidence_text}"</p>
+                      {cleanAiText(sig.evidence_text) && (
+                        <p className="ai-sale-evidence">"{cleanAiText(sig.evidence_text)}"</p>
                       )}
 
                       {isFailed && sig.capi_error && (
@@ -3769,7 +3803,7 @@ export function App() {
                             <td>{formatMoney(c.avg_ticket)}</td>
                             <td>{c.first_purchase_at ? new Date(c.first_purchase_at).toLocaleDateString("pt-BR") : "—"}</td>
                             <td>{c.last_purchase_at ? new Date(c.last_purchase_at).toLocaleDateString("pt-BR") : "—"}</td>
-                            <td>{c.products.length > 0 ? c.products.join(", ") : "—"}</td>
+                            <td>{cleanAiArray(c.products).length > 0 ? cleanAiArray(c.products).join(", ") : "—"}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -3796,15 +3830,15 @@ export function App() {
                       <p>Frequência de menção em conversas analisadas pela IA.</p>
                     </div>
                   </div>
-                  {fiPatterns.top_products.length === 0 ? (
-                    <p className="empty-state">Sem dados de produtos.</p>
+                  {fiPatterns.top_products.filter((p) => !isAiPlaceholder(p.name)).length === 0 ? (
+                    <p className="empty-state">Nenhum identificado.</p>
                   ) : (
                     <div className="fi-bar-list">
-                      {fiPatterns.top_products.map((p) => (
+                      {fiPatterns.top_products.filter((p) => !isAiPlaceholder(p.name)).map((p) => (
                         <div key={p.name} className="fi-bar-row">
                           <span className="fi-bar-label">{p.name}</span>
                           <div className="fi-bar-track">
-                            <div className="fi-bar-fill" style={{ width: `${Math.min((p.count / (fiPatterns.top_products[0]?.count || 1)) * 100, 100)}%` }} />
+                            <div className="fi-bar-fill" style={{ width: `${Math.min((p.count / (fiPatterns.top_products.filter((x) => !isAiPlaceholder(x.name))[0]?.count || 1)) * 100, 100)}%` }} />
                           </div>
                           <span className="fi-bar-count">{p.count}</span>
                         </div>
@@ -3820,15 +3854,15 @@ export function App() {
                       <p>Motivos de resistência identificados pela IA nas conversas.</p>
                     </div>
                   </div>
-                  {fiPatterns.top_objections.length === 0 ? (
-                    <p className="empty-state">Sem objeções registradas.</p>
+                  {fiPatterns.top_objections.filter((o) => !isAiPlaceholder(o.text)).length === 0 ? (
+                    <p className="empty-state">Nenhum identificado.</p>
                   ) : (
                     <div className="fi-bar-list">
-                      {fiPatterns.top_objections.map((o) => (
+                      {fiPatterns.top_objections.filter((o) => !isAiPlaceholder(o.text)).map((o) => (
                         <div key={o.text} className="fi-bar-row">
                           <span className="fi-bar-label">{o.text}</span>
                           <div className="fi-bar-track">
-                            <div className="fi-bar-fill fi-bar-warn" style={{ width: `${Math.min((o.count / (fiPatterns.top_objections[0]?.count || 1)) * 100, 100)}%` }} />
+                            <div className="fi-bar-fill fi-bar-warn" style={{ width: `${Math.min((o.count / (fiPatterns.top_objections.filter((x) => !isAiPlaceholder(x.text))[0]?.count || 1)) * 100, 100)}%` }} />
                           </div>
                           <span className="fi-bar-count">{o.count}</span>
                         </div>
@@ -3844,15 +3878,15 @@ export function App() {
                       <p>Distribuição de intenções identificadas nas conversas.</p>
                     </div>
                   </div>
-                  {fiPatterns.top_intents.length === 0 ? (
-                    <p className="empty-state">Sem dados de intenção.</p>
+                  {fiPatterns.top_intents.filter((i) => !isAiPlaceholder(i.intent)).length === 0 ? (
+                    <p className="empty-state">Nenhum identificado.</p>
                   ) : (
                     <div className="fi-bar-list">
-                      {fiPatterns.top_intents.map((i) => (
+                      {fiPatterns.top_intents.filter((i) => !isAiPlaceholder(i.intent)).map((i) => (
                         <div key={i.intent} className="fi-bar-row">
                           <span className="fi-bar-label">{i.intent}</span>
                           <div className="fi-bar-track">
-                            <div className="fi-bar-fill fi-bar-info" style={{ width: `${Math.min((i.count / (fiPatterns.top_intents[0]?.count || 1)) * 100, 100)}%` }} />
+                            <div className="fi-bar-fill fi-bar-info" style={{ width: `${Math.min((i.count / (fiPatterns.top_intents.filter((x) => !isAiPlaceholder(x.intent))[0]?.count || 1)) * 100, 100)}%` }} />
                           </div>
                           <span className="fi-bar-count">{i.count}</span>
                         </div>
