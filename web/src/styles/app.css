@@ -129,6 +129,12 @@ button {
   opacity: 0.7;
 }
 
+.nav-separator {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 6px 12px;
+}
+
 .nav-button:hover {
   background: rgba(255, 255, 255, 0.06);
   color: var(--paper);
@@ -267,7 +273,7 @@ label {
 .kpi-grid {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
 }
 
@@ -1144,6 +1150,68 @@ td small {
   background: var(--green);
   border-radius: 999px;
   transition: width 0.5s ease;
+}
+
+.dash-activity-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dash-activity-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.dash-activity-row:hover {
+  background: var(--soft);
+}
+
+.dash-activity-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.dash-activity-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dash-activity-body strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dash-activity-body span {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-activity-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .readiness-block {

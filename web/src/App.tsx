@@ -435,6 +435,9 @@ export function App() {
   const [waSaleSignals, setWaSaleSignals] = useState<SaleSignal[]>([]);
   const [waInsightOpen, setWaInsightOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const waSelectedConvIdRef = useRef("");
+  const waConvLoadingRef = useRef(false);
+  const selectConvTokenRef = useRef(0);
 
   const [aiSales, setAiSales] = useState<SaleSignal[]>([]);
   const [aiSalesFilter, setAiSalesFilter] = useState<SaleSignalCapiStatus | "all">("all");
@@ -1537,12 +1540,18 @@ export function App() {
 
   async function loadWaConversations() {
     if (!tenant || !supabase) return;
-    const { data } = await supabase
-      .from("whatsapp_conversations")
-      .select("*, contact:whatsapp_contacts(*)")
-      .eq("tenant_id", tenant.id)
-      .order("last_message_at", { ascending: false, nullsFirst: false });
-    if (data) setWaConversations(data);
+    if (waConvLoadingRef.current) return;
+    waConvLoadingRef.current = true;
+    try {
+      const { data } = await supabase
+        .from("whatsapp_conversations")
+        .select("*, contact:whatsapp_contacts(*)")
+        .eq("tenant_id", tenant.id)
+        .order("last_message_at", { ascending: false, nullsFirst: false });
+      if (data) setWaConversations(data);
+    } finally {
+      waConvLoadingRef.current = false;
+    }
   }
 
   async function loadWaMessages(conversationId: string) {
@@ -1557,19 +1566,23 @@ export function App() {
   }
 
   const selectConversation = useCallback(async (convId: string) => {
+    const token = ++selectConvTokenRef.current;
     setWaSelectedConvId(convId);
+    waSelectedConvIdRef.current = convId;
     setWaInsight(null);
     setWaSaleSignals([]);
     setWaInsightOpen(false);
     await loadWaMessages(convId);
+    if (selectConvTokenRef.current !== token) return;
     loadWaInsights(convId);
     if (supabase) {
       const conv = waConversations.find((c) => c.id === convId);
       if (conv && conv.unread_count > 0) {
-        await supabase
+        supabase
           .from("whatsapp_conversations")
           .update({ unread_count: 0 })
-          .eq("id", convId);
+          .eq("id", convId)
+          .then(() => {});
       }
     }
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
@@ -1876,7 +1889,7 @@ export function App() {
         },
         (payload) => {
           const newMsg = payload.new as WhatsAppMessage;
-          if (newMsg.conversation_id === waSelectedConvId) {
+          if (newMsg.conversation_id === waSelectedConvIdRef.current) {
             setWaMessages((prev) => {
               if (prev.some((m) => m.id === newMsg.id)) return prev;
               return [...prev, newMsg];
@@ -1919,7 +1932,7 @@ export function App() {
         },
         (payload) => {
           const updated = payload.new as WhatsAppConversation;
-          if (updated.id === waSelectedConvId && updated.ai_analyzed_at) {
+          if (updated.id === waSelectedConvIdRef.current && updated.ai_analyzed_at) {
             loadWaInsights(updated.id);
           }
           loadWaConversations();
@@ -1928,13 +1941,17 @@ export function App() {
       .subscribe();
 
     return () => { supabase?.removeChannel(channel); };
-  }, [tenant?.id, active, waSelectedConvId]);
+  }, [tenant?.id, active]);
 
   useEffect(() => {
     if (active === "whatsapp" && tenant) {
       loadWaConversations();
       loadWaInstances();
       loadWaKeys();
+    }
+    if (active === "dashboard" && tenant) {
+      loadWaConversations();
+      loadAiSales();
     }
   }, [active, tenant?.id]);
 
@@ -2166,18 +2183,20 @@ export function App() {
           ) : (
           <nav className="nav-list">
             <NavButton icon={<Gauge />} label="Dashboard" active={active === "dashboard"} onClick={() => goToSection("dashboard")} />
-            <NavButton icon={<PhoneCall />} label="Atender" active={active === "sales"} onClick={() => goToSection("sales")} />
-            <NavButton icon={<Link2 />} label="Links" active={active === "links"} onClick={() => goToSection("links")} />
-            <NavButton icon={<MessageCircle />} label="Atendimentos" active={active === "leads"} onClick={() => goToSection("leads")} />
-            <NavButton icon={<LayoutList />} label="CRM" active={active === "crm"} onClick={() => goToSection("crm")} />
-            <NavButton icon={<ShieldCheck />} label="Integrações" active={active === "integrations"} onClick={() => goToSection("integrations")} />
             <NavButton icon={<MessageCircle />} label="WhatsApp" active={active === "whatsapp"} onClick={() => { goToSection("whatsapp"); loadWaInstances(); loadWaKeys(); }} />
-            <NavButton icon={<LayoutList />} label="Clientes" active={active === "clients"} onClick={() => goToSection("clients")} />
-            <NavButton icon={<Users />} label="Usuários" active={active === "users"} onClick={() => goToSection("users")} />
-            <NavButton icon={<FileText />} label="Relatórios" active={active === "reports"} onClick={() => goToSection("reports")} />
-            <NavButton icon={<Activity />} label="CAPI" active={active === "capi"} onClick={() => goToSection("capi")} />
             <NavButton icon={<TrendingUp />} label="Vendas IA" active={active === "ai-sales"} onClick={() => goToSection("ai-sales")} />
+            <NavButton icon={<LayoutList />} label="CRM" active={active === "crm"} onClick={() => goToSection("crm")} />
+            <div className="nav-separator" />
+            <NavButton icon={<PhoneCall />} label="Atender" active={active === "sales"} onClick={() => goToSection("sales")} />
+            <NavButton icon={<MessageCircle />} label="Atendimentos" active={active === "leads"} onClick={() => goToSection("leads")} />
+            <NavButton icon={<Link2 />} label="Links" active={active === "links"} onClick={() => goToSection("links")} />
+            <NavButton icon={<LayoutList />} label="Clientes" active={active === "clients"} onClick={() => goToSection("clients")} />
             <NavButton icon={<BarChart3 />} label="Inteligência" active={active === "intelligence"} onClick={() => goToSection("intelligence")} />
+            <div className="nav-separator" />
+            <NavButton icon={<ShieldCheck />} label="Integrações" active={active === "integrations"} onClick={() => goToSection("integrations")} />
+            <NavButton icon={<Activity />} label="CAPI" active={active === "capi"} onClick={() => goToSection("capi")} />
+            <NavButton icon={<FileText />} label="Relatórios" active={active === "reports"} onClick={() => goToSection("reports")} />
+            <NavButton icon={<Users />} label="Usuários" active={active === "users"} onClick={() => goToSection("users")} />
             <NavButton icon={<Settings />} label="Config" active={active === "settings"} onClick={() => goToSection("settings")} />
           </nav>
           )}
@@ -2317,58 +2336,75 @@ export function App() {
           </section>
         )}
 
-        {active === "dashboard" && !needsOperationalOnboarding && (
+        {active === "dashboard" && !needsOperationalOnboarding && (() => {
+          const totalConvs = waConversations.length;
+          const highIntentConvs = waConversations.filter((c) => c.ai_purchase_probability != null && c.ai_purchase_probability > 0.5).length;
+          const confirmedSales = aiSales.filter((s) => s.signal_type === "confirmed_sale" || s.status === "confirmed" || s.status === "converted").length;
+          const pendingSales = aiSales.filter((s) => (s.signal_type === "declared_purchase" || s.signal_type === "high_intent") && s.status !== "confirmed" && s.status !== "converted" && s.status !== "rejected").length;
+          const aiRevenue = aiSales.filter((s) => s.status === "confirmed" || s.status === "converted").reduce((sum, s) => sum + Number(s.estimated_value ?? 0), 0);
+          const totalRevenue = metrics.revenue || aiRevenue;
+          const convRate = totalConvs > 0 ? ((confirmedSales / totalConvs) * 100) : metrics.conversion;
+          const recentConvs = waConversations.slice(0, 5);
+          const recentSignals = aiSales.slice(0, 5);
+          return (
           <section className="page-grid">
             <div className="kpi-grid">
-              <Kpi label="Cliques" value={metrics.clicks.toLocaleString("pt-BR")} accent="#3b82f6" />
-              <Kpi label="Aguardando" value={metrics.waiting.toString()} accent="#f59e0b" />
-              <Kpi label="Vendas" value={metrics.sales.toString()} accent="#10b981" />
-              <Kpi label="Receita" value={formatMoney(metrics.revenue)} accent="#111" />
-              <Kpi label="Conversão" value={`${metrics.conversion.toFixed(1)}%`} accent="#8b5cf6" />
+              <Kpi label="Conversas" value={totalConvs.toString()} accent="#3b82f6" />
+              <Kpi label="Oportunidades" value={(highIntentConvs + pendingSales).toString()} accent="#f59e0b" />
+              <Kpi label="Vendas" value={(confirmedSales || metrics.sales).toString()} accent="#10b981" />
+              <Kpi label="Receita" value={formatMoney(totalRevenue)} accent="#111" />
+              <Kpi label="Conversão" value={`${convRate.toFixed(1)}%`} accent="#8b5cf6" />
+              <Kpi label="Cliques" value={metrics.clicks.toLocaleString("pt-BR")} accent="#64748b" />
             </div>
 
             <section className="panel wide">
               <div className="panel-head">
                 <div>
-                  <h2>Prontidão operacional</h2>
-                  <p>Checklist real para saber se a empresa está pronta para vender, medir e otimizar.</p>
+                  <h2>Atividade recente</h2>
+                  <p>Últimas conversas e sinais de venda detectados pela IA.</p>
                 </div>
-                <ShieldCheck size={18} />
+                <Activity size={18} />
               </div>
-              <ReadinessChecklist items={operationalChecklist} onGo={goToSection} compact />
-            </section>
-
-            <section className="panel wide">
-              <div className="panel-head">
-                <div>
-                  <h2>Criar Smart Link</h2>
-                  <p>Link direto para WhatsApp com rastreamento server-side.</p>
-                </div>
-                <Plus size={18} />
+              <div className="dash-activity-feed">
+                {recentConvs.length === 0 && recentSignals.length === 0 && (
+                  <p className="empty-state">Nenhuma atividade recente.</p>
+                )}
+                {recentConvs.map((conv) => {
+                  const c = conv.contact;
+                  const name = c?.push_name || c?.phone || c?.wa_id || "Desconhecido";
+                  return (
+                    <div key={conv.id} className="dash-activity-row" onClick={() => { goToSection("whatsapp"); setTimeout(() => selectConversation(conv.id), 100); }}>
+                      <div className="dash-activity-icon" style={{ background: "#3b82f6" }}><MessageCircle size={14} /></div>
+                      <div className="dash-activity-body">
+                        <strong>{name}</strong>
+                        <span>{cleanAiText(conv.ai_summary) || "Nova conversa"}</span>
+                      </div>
+                      <div className="dash-activity-meta">
+                        {conv.last_message_at && <span>{timeAgo(conv.last_message_at)}</span>}
+                        {conv.ai_purchase_probability != null && conv.ai_purchase_probability > 0.3 && (
+                          <span className="wa-purchase-badge">{Math.round(conv.ai_purchase_probability * 100)}%</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {recentSignals.map((sig) => {
+                  const typeLabel = sig.signal_type === "confirmed_sale" ? "Venda confirmada" : sig.signal_type === "declared_purchase" ? "Compra declarada" : sig.signal_type === "high_intent" ? "Alta intenção" : sig.signal_type === "negotiation" ? "Negociação" : sig.signal_type === "interest" ? "Interesse" : sig.signal_type;
+                  return (
+                    <div key={sig.id} className="dash-activity-row" onClick={() => goToSection("ai-sales")}>
+                      <div className="dash-activity-icon" style={{ background: sig.signal_type === "confirmed_sale" ? "#10b981" : sig.signal_type === "declared_purchase" ? "#f59e0b" : "#8b5cf6" }}><TrendingUp size={14} /></div>
+                      <div className="dash-activity-body">
+                        <strong>{typeLabel}</strong>
+                        <span>{cleanAiText(sig.evidence_text) || cleanAiText(sig.product_name) || "Sinal detectado"}</span>
+                      </div>
+                      <div className="dash-activity-meta">
+                        {sig.created_at && <span>{timeAgo(sig.created_at)}</span>}
+                        {sig.confidence != null && <span style={{ fontSize: 11, opacity: 0.7 }}>{Math.round(sig.confidence * 100)}%</span>}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              <SmartLinkForm draft={draft} setDraft={setDraft} onSubmit={createSmartLink} loading={loading} />
-            </section>
-
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <h2>Usuários desta empresa</h2>
-                  <p>Cada login fica vinculado apenas à empresa selecionada.</p>
-                </div>
-                <Users size={18} />
-              </div>
-              <TenantUsersList users={tenantUsers} />
-            </section>
-
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <h2>WhatsApp Leads</h2>
-                  <p>Fila operacional sem mexer no WhatsApp.</p>
-                </div>
-                <MessageCircle size={18} />
-              </div>
-              <LeadList leads={tenantLeads.slice(0, 5)} compact />
             </section>
 
             <section className="panel">
@@ -2391,6 +2427,17 @@ export function App() {
               </div>
             </section>
 
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <h2>Prontidão operacional</h2>
+                  <p>Checklist de integração.</p>
+                </div>
+                <ShieldCheck size={18} />
+              </div>
+              <ReadinessChecklist items={operationalChecklist} onGo={goToSection} compact />
+            </section>
+
             <section className="panel wide">
               <div className="panel-head">
                 <div>
@@ -2401,7 +2448,8 @@ export function App() {
               <LinksTable links={tenantLinks} onCopy={copyLink} />
             </section>
           </section>
-        )}
+          );
+        })()}
 
         {active === "links" && (
           <section className="stack">
@@ -3492,8 +3540,12 @@ export function App() {
               <section className="ai-sales-list">
                 {aiSales.map((sig) => {
                   const busy = aiSalesBusy === sig.id;
-                  const isPending = sig.status === "detected" && sig.capi_status === "pending";
+                  const needsManualConfirm = sig.status === "detected" && sig.capi_status === "pending" && sig.requires_human_confirmation;
+                  const isAutoConfirmed = sig.status === "confirmed" && !sig.confirmed_by;
+                  const isManualConfirmed = sig.status === "confirmed" && sig.confirmed_by;
                   const isFailed = sig.capi_status === "failed";
+                  const isRejected = sig.status === "rejected";
+                  const isSent = sig.capi_status === "success";
                   const signalLabel: Record<string, string> = {
                     interest: "Interesse",
                     high_intent: "Alta intenção",
@@ -3504,20 +3556,14 @@ export function App() {
                     commitment: "Compromisso",
                     post_sale: "Pós-venda",
                   };
-                  const statusLabel: Record<string, string> = {
-                    pending: "Pendente",
-                    sending: "Enviando…",
-                    success: "Enviado ao Meta",
-                    failed: "Falha no envio",
-                    skipped: "Rejeitado",
-                  };
-                  const statusClass: Record<string, string> = {
-                    pending: "badge-warn",
-                    sending: "badge-info",
-                    success: "badge-ok",
-                    failed: "badge-bad",
-                    skipped: "badge-muted",
-                  };
+                  const unifiedStatus = isRejected ? { label: "Rejeitado", cls: "badge-muted" }
+                    : isSent ? { label: "Enviado ao Meta", cls: "badge-ok" }
+                    : isFailed ? { label: "Falha no envio", cls: "badge-bad" }
+                    : sig.capi_status === "sending" ? { label: "Enviando…", cls: "badge-info" }
+                    : isAutoConfirmed ? { label: "Auto-confirmado", cls: "badge-ok" }
+                    : isManualConfirmed ? { label: "Confirmado", cls: "badge-ok" }
+                    : needsManualConfirm ? { label: "Aguardando confirmação", cls: "badge-warn" }
+                    : { label: "Detectado", cls: "badge-info" };
                   return (
                     <article key={sig.id} className="ai-sale-card">
                       <div className="ai-sale-header">
@@ -3527,9 +3573,7 @@ export function App() {
                             <span className="ai-sale-value">R$ {sig.estimated_value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
                           )}
                         </div>
-                        <span className={`badge ${statusClass[sig.capi_status] ?? "badge-muted"}`}>
-                          {statusLabel[sig.capi_status] ?? sig.capi_status}
-                        </span>
+                        <span className={`badge ${unifiedStatus.cls}`}>{unifiedStatus.label}</span>
                       </div>
 
                       <div className="ai-sale-meta">
@@ -3546,10 +3590,6 @@ export function App() {
                             Confiança: {Math.round(sig.confidence * 100)}%
                           </span>
                         )}
-                        {sig.auto_confirmed && <span className="badge badge-ok">Auto-confirmado</span>}
-                        {sig.requires_human_confirmation && sig.status === "detected" && (
-                          <span className="badge badge-warn">Requer confirmação</span>
-                        )}
                         {sig.product_category && <span className="ai-sale-cat">{sig.product_category}</span>}
                       </div>
 
@@ -3561,24 +3601,14 @@ export function App() {
                         <p className="ai-sale-error">Erro: {sig.capi_error} (tentativas: {sig.capi_attempts})</p>
                       )}
 
-                      {sig.confirmed_at && (
-                        <p className="ai-sale-ts">
-                          Confirmado em {new Date(sig.confirmed_at).toLocaleString("pt-BR")}
-                          {sig.confirmed_by ? ` por ${sig.confirmed_by}` : ""}
-                        </p>
-                      )}
-                      {sig.rejected_at && (
-                        <p className="ai-sale-ts">
-                          Rejeitado em {new Date(sig.rejected_at).toLocaleString("pt-BR")}
-                        </p>
-                      )}
-
                       <p className="ai-sale-ts">
                         Detectado em {new Date(sig.created_at).toLocaleString("pt-BR")}
+                        {sig.confirmed_at && ` · Confirmado em ${new Date(sig.confirmed_at).toLocaleString("pt-BR")}`}
+                        {sig.rejected_at && ` · Rejeitado em ${new Date(sig.rejected_at).toLocaleString("pt-BR")}`}
                       </p>
 
                       <div className="ai-sale-actions">
-                        {isPending && (
+                        {needsManualConfirm && (
                           <>
                             <button
                               type="button"

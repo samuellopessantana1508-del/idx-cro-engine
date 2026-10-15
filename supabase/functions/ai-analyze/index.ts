@@ -574,7 +574,7 @@ async function upsertInsight(
       const isConfirmedSale = signalType === "confirmed_sale" && conf >= 0.9 && sig.evidence;
       const isDeclaredPurchase = signalType === "declared_purchase";
 
-      const { error: insertErr } = await supa.from("sale_signals").insert({
+      const { data: insertedSig, error: insertErr } = await supa.from("sale_signals").insert({
         tenant_id: tenantId,
         conversation_id: conversationId,
         tracking_session_id: conv?.tracking_session_id ?? null,
@@ -586,12 +586,15 @@ async function upsertInsight(
         evidence_text: sig.evidence ? String(sig.evidence) : null,
         evidence_messages: sig.source_msg_ids ?? [],
         requires_human_confirmation: isDeclaredPurchase ? true : !isConfirmedSale,
+        status: isConfirmedSale ? "confirmed" : "detected",
+        confirmed_at: isConfirmedSale ? new Date().toISOString() : null,
         purchase_data: isConfirmedSale ? {
           product: sig.product,
           value: sig.estimated_value,
           evidence: sig.evidence,
           detected_at: new Date().toISOString(),
           ready_for_capi: true,
+          auto_confirmed: true,
         } : isDeclaredPurchase ? {
           product: sig.product,
           value: sig.estimated_value,
@@ -600,8 +603,25 @@ async function upsertInsight(
           ready_for_capi: false,
           requires_verification: true,
         } : null,
-      });
-      if (!insertErr) signalsCreated++;
+      }).select("id").maybeSingle();
+      if (!insertErr) {
+        signalsCreated++;
+        if (isConfirmedSale && insertedSig?.id) {
+          const funcUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/sale-confirm`;
+          fetch(funcUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+            },
+            body: JSON.stringify({
+              action: "confirm_sale",
+              tenant_id: tenantId,
+              signal_id: insertedSig.id,
+            }),
+          }).catch(() => {});
+        }
+      }
     }
   }
   return signalsCreated;
