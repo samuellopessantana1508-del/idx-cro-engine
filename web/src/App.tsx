@@ -38,7 +38,12 @@ const AI_PLACEHOLDER_VALUES = new Set([
   "string", "string ou null", "ids", "key", "value", "null",
   "citação curta da conversa", "resumo conciso da conversa em 1-2 frases",
   "intenção principal do cliente", "observações comerciais relevantes ou null",
-  "observações comerciais relevantes",
+  "observações comerciais relevantes", "nome do produto", "product name",
+  "name", "text", "example", "exemplo", "n/a", "none", "nenhum",
+  "nenhuma", "não identificado", "não informado", "desconhecido",
+  "unknown", "not available", "not found", "sem informação",
+  "abc12345", "def67890", "corte de cabelo", "achei caro",
+  "joão silva", "joao silva",
 ]);
 
 function isAiPlaceholder(v: unknown): boolean {

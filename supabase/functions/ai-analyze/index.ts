@@ -109,13 +109,16 @@ REGRAS CRÍTICAS DE CLASSIFICAÇÃO:
 - Cada sinal deve ter uma evidência textual específica da conversa
 - Não duplique sinais do mesmo tipo para a mesma evidência
 
-REGRAS DE PREENCHIMENTO DO JSON:
+REGRAS ABSOLUTAS DE PREENCHIMENTO DO JSON:
 - Se um campo não tem informação real extraída da conversa, use null (não use a palavra "string")
 - Se não há produtos de interesse identificados, retorne um array vazio: "products_of_interest": []
 - Se não há objeções identificadas, retorne um array vazio: "objections": []
 - Se não há preferências identificadas, retorne um objeto vazio: "preferences": {}
-- NUNCA use palavras de exemplo como "string", "value", "key", "ids" como valores reais
-- Cada valor retornado deve ser uma informação REAL extraída da conversa ou null
+- NUNCA copie textos do template como dados reais. Exemplos PROIBIDOS: "string", "string ou null", "value", "key", "ids", "João Silva", "Corte de cabelo", "Achei caro", "abc12345", "def67890"
+- Se o exemplo diz "João Silva", NÃO escreva "João Silva" — escreva o nome REAL do cliente ou null
+- Se o exemplo diz "Corte de cabelo", NÃO escreva "Corte de cabelo" — escreva o produto REAL ou []
+- Se o exemplo diz "Achei caro", NÃO escreva "Achei caro" — escreva a objeção REAL ou []
+- Cada valor retornado DEVE ser uma informação que EXISTE nas mensagens da conversa
 
 Retorne EXCLUSIVAMENTE um JSON válido, sem markdown, sem explicações adicionais.`;
 
@@ -161,13 +164,14 @@ Retorne um JSON com esta estrutura exata (use null quando não houver dado real,
   "commercial_notes": null
 }
 
-IMPORTANTE: Preencha SOMENTE os campos para os quais houver informação REAL na conversa.
-- contact_info: preencha value com o dado real do cliente (ex: "João Silva") e confidence > 0
-- products_of_interest: adicione apenas produtos REALMENTE mencionados: [{"name": "Corte de cabelo", "confidence": 0.8, "source_msg_ids": ["abc12345"]}]
-- objections: adicione apenas objeções REAIS: [{"text": "Achei caro", "source_msg_ids": ["def67890"]}]
-- sale_signals: adicione sinais com evidence sendo uma CITAÇÃO REAL da conversa
-- summary: escreva um resumo REAL da conversa
-- NUNCA copie palavras de exemplo do template como dados reais`;
+REGRAS PARA PREENCHER:
+- Preencha SOMENTE campos que tenham informação REAL nas mensagens acima
+- contact_info.name.value: coloque o nome REAL que o cliente escreveu, ou null se não disse o nome
+- products_of_interest: liste SOMENTE produtos que o cliente realmente perguntou nas mensagens. Se nenhum produto foi mencionado, mantenha []
+- objections: liste SOMENTE reclamações ou resistências que o cliente realmente expressou. Se não houve, mantenha []
+- sale_signals.evidence: copie um TRECHO REAL de uma mensagem acima como prova
+- summary: escreva um resumo do que REALMENTE aconteceu na conversa
+- NÃO invente dados. NÃO copie os exemplos. Use SOMENTE o que está nas mensagens`;
 }
 
 async function callAI(systemPrompt: string, userPrompt: string): Promise<{ text: string; model: string }> {
@@ -299,7 +303,12 @@ const PLACEHOLDER_VALUES = new Set([
   "string", "string ou null", "ids", "key", "value", "null",
   "citação curta da conversa", "resumo conciso da conversa em 1-2 frases",
   "intenção principal do cliente", "observações comerciais relevantes ou null",
-  "observações comerciais relevantes",
+  "observações comerciais relevantes", "nome do produto", "product name",
+  "name", "text", "example", "exemplo", "n/a", "none", "nenhum",
+  "nenhuma", "não identificado", "não informado", "desconhecido",
+  "unknown", "not available", "not found", "sem informação",
+  "abc12345", "def67890", "corte de cabelo", "achei caro",
+  "joão silva", "joao silva",
 ]);
 
 function isPlaceholder(v: unknown): boolean {
