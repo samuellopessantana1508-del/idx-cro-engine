@@ -4393,13 +4393,13 @@ function LinksTable({ links, onCopy }: { links: SmartLink[]; onCopy: (link: Smar
   );
 }
 
-const crmColumns: { status: LeadStatus; title: string }[] = [
-  { status: "new", title: "Novo" },
-  { status: "contacted", title: "Contato" },
-  { status: "qualified", title: "Qualificado / Remarketing" },
-  { status: "bad", title: "Ruim" },
-  { status: "sold", title: "Vendido" },
-  { status: "lost", title: "Perdido" },
+const crmColumns: { status: LeadStatus; title: string; color: string }[] = [
+  { status: "new", title: "Novo", color: "#94a3b8" },
+  { status: "contacted", title: "Contato", color: "#f59e0b" },
+  { status: "qualified", title: "Qualificado / Remarketing", color: "#3b82f6" },
+  { status: "bad", title: "Ruim", color: "#ef4444" },
+  { status: "sold", title: "Vendido", color: "#10b981" },
+  { status: "lost", title: "Perdido", color: "#6b7280" },
 ];
 
 const crmFilterOptions: { value: CrmFilter; label: string }[] = [
@@ -4449,9 +4449,9 @@ function CrmPipeline({
         const columnLeads = leads.filter((lead) => lead.lead_status === column.status);
         return (
           <section className="crm-column" key={column.status}>
-            <div className="crm-column-head">
+            <div className="crm-column-head" style={{ borderBottomColor: column.color }}>
               <strong>{column.title}</strong>
-              <span>{columnLeads.length}</span>
+              <span style={{ background: column.color }}>{columnLeads.length}</span>
             </div>
             <div className="crm-card-list">
               {columnLeads.length ? (
@@ -5317,10 +5317,10 @@ function MonthlyChart({ data }: { data: MonthlyPoint[] }) {
   if (data.length < 2) return null;
   const maxRevenue = Math.max(...data.map((d) => d.revenue), 1);
   const maxSpend = Math.max(...data.map((d) => d.spend), 1);
-  const maxVal = Math.max(maxRevenue, maxSpend);
+  const maxVal = Math.max(maxRevenue, maxSpend) * 1.1;
   const w = 720;
-  const h = 220;
-  const pad = { top: 20, right: 16, bottom: 40, left: 16 };
+  const h = 240;
+  const pad = { top: 28, right: 16, bottom: 40, left: 16 };
   const cw = w - pad.left - pad.right;
   const ch = h - pad.top - pad.bottom;
   const step = cw / (data.length - 1);
@@ -5330,24 +5330,39 @@ function MonthlyChart({ data }: { data: MonthlyPoint[] }) {
   }
 
   const revLine = data.map((d, i) => `${i === 0 ? "M" : "L"}${pad.left + i * step},${yScale(d.revenue)}`).join(" ");
+  const revArea = revLine + ` L${pad.left + (data.length - 1) * step},${pad.top + ch} L${pad.left},${pad.top + ch} Z`;
   const spendLine = data.map((d, i) => `${i === 0 ? "M" : "L"}${pad.left + i * step},${yScale(d.spend)}`).join(" ");
+
+  const gridLines = [0, 0.25, 0.5, 0.75, 1].map((pct) => pad.top + ch * (1 - pct));
 
   return (
     <div className="fi-chart-wrap">
       <svg viewBox={`0 0 ${w} ${h}`} className="fi-chart">
-        <path d={revLine} fill="none" stroke="#111" strokeWidth="2.5" />
-        <path d={spendLine} fill="none" stroke="#c0392b" strokeWidth="2" strokeDasharray="6 4" />
+        <defs>
+          <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#111" stopOpacity="0.08" />
+            <stop offset="100%" stopColor="#111" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {gridLines.map((y, i) => (
+          <line key={i} x1={pad.left} y1={y} x2={w - pad.right} y2={y} stroke="#e5e7eb" strokeWidth="1" />
+        ))}
+        <path d={revArea} fill="url(#revGrad)" />
+        <path d={revLine} fill="none" stroke="#111" strokeWidth="2.5" strokeLinejoin="round" />
+        <path d={spendLine} fill="none" stroke="#ef4444" strokeWidth="2" strokeDasharray="6 4" strokeLinejoin="round" />
         {data.map((d, i) => (
           <g key={d.month}>
-            <circle cx={pad.left + i * step} cy={yScale(d.revenue)} r="4" fill="#111" />
-            <circle cx={pad.left + i * step} cy={yScale(d.spend)} r="3" fill="#c0392b" />
-            <text x={pad.left + i * step} y={h - 8} textAnchor="middle" fontSize="10" fill="#6f6f6f">
+            <circle cx={pad.left + i * step} cy={yScale(d.revenue)} r="4" fill="#111" stroke="#fff" strokeWidth="2" />
+            <circle cx={pad.left + i * step} cy={yScale(d.spend)} r="3" fill="#ef4444" stroke="#fff" strokeWidth="1.5" />
+            <text x={pad.left + i * step} y={h - 8} textAnchor="middle" fontSize="10" fill="#94a3b8" fontWeight="500">
               {new Date(d.month).toLocaleDateString("pt-BR", { month: "short" })}
             </text>
           </g>
         ))}
-        <text x={pad.left} y={pad.top - 6} fontSize="10" fill="#111" fontWeight="600">Receita</text>
-        <text x={pad.left + 60} y={pad.top - 6} fontSize="10" fill="#c0392b">Investimento</text>
+        <circle cx={pad.left} cy={pad.top - 10} r="4" fill="#111" />
+        <text x={pad.left + 10} y={pad.top - 6} fontSize="10" fill="#111" fontWeight="600">Receita</text>
+        <line x1={pad.left + 70} y1={pad.top - 10} x2={pad.left + 86} y2={pad.top - 10} stroke="#ef4444" strokeWidth="2" strokeDasharray="4 3" />
+        <text x={pad.left + 92} y={pad.top - 6} fontSize="10" fill="#ef4444" fontWeight="500">Investimento</text>
       </svg>
     </div>
   );
