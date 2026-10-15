@@ -646,6 +646,124 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  if (action === "prepare_analysis") {
+    const lastAnalyzed = conv.ai_analyzed_at ? new Date(conv.ai_analyzed_at).getTime() : 0;
+    const elapsed = Date.now() - lastAnalyzed;
+
+    const { count: newMsgCount } = await supa
+      .from("whatsapp_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("conversation_id", conversationId)
+      .eq("ai_analyzed", false);
+
+    const newCount = newMsgCount ?? 0;
+    if (elapsed < MIN_INTERVAL_MS && newCount < MIN_NEW_MESSAGES) {
+      return json({ ok: true, skipped: "cooldown", new_messages: newCount, next_eligible_ms: MIN_INTERVAL_MS - elapsed });
+    }
+
+    if (newCount === 0) {
+      return json({ ok: true, skipped: "no_new_messages" });
+    }
+
+    const { data: allMessages } = await supa
+      .from("whatsapp_messages")
+      .select("id, direction, body, timestamp, content_type, ai_analyzed")
+      .eq("conversation_id", conversationId)
+      .in("content_type", ["text", "image", "document", "location", "contact"])
+      .order("timestamp", { ascending: true })
+      .limit(MAX_CONTEXT_MESSAGES);
+
+    if (!allMessages || allMessages.length === 0) {
+      return json({ ok: true, skipped: "no_text_messages" });
+    }
+
+    const textMessages = allMessages.filter((m) => m.body && m.body.trim().length > 0);
+    if (textMessages.length === 0) {
+      return json({ ok: true, skipped: "no_analyzable_content" });
+    }
+
+    const unanalyzedIds = allMessages.filter((m) => !m.ai_analyzed).map((m) => m.id);
+
+    let previousInsight: Record<string, unknown> | null = null;
+    const { data: existingInsight } = await supa
+      .from("conversation_insights")
+      .select("extracted_data, evidence, summary, intent, sentiment, purchase_probability")
+      .eq("conversation_id", conversationId)
+      .maybeSingle();
+    if (existingInsight) previousInsight = existingInsight;
+
+    const userPrompt = buildUserPrompt(textMessages, previousInsight);
+
+    return json({
+      ok: true,
+      action: "prepare_analysis",
+      conversation_id: conversationId,
+      tenant_id: tenantId,
+      system_prompt: SYSTEM_PROMPT,
+      user_prompt: userPrompt,
+      messages_count: textMessages.length,
+      unanalyzed_count: unanalyzedIds.length,
+      last_message_id: allMessages[allMessages.length - 1].id,
+      model_suggestion: Deno.env.get("AI_MODEL") ?? "qwen2.5:7b",
+    });
+  }
+
+  if (action === "submit_analysis") {
+    const aiResponseText = body.ai_response_text;
+    if (!aiResponseText || typeof aiResponseText !== "string") {
+      return json({ error: "missing_ai_response_text" }, 400);
+    }
+
+    const modelUsed = String(body.model_used ?? "ollama-via-n8n");
+    const lastMessageId = String(body.last_message_id ?? "");
+    const unanalyzedCount = Number(body.unanalyzed_count ?? 0);
+
+    if (!lastMessageId) {
+      return json({ error: "missing_last_message_id" }, 400);
+    }
+
+    const analysis = parseAIResponse(aiResponseText);
+    if (!analysis) {
+      return json({ error: "ai_parse_failed", raw_length: aiResponseText.length }, 502);
+    }
+
+    const signalsCreated = await upsertInsight(tenantId, conversationId, analysis, lastMessageId, unanalyzedCount, modelUsed);
+    await updateCRM(tenantId, conversationId, analysis);
+
+    if (unanalyzedCount > 0) {
+      const { data: unanalyzedMsgs } = await supa
+        .from("whatsapp_messages")
+        .select("id")
+        .eq("conversation_id", conversationId)
+        .eq("ai_analyzed", false)
+        .limit(MAX_CONTEXT_MESSAGES);
+
+      if (unanalyzedMsgs && unanalyzedMsgs.length > 0) {
+        const ids = unanalyzedMsgs.map((m) => m.id);
+        const batchSize = 100;
+        for (let i = 0; i < ids.length; i += batchSize) {
+          const batch = ids.slice(i, i + batchSize);
+          await supa
+            .from("whatsapp_messages")
+            .update({ ai_analyzed: true })
+            .in("id", batch);
+        }
+      }
+    }
+
+    return json({
+      ok: true,
+      action: "submit_analysis",
+      conversation_id: conversationId,
+      messages_analyzed: unanalyzedCount,
+      summary: analysis.summary,
+      sentiment: analysis.sentiment,
+      purchase_probability: analysis.purchase_probability,
+      sale_signals_count: Array.isArray(analysis.sale_signals) ? analysis.sale_signals.length : 0,
+      sale_signals_created: signalsCreated,
+    });
+  }
+
   if (action === "get_insights") {
     const { data: insight } = await supa
       .from("conversation_insights")
