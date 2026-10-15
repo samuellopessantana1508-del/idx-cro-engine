@@ -24,6 +24,21 @@ function json(data: unknown, status = 200): Response {
 const MIN_INTERVAL_MS = Number(Deno.env.get("AI_MIN_INTERVAL_MINUTES") ?? "3") * 60_000;
 const MIN_NEW_MESSAGES = Number(Deno.env.get("AI_MIN_NEW_MESSAGES") ?? "1");
 const MAX_CONTEXT_MESSAGES = 80;
+const AI_TIMEOUT_MS = Number(Deno.env.get("AI_TIMEOUT_MS") ?? "120000");
+
+const VALID_SIGNAL_TYPES = [
+  "interest",
+  "high_intent",
+  "negotiation",
+  "declared_purchase",
+  "confirmed_sale",
+  "abandonment",
+] as const;
+
+const LEGACY_TYPE_MAP: Record<string, string> = {
+  commitment: "high_intent",
+  post_sale: "declared_purchase",
+};
 
 type AuthResult =
   | { ok: true; isWebhook: false; userId: string; userEmail: string | null }
@@ -58,6 +73,41 @@ REGRAS OBRIGATÓRIAS:
 - Identifique sinais de venda baseados SOMENTE em evidências concretas
 - Respeite minimização de dados: extraia apenas o necessário para CRM comercial
 - Informações sensíveis (CPF, RG, dados bancários) devem ser IGNORADAS
+
+TAXONOMIA DE SINAIS COMERCIAIS (use exatamente estes tipos):
+
+1. "interest" — Demonstração inicial de interesse. O cliente pergunta sobre produto/serviço, pede informações, demonstra curiosidade.
+   Exemplos: "Quanto custa?", "Vocês têm esse produto?", "Como funciona?"
+   confidence típica: 0.5-0.8
+
+2. "high_intent" — Forte intenção mas sem compromisso concreto. O cliente demonstra urgência ou forte desejo mas ainda não fechou negócio.
+   Exemplos: "Quero contratar hoje", "Preciso disso urgente", "Estou decidido a comprar", "quero comprar agora"
+   confidence típica: 0.7-0.9
+
+3. "negotiation" — Negociação ativa. O cliente está negociando preço, condições, prazos ou detalhes da compra.
+   Exemplos: "Tem desconto?", "Pode parcelar?", "Se fechar hoje, qual o valor?", "Aceita PIX?"
+   confidence típica: 0.6-0.85
+
+4. "declared_purchase" — O cliente AFIRMA ter comprado, mas NÃO há comprovação verificável na conversa. O cliente diz que pagou, que comprou, que fechou — mas são apenas palavras, sem comprovante, recibo, número de pedido ou confirmação de pagamento do sistema.
+   IMPORTANTE: "Comprei e gostei muito", "Já paguei", "Acabei de comprar", "Compra finalizada" são SEMPRE declared_purchase.
+   confidence MÁXIMA para este tipo: 0.85 (nunca acima)
+
+5. "confirmed_sale" — Venda VERIFICADA com evidência concreta na conversa: comprovante de pagamento enviado, confirmação do sistema, número de pedido compartilhado, screenshot de pagamento, link de rastreamento, ou a EMPRESA confirma o recebimento do pagamento.
+   NUNCA classifique como confirmed_sale apenas com base na declaração verbal do cliente.
+   Apenas se a EMPRESA respondeu confirmando o pagamento ou há evidência sistêmica.
+   confidence MÍNIMA: 0.9
+
+6. "abandonment" — O cliente mostrou interesse mas desistiu, sumiu, disse que não quer mais, ou não responde há muito tempo.
+   Exemplos: "Vou pensar melhor", "Agora não posso", "Não tenho interesse mais", "Desisto", silêncio após interesse demonstrado
+   confidence típica: 0.5-0.8
+
+REGRAS CRÍTICAS DE CLASSIFICAÇÃO:
+- Uma declaração verbal de compra ("comprei", "paguei", "fechei") é SEMPRE "declared_purchase", NUNCA "confirmed_sale"
+- "confirmed_sale" EXIGE evidência de pagamento verificável ou confirmação da empresa
+- Na dúvida entre declared_purchase e confirmed_sale, use SEMPRE declared_purchase
+- Múltiplos sinais podem existir na mesma conversa (ex: interest → high_intent → negotiation → declared_purchase)
+- Cada sinal deve ter uma evidência textual específica da conversa
+- Não duplique sinais do mesmo tipo para a mesma evidência
 
 Retorne EXCLUSIVAMENTE um JSON válido, sem markdown, sem explicações adicionais.`;
 
@@ -97,7 +147,7 @@ Retorne um JSON com esta estrutura exata:
   },
   "sale_signals": [
     {
-      "type": "interest|negotiation|commitment|confirmed_sale|post_sale",
+      "type": "interest|high_intent|negotiation|declared_purchase|confirmed_sale|abandonment",
       "product": "string ou null",
       "estimated_value": null,
       "evidence": "citação curta da conversa",
@@ -115,56 +165,109 @@ Retorne um JSON com esta estrutura exata:
 
 async function callAI(systemPrompt: string, userPrompt: string): Promise<{ text: string; model: string }> {
   const apiKey = Deno.env.get("AI_API_KEY") ?? "";
-  if (!apiKey) throw new Error("AI_API_KEY not configured");
-
   const provider = (Deno.env.get("AI_PROVIDER") ?? "anthropic").toLowerCase();
-  const model = Deno.env.get("AI_MODEL") ?? (provider === "openai" ? "gpt-4o-mini" : "claude-sonnet-4-20250514");
+  const model = Deno.env.get("AI_MODEL") ?? (
+    provider === "openai" ? "gpt-4o-mini" :
+    provider === "ollama" ? "qwen2.5:7b" :
+    "claude-sonnet-4-20250514"
+  );
 
-  if (provider === "openai") {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+
+  try {
+    if (provider === "ollama") {
+      const ollamaUrl = Deno.env.get("AI_OLLAMA_URL");
+      if (!ollamaUrl) throw new Error("AI_OLLAMA_URL not configured for Ollama provider");
+
+      const ollamaKey = apiKey || Deno.env.get("AI_OLLAMA_KEY") || "";
+      const endpoint = `${ollamaUrl.replace(/\/$/, "")}/api/chat`;
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(ollamaKey ? { Authorization: `Bearer ${ollamaKey}` } : {}),
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          format: "json",
+          stream: false,
+          options: { temperature: 0.1, num_ctx: 8192 },
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const err = await res.text().catch(() => "");
+        throw new Error(`Ollama error ${res.status}: ${err}`);
+      }
+      const data = await res.json();
+      return { text: data.message?.content ?? "", model };
+    }
+
+    if (provider === "openai") {
+      if (!apiKey) throw new Error("AI_API_KEY not configured");
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model,
+          max_tokens: 2048,
+          temperature: 0.1,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+        }),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const err = await res.text().catch(() => "");
+        throw new Error(`OpenAI error ${res.status}: ${err}`);
+      }
+      const data = await res.json();
+      return { text: data.choices?.[0]?.message?.content ?? "", model };
+    }
+
+    // Default: Anthropic
+    if (!apiKey) throw new Error("AI_API_KEY not configured");
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
       body: JSON.stringify({
         model,
         max_tokens: 2048,
         temperature: 0.1,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        response_format: { type: "json_object" },
+        system: systemPrompt,
+        messages: [{ role: "user", content: userPrompt }],
       }),
+      signal: controller.signal,
     });
     if (!res.ok) {
       const err = await res.text().catch(() => "");
-      throw new Error(`OpenAI error ${res.status}: ${err}`);
+      throw new Error(`Anthropic error ${res.status}: ${err}`);
     }
     const data = await res.json();
-    return { text: data.choices?.[0]?.message?.content ?? "", model };
+    const content = data.content?.find((b: { type: string }) => b.type === "text");
+    return { text: content?.text ?? "", model };
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error(`AI provider timeout after ${AI_TIMEOUT_MS}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 2048,
-      temperature: 0.1,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.text().catch(() => "");
-    throw new Error(`Anthropic error ${res.status}: ${err}`);
-  }
-  const data = await res.json();
-  const content = data.content?.find((b: { type: string }) => b.type === "text");
-  return { text: content?.text ?? "", model };
 }
 
 function parseAIResponse(raw: string): Record<string, unknown> | null {
@@ -178,10 +281,44 @@ function parseAIResponse(raw: string): Record<string, unknown> | null {
   text = text.substring(start, end + 1);
 
   try {
-    return JSON.parse(text);
+    const parsed = JSON.parse(text);
+    return validateAnalysis(parsed);
   } catch {
     return null;
   }
+}
+
+function validateAnalysis(obj: unknown): Record<string, unknown> | null {
+  if (!obj || typeof obj !== "object") return null;
+  const a = obj as Record<string, unknown>;
+
+  if (!a.summary && !a.sale_signals && !a.contact_info) return null;
+
+  if (Array.isArray(a.sale_signals)) {
+    a.sale_signals = (a.sale_signals as Array<Record<string, unknown>>).map((sig) => {
+      let rawType = String(sig.type ?? "interest").toLowerCase();
+      if (LEGACY_TYPE_MAP[rawType]) rawType = LEGACY_TYPE_MAP[rawType];
+      if (!(VALID_SIGNAL_TYPES as readonly string[]).includes(rawType)) rawType = "interest";
+      sig.type = rawType;
+
+      sig.confidence = Math.min(1, Math.max(0, Number(sig.confidence ?? 0.5)));
+
+      if (rawType === "declared_purchase" && (sig.confidence as number) > 0.85) {
+        sig.confidence = 0.85;
+      }
+      if (rawType === "confirmed_sale" && (sig.confidence as number) < 0.9) {
+        sig.confidence = 0.9;
+      }
+
+      return sig;
+    });
+  }
+
+  a.purchase_probability = Math.min(1, Math.max(0, Number(a.purchase_probability ?? 0)));
+  const validSentiments = ["positive", "neutral", "negative"];
+  if (!validSentiments.includes(String(a.sentiment))) a.sentiment = "neutral";
+
+  return a;
 }
 
 function extractField(obj: unknown): { value: string | null; confidence: number; sources: string[] } {
@@ -331,14 +468,14 @@ async function upsertInsight(
       .maybeSingle();
 
     for (const sig of saleSignals) {
-      const signalType = String(sig.type ?? "interest");
-      if (!["interest", "negotiation", "commitment", "confirmed_sale", "post_sale"].includes(signalType)) continue;
+      let signalType = String(sig.type ?? "interest");
+      if (LEGACY_TYPE_MAP[signalType]) signalType = LEGACY_TYPE_MAP[signalType];
+      if (!(VALID_SIGNAL_TYPES as readonly string[]).includes(signalType)) continue;
 
       const conf = Math.min(1, Math.max(0, Number(sig.confidence ?? 0)));
       if (conf < 0.3) continue;
 
-      const productName = sig.product ? String(sig.product) : null;
-      const { data: existing } = await supa
+      const { data: existingSignal } = await supa
         .from("sale_signals")
         .select("id")
         .eq("conversation_id", conversationId)
@@ -347,9 +484,10 @@ async function upsertInsight(
         .in("status", ["detected", "confirmed"])
         .limit(1)
         .maybeSingle();
-      if (existing) continue;
+      if (existingSignal) continue;
 
-      const isAutoConfirmable = signalType === "confirmed_sale" && conf >= 0.9 && sig.evidence;
+      const isConfirmedSale = signalType === "confirmed_sale" && conf >= 0.9 && sig.evidence;
+      const isDeclaredPurchase = signalType === "declared_purchase";
 
       const { error: insertErr } = await supa.from("sale_signals").insert({
         tenant_id: tenantId,
@@ -362,13 +500,20 @@ async function upsertInsight(
         confidence: conf,
         evidence_text: sig.evidence ? String(sig.evidence) : null,
         evidence_messages: sig.source_msg_ids ?? [],
-        requires_human_confirmation: !isAutoConfirmable,
-        purchase_data: signalType === "confirmed_sale" ? {
+        requires_human_confirmation: isDeclaredPurchase ? true : !isConfirmedSale,
+        purchase_data: isConfirmedSale ? {
           product: sig.product,
           value: sig.estimated_value,
           evidence: sig.evidence,
           detected_at: new Date().toISOString(),
           ready_for_capi: true,
+        } : isDeclaredPurchase ? {
+          product: sig.product,
+          value: sig.estimated_value,
+          evidence: sig.evidence,
+          detected_at: new Date().toISOString(),
+          ready_for_capi: false,
+          requires_verification: true,
         } : null,
       });
       if (!insertErr) signalsCreated++;
