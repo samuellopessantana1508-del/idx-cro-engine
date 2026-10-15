@@ -245,7 +245,7 @@ export type SaleSignal = {
   product_category?: string | null;
   estimated_value?: number | null;
   currency?: string;
-  signal_type: "interest" | "negotiation" | "commitment" | "confirmed_sale" | "post_sale";
+  signal_type: "interest" | "high_intent" | "negotiation" | "declared_purchase" | "confirmed_sale" | "abandonment" | "commitment" | "post_sale";
   confidence?: number | null;
   evidence_text?: string | null;
   evidence_messages?: unknown[];

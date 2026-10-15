@@ -2291,11 +2291,11 @@ export function App() {
         {active === "dashboard" && !needsOperationalOnboarding && (
           <section className="page-grid">
             <div className="kpi-grid">
-              <Kpi label="Cliques" value={metrics.clicks.toLocaleString("pt-BR")} />
-              <Kpi label="Aguardando" value={metrics.waiting.toString()} />
-              <Kpi label="Vendas" value={metrics.sales.toString()} />
-              <Kpi label="Receita" value={formatMoney(metrics.revenue)} />
-              <Kpi label="Conversão" value={`${metrics.conversion.toFixed(1)}%`} />
+              <Kpi label="Cliques" value={metrics.clicks.toLocaleString("pt-BR")} accent="#3b82f6" />
+              <Kpi label="Aguardando" value={metrics.waiting.toString()} accent="#f59e0b" />
+              <Kpi label="Vendas" value={metrics.sales.toString()} accent="#10b981" />
+              <Kpi label="Receita" value={formatMoney(metrics.revenue)} accent="#111" />
+              <Kpi label="Conversão" value={`${metrics.conversion.toFixed(1)}%`} accent="#8b5cf6" />
             </div>
 
             <section className="panel wide">
@@ -2817,7 +2817,7 @@ export function App() {
                                   <div key={sig.id} className={`wa-ai-signal wa-ai-signal-${sig.signal_type}`}>
                                     <div className="wa-ai-signal-header">
                                       <span className="wa-ai-signal-type">
-                                        {sig.signal_type === "interest" ? "Interesse" : sig.signal_type === "negotiation" ? "Negociação" : sig.signal_type === "commitment" ? "Compromisso" : sig.signal_type === "confirmed_sale" ? "Venda confirmada" : "Pós-venda"}
+                                        {sig.signal_type === "interest" ? "Interesse" : sig.signal_type === "high_intent" ? "Alta intenção" : sig.signal_type === "negotiation" ? "Negociação" : sig.signal_type === "declared_purchase" ? "Compra declarada" : sig.signal_type === "confirmed_sale" ? "Venda confirmada" : sig.signal_type === "abandonment" ? "Abandono" : sig.signal_type === "commitment" ? "Compromisso" : "Pós-venda"}
                                       </span>
                                       {sig.confidence != null && <span className="wa-ai-signal-conf">{Math.round(sig.confidence * 100)}% confiança</span>}
                                       <span className={`wa-ai-signal-status ${sig.status}`}>
@@ -3457,9 +3457,12 @@ export function App() {
                   const isFailed = sig.capi_status === "failed";
                   const signalLabel: Record<string, string> = {
                     interest: "Interesse",
+                    high_intent: "Alta intenção",
                     negotiation: "Negociação",
-                    commitment: "Compromisso",
+                    declared_purchase: "Compra declarada",
                     confirmed_sale: "Venda confirmada",
+                    abandonment: "Abandono",
+                    commitment: "Compromisso",
                     post_sale: "Pós-venda",
                   };
                   const statusLabel: Record<string, string> = {
@@ -3491,7 +3494,14 @@ export function App() {
                       </div>
 
                       <div className="ai-sale-meta">
-                        <span className="badge badge-info">{signalLabel[sig.signal_type] ?? sig.signal_type}</span>
+                        <span className={`badge ${
+                          sig.signal_type === "confirmed_sale" ? "badge-ok" :
+                          sig.signal_type === "declared_purchase" ? "badge-orange" :
+                          sig.signal_type === "high_intent" || sig.signal_type === "commitment" ? "badge-purple" :
+                          sig.signal_type === "negotiation" ? "badge-warn" :
+                          sig.signal_type === "abandonment" ? "badge-bad" :
+                          "badge-info"
+                        }`}>{signalLabel[sig.signal_type] ?? sig.signal_type}</span>
                         {sig.confidence != null && (
                           <span className="ai-sale-confidence">
                             Confiança: {Math.round(sig.confidence * 100)}%
@@ -3861,7 +3871,7 @@ export function App() {
                   <div className="insight-grid">
                     {Object.entries(fiPatterns.signals_by_type).map(([type, count]) => (
                       <article key={type} className="insight-card">
-                        <strong>{type === "interest" ? "Interesse" : type === "negotiation" ? "Negociação" : type === "commitment" ? "Compromisso" : type === "confirmed_sale" ? "Confirmada" : type === "post_sale" ? "Pós-venda" : type}</strong>
+                        <strong>{type === "interest" ? "Interesse" : type === "high_intent" ? "Alta intenção" : type === "negotiation" ? "Negociação" : type === "declared_purchase" ? "Compra declarada" : type === "confirmed_sale" ? "Confirmada" : type === "abandonment" ? "Abandono" : type === "commitment" ? "Compromisso" : type === "post_sale" ? "Pós-venda" : type}</strong>
                         <p>{count} sinais</p>
                       </article>
                     ))}
@@ -4027,9 +4037,9 @@ function NavButton({ icon, label, active, onClick }: { icon: React.ReactNode; la
   );
 }
 
-function Kpi({ label, value }: { label: string; value: string }) {
+function Kpi({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
-    <article className="kpi">
+    <article className="kpi" style={accent ? { borderTop: `3px solid ${accent}` } : undefined}>
       <span>{label}</span>
       <strong>{value}</strong>
     </article>
