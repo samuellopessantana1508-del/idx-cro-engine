@@ -6,8 +6,8 @@ const supa = createClient(
 );
 
 const invalidLinkFallbackUrl = Deno.env.get("FALLBACK_URL") ?? "";
-// Pagina de passagem hospedada no dominio proprio (HTML renderiza normalmente la).
-const redirectPageUrl = Deno.env.get("REDIRECT_PAGE_URL") ?? "https://idxparasuaempresa.com.br/ir.html";
+const appUrl = Deno.env.get("APP_URL") ?? "https://cro.sanmarfidelize.com";
+const redirectPageUrl = `${appUrl.replace(/\/+$/, "")}/ir.html`;
 const ENTERED_TAG = "entrou no whatsapp";
 const allowInvalidLinkFallback = Deno.env.get("ALLOW_INVALID_LINK_FALLBACK") === "true";
 
@@ -412,12 +412,6 @@ Deno.serve(async (req: Request) => {
     return Response.redirect(targetUrl, 302);
   }
 
-  // O ÚNICO trabalho no caminho crítico foi o lookup do link acima. Geramos o
-  // id da sessão localmente e jogamos o insert + o Lead CAPI para o background,
-  // para que o redirect 302 saia praticamente instantâneo (sem esperar o banco
-  // nem o Facebook). Páginas HTML servidas pelo domínio functions.supabase.co
-  // são forçadas a text/plain pelo gateway e não renderizam, por isso usamos
-  // redirect direto em vez de página intermediária.
   const sessionId = crypto.randomUUID();
 
   runBackground((async () => {
@@ -454,9 +448,6 @@ Deno.serve(async (req: Request) => {
 
   })());
 
-  // Redirect 302 para a pagina de passagem no dominio proprio: ela abre o
-  // WhatsApp na hora e confirma a entrada. Se algo falhar la, o link ainda
-  // leva o usuario ao WhatsApp (a pagina faz location.replace imediato).
   const passUrl = `${redirectPageUrl}?u=${encodeURIComponent(targetUrl)}&r=${encodeURIComponent(ref)}`;
   return Response.redirect(passUrl, 302);
 });
