@@ -225,6 +225,26 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true });
   }
 
+  if (action === "add_tag") {
+    const tag = cleanText(body.tag);
+    if (!tag) return json({ error: "missing_tag" }, 400);
+    const currentTags: string[] = session.tags ?? [];
+    if (!currentTags.includes(tag)) {
+      await supa.from("tracking_sessions").update({ tags: [...currentTags, tag], last_crm_activity_at: new Date().toISOString() }).eq("id", session.id);
+      await supa.from("crm_activities").insert({ tenant_id: session.tenant_id, tracking_session_id: session.id, user_id: user.id, activity_type: "tag", body: `+${tag}` });
+    }
+    return json({ ok: true });
+  }
+
+  if (action === "remove_tag") {
+    const tag = cleanText(body.tag);
+    if (!tag) return json({ error: "missing_tag" }, 400);
+    const currentTags: string[] = session.tags ?? [];
+    await supa.from("tracking_sessions").update({ tags: currentTags.filter((t: string) => t !== tag), last_crm_activity_at: new Date().toISOString() }).eq("id", session.id);
+    await supa.from("crm_activities").insert({ tenant_id: session.tenant_id, tracking_session_id: session.id, user_id: user.id, activity_type: "tag", body: `-${tag}` });
+    return json({ ok: true });
+  }
+
   const status = cleanText(body.status) as LeadStatus;
   if (action !== "update_stage") return json({ error: "unknown_action" }, 400);
   if (!isAllowedStatus(status)) return json({ error: "invalid_status" }, 400);

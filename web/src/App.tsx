@@ -3,8 +3,10 @@ import {
   Activity,
   ArrowRight,
   BarChart3,
+  Bell,
   Check,
   CircleDot,
+  Clock,
   Clipboard,
   FileText,
   Gauge,
@@ -20,6 +22,7 @@ import {
   Settings,
   ShieldCheck,
   SlidersHorizontal,
+  Tag,
   UserPlus,
   Users,
   Wifi,
@@ -64,7 +67,7 @@ function cleanAiArray(arr: string[] | null | undefined): string[] {
   return arr.filter((v) => !isAiPlaceholder(v));
 }
 
-type Section = "dashboard" | "sales" | "links" | "leads" | "crm" | "integrations" | "whatsapp" | "clients" | "users" | "reports" | "capi" | "ai-sales" | "intelligence" | "settings";
+type Section = "dashboard" | "sales" | "links" | "leads" | "crm" | "integrations" | "whatsapp" | "clients" | "users" | "reports" | "capi" | "ai-sales" | "intelligence" | "settings" | "follow-ups" | "segments";
 
 type PlatformRole = "owner" | "admin" | "support" | "viewer";
 
@@ -192,7 +195,7 @@ type MetaAdAccountAsset = {
 };
 
 const META_OAUTH_CALLBACK_URL = "https://idxparasuaempresa.com.br/meta-oauth-callback.html";
-const validSections: Section[] = ["dashboard", "sales", "links", "leads", "crm", "integrations", "whatsapp", "clients", "users", "reports", "capi", "ai-sales", "intelligence", "settings"];
+const validSections: Section[] = ["dashboard", "sales", "links", "leads", "crm", "integrations", "whatsapp", "clients", "users", "reports", "capi", "ai-sales", "intelligence", "settings", "follow-ups", "segments"];
 
 const emptyDraft: DraftLink = {
   offerName: "",
@@ -487,6 +490,16 @@ export function App() {
   const [attrSourceFilter, setAttrSourceFilter] = useState<string>("all");
   const [attrSearch, setAttrSearch] = useState("");
 
+  const [followUpFilter, setFollowUpFilter] = useState<"due" | "upcoming" | "overdue" | "all">("due");
+  const [segmentFilter, setSegmentFilter] = useState<string>("all");
+  const [segmentTagInput, setSegmentTagInput] = useState("");
+  const [segmentBusy, setSegmentBusy] = useState("");
+  const [waCloudPhoneId, setWaCloudPhoneId] = useState("");
+  const [waCloudWabaId, setWaCloudWabaId] = useState("");
+  const [waCloudToken, setWaCloudToken] = useState("");
+  const [waCloudVerifyToken, setWaCloudVerifyToken] = useState("");
+  const [waCloudBusy, setWaCloudBusy] = useState(false);
+
   const [fiSummary, setFiSummary] = useState<FinancialSummary | null>(null);
   const [fiMonthly, setFiMonthly] = useState<MonthlyPoint[]>([]);
   const [fiCampaigns, setFiCampaigns] = useState<CampaignMetric[]>([]);
@@ -516,7 +529,7 @@ export function App() {
   );
   const currentTenantRole = currentTenantUser?.role ?? (isPlatformUser ? "owner" : null);
   const isSellerExperience = currentTenantRole === "operator" && !isPlatformUser;
-  const secondaryMobileSections: Section[] = isSellerExperience ? ["leads"] : ["integrations", "whatsapp", "leads", "clients", "users", "reports", "capi", "settings"];
+  const secondaryMobileSections: Section[] = isSellerExperience ? ["leads"] : ["integrations", "whatsapp", "leads", "clients", "users", "reports", "capi", "settings", "follow-ups", "segments"];
   const moreActive = secondaryMobileSections.includes(active);
 
   function goToSection(section: Section) {
@@ -535,6 +548,143 @@ export function App() {
     setCrmFilter("all");
     setCrmSearch(lead.ref || lead.customer_phone || lead.customer_email || "");
     setToast(`Lead ${lead.ref} destacado no CRM.`);
+  }
+
+  const followUpLeads = useMemo(() => {
+    const now = Date.now();
+    return tenantLeads
+      .filter((lead) => {
+        if (!isOpenLead(lead)) return false;
+        if (followUpFilter === "due") return leadFollowUpDue(lead) || lead.lead_status === "new";
+        if (followUpFilter === "overdue") return leadFollowUpDue(lead);
+        if (followUpFilter === "upcoming") {
+          if (!lead.next_follow_up_at) return false;
+          const t = new Date(lead.next_follow_up_at).getTime();
+          return Number.isFinite(t) && t > now;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const aTime = a.next_follow_up_at ? new Date(a.next_follow_up_at).getTime() : Infinity;
+        const bTime = b.next_follow_up_at ? new Date(b.next_follow_up_at).getTime() : Infinity;
+        const aDue = Number.isFinite(aTime) && aTime <= now ? 0 : 1;
+        const bDue = Number.isFinite(bTime) && bTime <= now ? 0 : 1;
+        if (aDue !== bDue) return aDue - bDue;
+        return aTime - bTime;
+      });
+  }, [tenantLeads, followUpFilter]);
+
+  const overdueCount = useMemo(() => tenantLeads.filter((l) => leadFollowUpDue(l)).length, [tenantLeads]);
+  const dueNowCount = useMemo(() => tenantLeads.filter((l) => isOpenLead(l) && (leadFollowUpDue(l) || l.lead_status === "new")).length, [tenantLeads]);
+
+  const allSegmentTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const lead of tenantLeads) {
+      if (lead.tags) lead.tags.forEach((t) => set.add(t));
+    }
+    return Array.from(set).sort();
+  }, [tenantLeads]);
+
+  const segmentedLeads = useMemo(() => {
+    if (segmentFilter === "all") return tenantLeads;
+    if (segmentFilter === "no_phone") return tenantLeads.filter((l) => !l.customer_phone);
+    if (segmentFilter === "repeat") return tenantLeads.filter((l) => l.lead_status === "sold" && (l.tags?.includes("repeat") || false));
+    if (segmentFilter === "high_value") return tenantLeads.filter((l) => l.lead_status === "sold" && (l.revenue ?? 0) > 0);
+    if (segmentFilter.startsWith("status:")) {
+      const s = segmentFilter.replace("status:", "") as LeadStatus;
+      return tenantLeads.filter((l) => l.lead_status === s);
+    }
+    if (segmentFilter.startsWith("source:")) {
+      const src = segmentFilter.replace("source:", "");
+      return tenantLeads.filter((l) => l.utm_source === src);
+    }
+    if (segmentFilter.startsWith("campaign:")) {
+      const c = segmentFilter.replace("campaign:", "");
+      return tenantLeads.filter((l) => l.utm_campaign === c);
+    }
+    if (segmentFilter.startsWith("tag:")) {
+      const tag = segmentFilter.replace("tag:", "");
+      return tenantLeads.filter((l) => l.tags?.includes(tag));
+    }
+    return tenantLeads;
+  }, [tenantLeads, segmentFilter]);
+
+  const allSources = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of tenantLeads) if (l.utm_source) set.add(l.utm_source);
+    return Array.from(set).sort();
+  }, [tenantLeads]);
+
+  const allCampaigns = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of tenantLeads) if (l.utm_campaign) set.add(l.utm_campaign);
+    return Array.from(set).sort();
+  }, [tenantLeads]);
+
+  async function addTagToLead(leadRef: string, tag: string) {
+    if (!tenant || !isConfigured || !supabase) return;
+    setSegmentBusy(leadRef);
+    try {
+      await authFetch("crm", {
+        method: "POST",
+        body: JSON.stringify({ action: "add_tag", ref: leadRef, tag }),
+      });
+      await loadTenantData();
+      setToast(`Tag "${tag}" adicionada.`);
+    } catch { setToast("Erro ao adicionar tag."); }
+    setSegmentBusy("");
+  }
+
+  async function removeTagFromLead(leadRef: string, tag: string) {
+    if (!tenant || !isConfigured || !supabase) return;
+    setSegmentBusy(leadRef);
+    try {
+      await authFetch("crm", {
+        method: "POST",
+        body: JSON.stringify({ action: "remove_tag", ref: leadRef, tag }),
+      });
+      await loadTenantData();
+      setToast(`Tag "${tag}" removida.`);
+    } catch { setToast("Erro ao remover tag."); }
+    setSegmentBusy("");
+  }
+
+  async function createCloudApiInstance() {
+    if (!tenant || !waCloudPhoneId.trim() || !waCloudToken.trim()) {
+      setToast("Informe o Phone Number ID e o Access Token.");
+      return;
+    }
+    setWaCloudBusy(true);
+    try {
+      const res = await authFetch("tenant-admin", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "manage_whatsapp_instance",
+          sub_action: "create",
+          tenant_id: tenant.id,
+          instance_name: `cloud-${waCloudPhoneId.trim().slice(-6)}`,
+          provider: "cloud_api",
+          metadata: {
+            phone_number_id: waCloudPhoneId.trim(),
+            waba_id: waCloudWabaId.trim() || undefined,
+            verify_token: waCloudVerifyToken.trim() || undefined,
+          },
+          api_key: waCloudToken.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setWaCloudPhoneId("");
+        setWaCloudWabaId("");
+        setWaCloudToken("");
+        setWaCloudVerifyToken("");
+        setToast("Instância Cloud API criada com sucesso.");
+        await loadWaInstances();
+      } else {
+        setToast(data.error ?? "Erro ao criar instância Cloud API.");
+      }
+    } catch { setToast("Erro ao criar instância Cloud API."); }
+    setWaCloudBusy(false);
   }
 
   const metrics = useMemo(() => {
@@ -2255,6 +2405,8 @@ export function App() {
             <NavButton icon={<MessageCircle />} label="WhatsApp" active={active === "whatsapp"} onClick={() => { goToSection("whatsapp"); loadWaInstances(); loadWaKeys(); }} />
             <NavButton icon={<TrendingUp />} label="Vendas IA" active={active === "ai-sales"} onClick={() => goToSection("ai-sales")} />
             <NavButton icon={<LayoutList />} label="CRM" active={active === "crm"} onClick={() => goToSection("crm")} />
+            <NavButton icon={<Bell />} label={`Follow-ups${overdueCount ? ` (${overdueCount})` : ""}`} active={active === "follow-ups"} onClick={() => goToSection("follow-ups")} />
+            <NavButton icon={<Tag />} label="Segmentos" active={active === "segments"} onClick={() => goToSection("segments")} />
             <div className="nav-separator" />
             <NavButton icon={<PhoneCall />} label="Atender" active={active === "sales"} onClick={() => goToSection("sales")} />
             <NavButton icon={<MessageCircle />} label="Atendimentos" active={active === "leads"} onClick={() => goToSection("leads")} />
@@ -2787,6 +2939,255 @@ export function App() {
                 <FileText size={18} />
               </div>
               <CrmHistory activities={tenantCrmActivities} leads={tenantLeads} />
+            </section>
+          </section>
+        )}
+
+        {active === "follow-ups" && (
+          <section className="page-grid">
+            <div className="kpi-grid">
+              <Kpi label="Atrasados" value={String(overdueCount)} />
+              <Kpi label="Ação agora" value={String(dueNowCount)} />
+              <Kpi label="Com follow-up" value={String(tenantLeads.filter((l) => l.next_follow_up_at && isOpenLead(l)).length)} />
+              <Kpi label="Sem agendamento" value={String(tenantLeads.filter((l) => !l.next_follow_up_at && isOpenLead(l)).length)} />
+            </div>
+
+            <section className="panel wide">
+              <div className="panel-head">
+                <div>
+                  <h2>Central de Follow-ups</h2>
+                  <p>Alertas e lembretes para o vendedor entrar em contato no momento certo.</p>
+                </div>
+                <Bell size={18} />
+              </div>
+              <div className="followup-toolbar">
+                <div className="segmented-filter" aria-label="Filtro follow-up">
+                  {([
+                    { value: "due" as const, label: "Ação agora" },
+                    { value: "overdue" as const, label: "Atrasados" },
+                    { value: "upcoming" as const, label: "Agendados" },
+                    { value: "all" as const, label: "Todos abertos" },
+                  ]).map((o) => (
+                    <button key={o.value} className={followUpFilter === o.value ? "active" : ""} onClick={() => setFollowUpFilter(o.value)}>
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {followUpLeads.length === 0 ? (
+                <EmptyState text="Nenhum lead neste filtro." />
+              ) : (
+                <div className="followup-list">
+                  {followUpLeads.map((lead) => {
+                    const isOverdue = leadFollowUpDue(lead);
+                    const isNew = lead.lead_status === "new" && !lead.next_follow_up_at;
+                    const fuDate = lead.next_follow_up_at ? new Date(lead.next_follow_up_at) : null;
+                    const timeUntil = fuDate ? fuDate.getTime() - Date.now() : 0;
+                    const hoursUntil = Math.round(timeUntil / 3600000);
+                    return (
+                      <article key={lead.id} className={`followup-card${isOverdue ? " followup-overdue" : ""}${isNew ? " followup-new" : ""}`}>
+                        <div className="followup-card-header">
+                          <div>
+                            <strong>{lead.customer_name || lead.offer_name || lead.ref}</strong>
+                            <small>
+                              {lead.customer_phone || lead.ref} · {lead.utm_campaign ?? "sem campanha"} · <Status status={lead.lead_status} />
+                            </small>
+                          </div>
+                          <div className="followup-timing">
+                            {isOverdue && <span className="followup-badge overdue"><Clock size={12} /> Atrasado</span>}
+                            {isNew && <span className="followup-badge new-lead"><Bell size={12} /> Lead novo</span>}
+                            {!isOverdue && !isNew && fuDate && (
+                              <span className="followup-badge upcoming">
+                                <Clock size={12} /> {hoursUntil <= 0 ? "Agora" : hoursUntil < 24 ? `${hoursUntil}h` : `${Math.round(hoursUntil / 24)}d`}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="followup-card-body">
+                          <div className="followup-meta">
+                            {lead.next_follow_up_at && <span><Clock size={12} /> {formatDate(lead.next_follow_up_at)}</span>}
+                            {lead.utm_source && <span className="attr-source-tag attr-source-default">{lead.utm_source}/{lead.utm_medium ?? "?"}</span>}
+                            <TagRow tags={lead.tags} />
+                          </div>
+                          <div className="followup-card-actions">
+                            {lead.customer_phone && (
+                              <a href={whatsappUrl(lead.customer_phone)} target="_blank" rel="noopener noreferrer" className="ghost-dark-button">
+                                <MessageCircle size={13} /> WhatsApp
+                              </a>
+                            )}
+                            <button className="ghost-dark-button" onClick={() => focusCrmLead(lead)}>
+                              <LayoutList size={13} /> Abrir no CRM
+                            </button>
+                            <input
+                              type="datetime-local"
+                              value={crmFollowUps[lead.id] ?? dateTimeLocalValue(lead.next_follow_up_at)}
+                              onChange={(e) => setCrmFollowUps((items) => ({ ...items, [lead.id]: e.target.value }))}
+                              style={{ fontSize: "0.82rem", padding: "4px 8px", borderRadius: 6, border: "1px solid var(--line)" }}
+                            />
+                            <button
+                              className="primary-button"
+                              onClick={() => updateCrmStage(lead, lead.lead_status)}
+                              disabled={crmBusyRef === lead.ref}
+                              style={{ fontSize: "0.82rem", padding: "4px 12px" }}
+                            >
+                              Salvar
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </section>
+        )}
+
+        {active === "segments" && (
+          <section className="page-grid">
+            <div className="kpi-grid">
+              <Kpi label="Total leads" value={String(tenantLeads.length)} />
+              <Kpi label="Tags únicas" value={String(allSegmentTags.length)} />
+              <Kpi label="Com telefone" value={String(tenantLeads.filter((l) => l.customer_phone).length)} />
+              <Kpi label="Vendidos" value={String(tenantLeads.filter((l) => l.lead_status === "sold").length)} />
+            </div>
+
+            <section className="panel wide">
+              <div className="panel-head">
+                <div>
+                  <h2>Segmentação de Clientes</h2>
+                  <p>Filtre por perfil, histórico, origem ou estágio na jornada.</p>
+                </div>
+                <Tag size={18} />
+              </div>
+
+              <div className="segment-filters">
+                <div className="segment-group">
+                  <label className="mini-label">Por estágio</label>
+                  <div className="segment-chips">
+                    <button className={segmentFilter === "all" ? "segment-chip active" : "segment-chip"} onClick={() => setSegmentFilter("all")}>Todos</button>
+                    {(["new", "contacted", "qualified", "sold", "lost", "bad"] as LeadStatus[]).map((s) => (
+                      <button key={s} className={segmentFilter === `status:${s}` ? "segment-chip active" : "segment-chip"} onClick={() => setSegmentFilter(`status:${s}`)}>
+                        {statusLabel(s)} ({tenantLeads.filter((l) => l.lead_status === s).length})
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {allSources.length > 0 && (
+                  <div className="segment-group">
+                    <label className="mini-label">Por origem</label>
+                    <div className="segment-chips">
+                      {allSources.map((src) => (
+                        <button key={src} className={segmentFilter === `source:${src}` ? "segment-chip active" : "segment-chip"} onClick={() => setSegmentFilter(`source:${src}`)}>
+                          {src} ({tenantLeads.filter((l) => l.utm_source === src).length})
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {allCampaigns.length > 0 && (
+                  <div className="segment-group">
+                    <label className="mini-label">Por campanha</label>
+                    <div className="segment-chips">
+                      {allCampaigns.slice(0, 10).map((c) => (
+                        <button key={c} className={segmentFilter === `campaign:${c}` ? "segment-chip active" : "segment-chip"} onClick={() => setSegmentFilter(`campaign:${c}`)}>
+                          {c} ({tenantLeads.filter((l) => l.utm_campaign === c).length})
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {allSegmentTags.length > 0 && (
+                  <div className="segment-group">
+                    <label className="mini-label">Por tag</label>
+                    <div className="segment-chips">
+                      {allSegmentTags.map((tag) => (
+                        <button key={tag} className={segmentFilter === `tag:${tag}` ? "segment-chip active" : "segment-chip"} onClick={() => setSegmentFilter(`tag:${tag}`)}>
+                          {tag} ({tenantLeads.filter((l) => l.tags?.includes(tag)).length})
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="segment-group">
+                  <label className="mini-label">Especiais</label>
+                  <div className="segment-chips">
+                    <button className={segmentFilter === "no_phone" ? "segment-chip active" : "segment-chip"} onClick={() => setSegmentFilter("no_phone")}>
+                      Sem telefone ({tenantLeads.filter((l) => !l.customer_phone).length})
+                    </button>
+                    <button className={segmentFilter === "high_value" ? "segment-chip active" : "segment-chip"} onClick={() => setSegmentFilter("high_value")}>
+                      Vendas ({tenantLeads.filter((l) => l.lead_status === "sold" && (l.revenue ?? 0) > 0).length})
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="segment-result-header">
+                <strong>{segmentedLeads.length} leads</strong>
+                <span className="muted">{segmentFilter === "all" ? "Todos os leads" : `Filtro: ${segmentFilter.replace(":", " → ")}`}</span>
+              </div>
+
+              <div className="segment-table-wrap">
+                <table className="segment-table">
+                  <thead>
+                    <tr>
+                      <th>Lead</th>
+                      <th>Status</th>
+                      <th>Telefone</th>
+                      <th>Origem</th>
+                      <th>Campanha</th>
+                      <th>Tags</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {segmentedLeads.slice(0, 50).map((lead) => (
+                      <tr key={lead.id}>
+                        <td>
+                          <strong>{lead.customer_name || lead.ref}</strong>
+                          <br /><small className="muted">{lead.offer_name || "-"}</small>
+                        </td>
+                        <td><Status status={lead.lead_status} /></td>
+                        <td>{lead.customer_phone || <span className="muted">-</span>}</td>
+                        <td>{lead.utm_source ? <span className="attr-source-tag attr-source-default">{lead.utm_source}</span> : <span className="muted">-</span>}</td>
+                        <td><small>{lead.utm_campaign || "-"}</small></td>
+                        <td>
+                          <div className="tag-row">
+                            {(lead.tags ?? []).map((t) => (
+                              <span key={t} className="tag tag-removable" onClick={() => removeTagFromLead(lead.ref, t)} title="Clique para remover">
+                                {t} ×
+                              </span>
+                            ))}
+                          </div>
+                          <div className="tag-add-row">
+                            <input
+                              placeholder="+ tag"
+                              value={segmentTagInput && segmentBusy === lead.ref ? segmentTagInput : ""}
+                              onChange={(e) => { setSegmentTagInput(e.target.value); setSegmentBusy(lead.ref); }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && segmentTagInput.trim()) {
+                                  addTagToLead(lead.ref, segmentTagInput.trim().toLowerCase());
+                                  setSegmentTagInput("");
+                                }
+                              }}
+                              style={{ width: 80, fontSize: "0.78rem", padding: "2px 6px", border: "1px solid var(--line)", borderRadius: 4 }}
+                            />
+                          </div>
+                        </td>
+                        <td>
+                          <button className="ghost-dark-button" onClick={() => focusCrmLead(lead)} style={{ fontSize: "0.78rem", padding: "2px 8px" }}>CRM</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {segmentedLeads.length > 50 && <p className="muted" style={{ textAlign: "center", marginTop: 8 }}>Exibindo 50 de {segmentedLeads.length} leads.</p>}
+              </div>
             </section>
           </section>
         )}
@@ -3440,6 +3841,137 @@ export function App() {
                       <span className="tag-pill">5</span> Contatos são vinculados ao CRM pelo telefone quando há correspondência
                     </div>
                   </div>
+                </section>
+
+                <section className="panel">
+                  <div className="panel-head">
+                    <div>
+                      <h2>WhatsApp Oficial (Cloud API)</h2>
+                      <p>Para empresas que desejam usar a API oficial do WhatsApp Business Platform.</p>
+                    </div>
+                    <ShieldCheck size={18} />
+                  </div>
+                  <div className="cloud-api-info">
+                    <p style={{ fontSize: "0.88rem", color: "var(--muted)", marginBottom: "1rem" }}>
+                      A Cloud API é a integração oficial da Meta para WhatsApp Business. Diferente da Evolution API (não-oficial),
+                      ela oferece selo de verificação, maior estabilidade e conformidade com políticas da Meta.
+                    </p>
+                    <div className="cloud-api-comparison">
+                      <div className="comparison-col">
+                        <strong>Evolution API</strong>
+                        <ul>
+                          <li>Gratuita / auto-hospedada</li>
+                          <li>Sem aprovação da Meta</li>
+                          <li>Risco de banimento</li>
+                          <li>Setup rápido via QR Code</li>
+                        </ul>
+                      </div>
+                      <div className="comparison-col highlight">
+                        <strong>Cloud API (Oficial)</strong>
+                        <ul>
+                          <li>Plataforma oficial da Meta</li>
+                          <li>Selo verde / verificado</li>
+                          <li>Sem risco de banimento</li>
+                          <li>Requer conta Meta Business</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "1rem" }}>
+                    <div>
+                      <label className="mini-label">Phone Number ID *</label>
+                      <input
+                        placeholder="Ex: 123456789012345"
+                        value={waCloudPhoneId}
+                        onChange={(e) => setWaCloudPhoneId(e.target.value)}
+                        style={{ width: "100%", maxWidth: 400 }}
+                      />
+                      <small className="muted" style={{ display: "block", marginTop: 2 }}>
+                        Encontre em Meta Business Suite &gt; WhatsApp &gt; Configurações da API
+                      </small>
+                    </div>
+                    <div>
+                      <label className="mini-label">WhatsApp Business Account ID</label>
+                      <input
+                        placeholder="Ex: 987654321098765"
+                        value={waCloudWabaId}
+                        onChange={(e) => setWaCloudWabaId(e.target.value)}
+                        style={{ width: "100%", maxWidth: 400 }}
+                      />
+                    </div>
+                    <div>
+                      <label className="mini-label">Access Token permanente *</label>
+                      <input
+                        type="password"
+                        placeholder="Token de acesso do sistema"
+                        value={waCloudToken}
+                        onChange={(e) => setWaCloudToken(e.target.value)}
+                        style={{ width: "100%", maxWidth: 400 }}
+                      />
+                      <small className="muted" style={{ display: "block", marginTop: 2 }}>
+                        Gere um token de sistema permanente em developers.facebook.com &gt; Configurações do app
+                      </small>
+                    </div>
+                    <div>
+                      <label className="mini-label">Verify Token (para webhook)</label>
+                      <input
+                        placeholder="Token de verificação personalizado"
+                        value={waCloudVerifyToken}
+                        onChange={(e) => setWaCloudVerifyToken(e.target.value)}
+                        style={{ width: "100%", maxWidth: 400 }}
+                      />
+                      <small className="muted" style={{ display: "block", marginTop: 2 }}>
+                        Defina um token para validar o webhook da Meta (será usado na verificação do endpoint).
+                      </small>
+                    </div>
+                    <button
+                      className="primary-button"
+                      onClick={createCloudApiInstance}
+                      disabled={waCloudBusy || !waCloudPhoneId.trim() || !waCloudToken.trim()}
+                      style={{ alignSelf: "flex-start" }}
+                    >
+                      {waCloudBusy ? "Criando..." : "Criar instância Cloud API"}
+                    </button>
+                  </div>
+
+                  {waInstances.filter((i) => i.provider === "cloud_api").length > 0 && (
+                    <div style={{ marginTop: "1rem" }}>
+                      <label className="mini-label">Instâncias Cloud API ativas</label>
+                      {waInstances.filter((i) => i.provider === "cloud_api").map((inst) => (
+                        <div key={inst.id} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.5rem 0", borderBottom: "1px solid var(--line)" }}>
+                          <span style={{ fontSize: "0.82rem", fontWeight: 600 }}>{inst.instance_name}</span>
+                          <span className={`status-dot ${inst.status === "connected" ? "status-active" : "status-off"}`} />
+                          <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>{inst.status === "connected" ? "Conectado" : inst.status}</span>
+                          <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>Tel: {inst.phone_number ?? "-"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <details style={{ marginTop: "1rem" }}>
+                    <summary style={{ cursor: "pointer", fontWeight: 500, fontSize: "0.9rem" }}>Como configurar o webhook da Cloud API</summary>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem", fontSize: "0.85rem" }}>
+                      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                        <span className="tag-pill">1</span> Acesse Meta Business Suite &gt; WhatsApp &gt; Configurações
+                      </div>
+                      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                        <span className="tag-pill">2</span> Em Webhook, configure a URL de callback:
+                      </div>
+                      <div className="copy-line" style={{ marginLeft: 32 }}>
+                        <code style={{ fontSize: "0.82rem" }}>{String(import.meta.env.VITE_SUPABASE_URL || "https://tykeycwworjtfpssjevw.supabase.co")}/functions/v1/n8n-webhook</code>
+                        <button className="icon-button" onClick={() => { navigator.clipboard.writeText(`${String(import.meta.env.VITE_SUPABASE_URL || "https://tykeycwworjtfpssjevw.supabase.co")}/functions/v1/n8n-webhook`); setToast("URL copiada."); }} title="Copiar URL" type="button">
+                          <Clipboard size={15} />
+                        </button>
+                      </div>
+                      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                        <span className="tag-pill">3</span> Use o Verify Token definido acima
+                      </div>
+                      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                        <span className="tag-pill">4</span> Assine os campos: messages, message_deliveries, message_reads
+                      </div>
+                    </div>
+                  </details>
                 </section>
               </section>
             )}
@@ -5765,6 +6297,8 @@ function sectionTitle(section: Section): string {
     "ai-sales": "Vendas IA",
     intelligence: "Inteligência Financeira",
     settings: "Configuração",
+    "follow-ups": "Follow-ups",
+    segments: "Segmentação",
   }[section];
 }
 
