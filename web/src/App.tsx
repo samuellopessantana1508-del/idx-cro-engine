@@ -29,6 +29,7 @@ import {
   ChevronDown,
   ChevronUp,
   Download,
+  Target,
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
 import type { AiPatterns, CampaignMetric, CapiEvent, CapiHealth, ConversationInsight, CrmActivity, CustomerProfile, FinancialSummary, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, MonthlyPoint, Offer, SaleSignal, SaleSignalCapiStatus, SmartLink, Tenant, TenantUser, WebhookKey, WhatsAppConversation, WhatsAppInstance, WhatsAppMessage } from "./lib/types";
@@ -240,6 +241,41 @@ const emptyHealth: CapiHealth = {
   last_event_at: null,
 };
 
+type LinksTab = "links" | "utm" | "attribution";
+
+type UtmTemplate = {
+  label: string;
+  source: string;
+  medium: string;
+  campaignHint: string;
+  contentHint: string;
+  termHint: string;
+};
+
+const UTM_TEMPLATES: UtmTemplate[] = [
+  { label: "Meta Ads", source: "meta", medium: "paid", campaignHint: "nome-da-campanha", contentHint: "criativo-ou-conjunto", termHint: "publico-alvo" },
+  { label: "Google Ads", source: "google", medium: "cpc", campaignHint: "campanha-search", contentHint: "grupo-de-anuncio", termHint: "palavra-chave" },
+  { label: "Instagram Orgânico", source: "instagram", medium: "organic", campaignHint: "bio-link", contentHint: "post-ou-story", termHint: "" },
+  { label: "WhatsApp", source: "whatsapp", medium: "referral", campaignHint: "indicacao", contentHint: "", termHint: "" },
+  { label: "E-mail", source: "email", medium: "newsletter", campaignHint: "campanha-email", contentHint: "cta-ou-assunto", termHint: "" },
+];
+
+type CampaignAttribution = {
+  tenant_id: string;
+  campaign: string;
+  source: string;
+  medium: string;
+  clicks: number;
+  leads: number;
+  qualified: number;
+  sales: number;
+  revenue: number;
+  ai_signals: number;
+  ai_confirmed_sales: number;
+  first_click_at: string | null;
+  last_click_at: string | null;
+};
+
 function authRedirectTo() {
   return `${window.location.origin}${window.location.pathname}`;
 }
@@ -443,6 +479,13 @@ export function App() {
   const [aiSalesFilter, setAiSalesFilter] = useState<SaleSignalCapiStatus | "all">("all");
   const [aiSalesLoading, setAiSalesLoading] = useState(false);
   const [aiSalesBusy, setAiSalesBusy] = useState<string>("");
+
+  const [linksTab, setLinksTab] = useState<LinksTab>("links");
+  const [selectedUtmTemplate, setSelectedUtmTemplate] = useState<number>(0);
+  const [campaignAttribution, setCampaignAttribution] = useState<CampaignAttribution[]>([]);
+  const [attrPeriod, setAttrPeriod] = useState<"7d" | "30d" | "90d" | "all">("30d");
+  const [attrSourceFilter, setAttrSourceFilter] = useState<string>("all");
+  const [attrSearch, setAttrSearch] = useState("");
 
   const [fiSummary, setFiSummary] = useState<FinancialSummary | null>(null);
   const [fiMonthly, setFiMonthly] = useState<MonthlyPoint[]>([]);
@@ -1622,6 +1665,24 @@ export function App() {
     }
   }
 
+  async function loadCampaignAttribution() {
+    if (!tenant || !supabase) return;
+    try {
+      let query = supabase
+        .from("vw_campaign_attribution")
+        .select("*")
+        .eq("tenant_id", tenant.id)
+        .order("clicks", { ascending: false });
+      if (attrPeriod !== "all") {
+        const days = attrPeriod === "7d" ? 7 : attrPeriod === "30d" ? 30 : 90;
+        const since = new Date(Date.now() - days * 86400000).toISOString();
+        query = query.gte("last_click_at", since);
+      }
+      const { data } = await query;
+      setCampaignAttribution((data ?? []) as CampaignAttribution[]);
+    } catch { /* view may not exist yet */ }
+  }
+
   async function confirmAiSale(signalId: string, revenue?: number) {
     if (!tenant) return;
     setAiSalesBusy(signalId);
@@ -1958,6 +2019,14 @@ export function App() {
   useEffect(() => {
     if (active === "ai-sales" && tenant) loadAiSales();
   }, [active, tenant?.id, aiSalesFilter]);
+
+  useEffect(() => {
+    if (active === "links" && linksTab === "attribution" && tenant) loadCampaignAttribution();
+  }, [active, linksTab, tenant?.id, attrPeriod]);
+
+  useEffect(() => {
+    if ((active === "dashboard" || active === "reports") && tenant) loadCampaignAttribution();
+  }, [active, tenant?.id]);
 
   useEffect(() => {
     if (active === "intelligence" && tenant) loadFinancialDashboard();
@@ -2438,6 +2507,48 @@ export function App() {
               <ReadinessChecklist items={operationalChecklist} onGo={goToSection} compact />
             </section>
 
+            {campaignAttribution.length > 0 && (
+              <section className="panel wide">
+                <div className="panel-head">
+                  <div>
+                    <h2>Top campanhas por atribuição</h2>
+                    <p>Campanhas que mais geraram contatos, oportunidades e vendas confirmadas.</p>
+                  </div>
+                  <Target size={18} />
+                </div>
+                <div className="table-wrap">
+                  <table className="attr-table">
+                    <thead>
+                      <tr>
+                        <th>Campanha</th>
+                        <th>Fonte</th>
+                        <th>Cliques</th>
+                        <th>Leads</th>
+                        <th>Vendas</th>
+                        <th>Conv.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {campaignAttribution.slice(0, 5).map((row) => {
+                        const conv = Number(row.clicks) > 0 ? ((Number(row.sales) + Number(row.ai_confirmed_sales)) / Number(row.clicks)) * 100 : 0;
+                        return (
+                          <tr key={`${row.campaign}-${row.source}`}>
+                            <td className="attr-campaign">{row.campaign}</td>
+                            <td><span className={`attr-source-tag ${(() => { const s = row.source.toLowerCase(); if (s.includes("meta") || s.includes("facebook") || s.includes("instagram")) return "attr-source-meta"; if (s.includes("google")) return "attr-source-google"; return "attr-source-default"; })()}`}>{row.source}</span></td>
+                            <td>{Number(row.clicks).toLocaleString("pt-BR")}</td>
+                            <td>{row.leads}</td>
+                            <td>{Number(row.sales) + Number(row.ai_confirmed_sales)}</td>
+                            <td>{conv.toFixed(1)}%</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <button className="ghost-button full" style={{ marginTop: 8 }} onClick={() => { goToSection("links"); setLinksTab("attribution"); }}>Ver relatório completo <ArrowRight size={14} /></button>
+              </section>
+            )}
+
             <section className="panel wide">
               <div className="panel-head">
                 <div>
@@ -2453,24 +2564,101 @@ export function App() {
 
         {active === "links" && (
           <section className="stack">
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <h2>Novo link</h2>
-                  <p>Crie uma oferta rastreável para qualquer negócio local.</p>
-                </div>
-              </div>
-              <SmartLinkForm draft={draft} setDraft={setDraft} onSubmit={createSmartLink} loading={loading} />
-            </section>
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <h2>Links ativos</h2>
-                  <p>Copie e use em anúncio, bio, stories ou campanha.</p>
-                </div>
-              </div>
-              <LinksTable links={tenantLinks} onCopy={copyLink} />
-            </section>
+            <div className="links-tab-bar">
+              <button className={linksTab === "links" ? "active" : ""} onClick={() => setLinksTab("links")}>Smart Links</button>
+              <button className={linksTab === "utm" ? "active" : ""} onClick={() => setLinksTab("utm")}>UTMs e Atribuição</button>
+              <button className={linksTab === "attribution" ? "active" : ""} onClick={() => setLinksTab("attribution")}>Relatório por Campanha</button>
+            </div>
+
+            {linksTab === "links" && (
+              <>
+                <section className="panel">
+                  <div className="panel-head">
+                    <div>
+                      <h2>Novo link</h2>
+                      <p>Crie uma oferta rastreável para qualquer negócio local.</p>
+                    </div>
+                  </div>
+                  <SmartLinkForm draft={draft} setDraft={setDraft} onSubmit={createSmartLink} loading={loading} />
+                </section>
+                <section className="panel">
+                  <div className="panel-head">
+                    <div>
+                      <h2>Links ativos</h2>
+                      <p>Copie e use em anúncio, bio, stories ou campanha.</p>
+                    </div>
+                  </div>
+                  <LinksTable links={tenantLinks} onCopy={copyLink} />
+                </section>
+              </>
+            )}
+
+            {linksTab === "utm" && (
+              <>
+                <section className="panel">
+                  <div className="panel-head">
+                    <div>
+                      <h2>Gerador de links com UTMs</h2>
+                      <p>Selecione um template e preencha os campos. O link com UTMs é gerado automaticamente.</p>
+                    </div>
+                    <Target size={18} />
+                  </div>
+                  <div className="utm-templates">
+                    {UTM_TEMPLATES.map((tpl, i) => (
+                      <button
+                        key={tpl.label}
+                        className={`utm-template-btn${selectedUtmTemplate === i ? " active" : ""}`}
+                        onClick={() => {
+                          setSelectedUtmTemplate(i);
+                          setDraft((prev) => ({
+                            ...prev,
+                            source: tpl.source,
+                            medium: tpl.medium,
+                            campaign: prev.campaign || "",
+                            content: prev.content || "",
+                            term: prev.term || "",
+                          }));
+                        }}
+                      >
+                        {tpl.label}
+                      </button>
+                    ))}
+                  </div>
+                  <SmartLinkForm
+                    draft={draft}
+                    setDraft={setDraft}
+                    onSubmit={createSmartLink}
+                    loading={loading}
+                    template={UTM_TEMPLATES[selectedUtmTemplate]}
+                  />
+                  {(draft.source || draft.campaign) && (
+                    <UtmPreview draft={draft} tenantSlug={tenant?.slug ?? "empresa"} />
+                  )}
+                </section>
+                <section className="panel">
+                  <div className="panel-head">
+                    <div>
+                      <h2>Links com UTM ativos</h2>
+                      <p>Todos os Smart Links com parâmetros UTM configurados.</p>
+                    </div>
+                  </div>
+                  <LinksTable links={tenantLinks} onCopy={copyLink} />
+                </section>
+              </>
+            )}
+
+            {linksTab === "attribution" && (
+              <CampaignAttributionPanel
+                data={campaignAttribution}
+                period={attrPeriod}
+                sourceFilter={attrSourceFilter}
+                search={attrSearch}
+                onPeriodChange={setAttrPeriod}
+                onSourceFilterChange={setAttrSourceFilter}
+                onSearchChange={setAttrSearch}
+                onRefresh={loadCampaignAttribution}
+              />
+            )}
           </section>
         )}
 
@@ -2808,7 +2996,20 @@ export function App() {
                           {selectedContact?.phone || selectedContact?.wa_id}
                           {selectedConv?.tracking_session_id && (() => {
                             const lead = waConvLeadLink(selectedConv);
-                            return lead ? ` · Lead: ${lead.ref} (${lead.lead_status})` : " · Vinculado ao CRM";
+                            if (!lead) return " · Vinculado ao CRM";
+                            const origin = lead.utm_campaign && lead.utm_source
+                              ? `${lead.utm_source}/${lead.utm_campaign}`
+                              : null;
+                            return (
+                              <>
+                                {` · Lead: ${lead.ref} (${lead.lead_status})`}
+                                {origin ? (
+                                  <span className="origin-badge origin-known" style={{ marginLeft: 6 }}>{origin}</span>
+                                ) : (
+                                  <span className="origin-badge" style={{ marginLeft: 6 }}>Origem desconhecida</span>
+                                )}
+                              </>
+                            );
                           })()}
                         </div>
                       </div>
@@ -3483,6 +3684,48 @@ export function App() {
               </div>
               <LeadQualityTable rows={qualityRows} />
             </section>
+            {campaignAttribution.length > 0 && (
+              <section className="panel wide">
+                <div className="panel-head">
+                  <div>
+                    <h2>Atribuição de campanhas</h2>
+                    <p>Campanhas ranqueadas por resultado comercial real.</p>
+                  </div>
+                  <Target size={18} />
+                </div>
+                <div className="table-wrap">
+                  <table className="attr-table">
+                    <thead>
+                      <tr>
+                        <th>Campanha</th>
+                        <th>Fonte / Mídia</th>
+                        <th>Cliques</th>
+                        <th>Leads</th>
+                        <th>Vendas</th>
+                        <th>Receita</th>
+                        <th>Conv.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {campaignAttribution.slice(0, 10).map((row) => {
+                        const conv = Number(row.clicks) > 0 ? ((Number(row.sales) + Number(row.ai_confirmed_sales)) / Number(row.clicks)) * 100 : 0;
+                        return (
+                          <tr key={`${row.campaign}-${row.source}-${row.medium}`}>
+                            <td className="attr-campaign">{row.campaign}</td>
+                            <td><span className={`attr-source-tag ${(() => { const s = row.source.toLowerCase(); if (s.includes("meta") || s.includes("facebook") || s.includes("instagram")) return "attr-source-meta"; if (s.includes("google")) return "attr-source-google"; return "attr-source-default"; })()}`}>{row.source}/{row.medium}</span></td>
+                            <td>{Number(row.clicks).toLocaleString("pt-BR")}</td>
+                            <td>{row.leads}</td>
+                            <td>{Number(row.sales) + Number(row.ai_confirmed_sales)}</td>
+                            <td>{formatMoney(Number(row.revenue))}</td>
+                            <td>{conv.toFixed(1)}%</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
           </section>
         )}
 
@@ -4365,11 +4608,13 @@ function SmartLinkForm({
   setDraft,
   onSubmit,
   loading,
+  template,
 }: {
   draft: DraftLink;
   setDraft: (draft: DraftLink) => void;
   onSubmit: () => void;
   loading: boolean;
+  template?: UtmTemplate;
 }) {
   const set = (key: keyof DraftLink, value: string) => setDraft({ ...draft, [key]: value });
   return (
@@ -4391,24 +4636,24 @@ function SmartLinkForm({
         <input value={draft.linkName} onChange={(event) => set("linkName", event.target.value)} placeholder="Origem ou campanha do link" />
       </label>
       <label>
-        Campanha
-        <input value={draft.campaign} onChange={(event) => set("campaign", event.target.value)} placeholder="utm_campaign do anúncio" />
+        Campanha (utm_campaign)
+        <input value={draft.campaign} onChange={(event) => set("campaign", event.target.value)} placeholder={template?.campaignHint ?? "utm_campaign do anúncio"} />
       </label>
       <label>
-        Fonte
-        <input value={draft.source} onChange={(event) => set("source", event.target.value)} placeholder="meta" />
+        Fonte (utm_source)
+        <input value={draft.source} onChange={(event) => set("source", event.target.value)} placeholder={template?.source ?? "meta"} />
       </label>
       <label>
-        Mídia
-        <input value={draft.medium} onChange={(event) => set("medium", event.target.value)} placeholder="paid" />
+        Mídia (utm_medium)
+        <input value={draft.medium} onChange={(event) => set("medium", event.target.value)} placeholder={template?.medium ?? "paid"} />
       </label>
       <label>
-        Conteúdo
-        <input value={draft.content} onChange={(event) => set("content", event.target.value)} placeholder="criativo ou anúncio" />
+        Conteúdo (utm_content)
+        <input value={draft.content} onChange={(event) => set("content", event.target.value)} placeholder={template?.contentHint ?? "criativo ou anúncio"} />
       </label>
       <label>
-        Termo
-        <input value={draft.term} onChange={(event) => set("term", event.target.value)} placeholder="palavra ou público" />
+        Termo (utm_term)
+        <input value={draft.term} onChange={(event) => set("term", event.target.value)} placeholder={template?.termHint ?? "palavra ou público"} />
       </label>
       <label className="span-2">
         Mensagem WhatsApp
@@ -4418,6 +4663,147 @@ function SmartLinkForm({
         <Plus size={16} /> Criar Smart Link
       </button>
     </div>
+  );
+}
+
+function UtmPreview({ draft, tenantSlug }: { draft: DraftLink; tenantSlug: string }) {
+  const code = `${slugify(tenantSlug)}-${slugify(draft.offerName || "oferta")}-preview`;
+  const params = new URLSearchParams();
+  if (draft.source) params.set("utm_source", draft.source);
+  if (draft.medium) params.set("utm_medium", draft.medium);
+  if (draft.campaign) params.set("utm_campaign", draft.campaign);
+  if (draft.content) params.set("utm_content", draft.content);
+  if (draft.term) params.set("utm_term", draft.term);
+  const query = params.toString();
+  const base = smartLinkUrl(code);
+  return (
+    <div className="utm-preview">
+      <strong>Preview do link:</strong><br />
+      {base}{query ? `?${query}` : ""}
+    </div>
+  );
+}
+
+function CampaignAttributionPanel({
+  data,
+  period,
+  sourceFilter,
+  search,
+  onPeriodChange,
+  onSourceFilterChange,
+  onSearchChange,
+  onRefresh,
+}: {
+  data: CampaignAttribution[];
+  period: "7d" | "30d" | "90d" | "all";
+  sourceFilter: string;
+  search: string;
+  onPeriodChange: (v: "7d" | "30d" | "90d" | "all") => void;
+  onSourceFilterChange: (v: string) => void;
+  onSearchChange: (v: string) => void;
+  onRefresh: () => void;
+}) {
+  const sources = Array.from(new Set(data.map((d) => d.source))).sort();
+  const filtered = data.filter((d) => {
+    if (sourceFilter !== "all" && d.source !== sourceFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      return d.campaign.toLowerCase().includes(q) || d.source.toLowerCase().includes(q) || d.medium.toLowerCase().includes(q);
+    }
+    return true;
+  });
+  const totalClicks = filtered.reduce((s, d) => s + Number(d.clicks), 0);
+  const totalLeads = filtered.reduce((s, d) => s + Number(d.leads), 0);
+  const totalSales = filtered.reduce((s, d) => s + Number(d.sales), 0);
+  const totalRevenue = filtered.reduce((s, d) => s + Number(d.revenue), 0);
+  const totalAiSignals = filtered.reduce((s, d) => s + Number(d.ai_signals), 0);
+  const totalAiConfirmed = filtered.reduce((s, d) => s + Number(d.ai_confirmed_sales), 0);
+  const globalConv = totalClicks > 0 ? ((totalSales / totalClicks) * 100) : 0;
+
+  function sourceClass(src: string) {
+    const s = src.toLowerCase();
+    if (s.includes("meta") || s.includes("facebook") || s.includes("instagram")) return "attr-source-meta";
+    if (s.includes("google")) return "attr-source-google";
+    if (s.includes("organic") || s.includes("whatsapp") || s.includes("email")) return "attr-source-organic";
+    return "attr-source-default";
+  }
+
+  function convClass(rate: number) {
+    if (rate >= 5) return "attr-conv-good";
+    if (rate >= 1) return "attr-conv-ok";
+    return "attr-conv-low";
+  }
+
+  return (
+    <>
+      <section className="panel wide">
+        <div className="panel-head">
+          <div>
+            <h2>Atribuição por campanha</h2>
+            <p>Qual campanha gera cliques, leads, oportunidades e vendas confirmadas.</p>
+          </div>
+          <button className="icon-button" onClick={onRefresh} aria-label="Atualizar"><RefreshCw size={16} /></button>
+        </div>
+        <div className="attr-summary">
+          <div className="attr-summary-item"><div className="attr-sum-value">{totalClicks.toLocaleString("pt-BR")}</div><div className="attr-sum-label">Cliques</div></div>
+          <div className="attr-summary-item"><div className="attr-sum-value">{totalLeads}</div><div className="attr-sum-label">Leads</div></div>
+          <div className="attr-summary-item"><div className="attr-sum-value">{totalAiSignals}</div><div className="attr-sum-label">Sinais IA</div></div>
+          <div className="attr-summary-item"><div className="attr-sum-value">{totalSales + totalAiConfirmed}</div><div className="attr-sum-label">Vendas</div></div>
+          <div className="attr-summary-item"><div className="attr-sum-value">{formatMoney(totalRevenue)}</div><div className="attr-sum-label">Receita</div></div>
+          <div className="attr-summary-item"><div className="attr-sum-value">{globalConv.toFixed(1)}%</div><div className="attr-sum-label">Conversão</div></div>
+        </div>
+        <div className="attr-filters">
+          <select value={period} onChange={(e) => onPeriodChange(e.target.value as typeof period)}>
+            <option value="7d">7 dias</option>
+            <option value="30d">30 dias</option>
+            <option value="90d">90 dias</option>
+            <option value="all">Todo período</option>
+          </select>
+          <select value={sourceFilter} onChange={(e) => onSourceFilterChange(e.target.value)}>
+            <option value="all">Todas as fontes</option>
+            {sources.map((src) => <option key={src} value={src}>{src}</option>)}
+          </select>
+          <input placeholder="Buscar campanha..." value={search} onChange={(e) => onSearchChange(e.target.value)} />
+        </div>
+        {filtered.length === 0 ? (
+          <EmptyState text="Nenhum dado de campanha encontrado no período." />
+        ) : (
+          <div className="table-wrap">
+            <table className="attr-table">
+              <thead>
+                <tr>
+                  <th>Campanha</th>
+                  <th>Fonte / Mídia</th>
+                  <th>Cliques</th>
+                  <th>Leads</th>
+                  <th>Sinais IA</th>
+                  <th>Vendas</th>
+                  <th>Receita</th>
+                  <th>Conv.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((row) => {
+                  const conv = Number(row.clicks) > 0 ? ((Number(row.sales) + Number(row.ai_confirmed_sales)) / Number(row.clicks)) * 100 : 0;
+                  return (
+                    <tr key={`${row.campaign}-${row.source}-${row.medium}`}>
+                      <td className="attr-campaign">{row.campaign}</td>
+                      <td><span className={`attr-source-tag ${sourceClass(row.source)}`}>{row.source}/{row.medium}</span></td>
+                      <td>{Number(row.clicks).toLocaleString("pt-BR")}</td>
+                      <td>{row.leads}</td>
+                      <td>{row.ai_signals}</td>
+                      <td>{Number(row.sales) + Number(row.ai_confirmed_sales)}</td>
+                      <td>{formatMoney(Number(row.revenue))}</td>
+                      <td><span className={`attr-conv-rate ${convClass(conv)}`}>{conv.toFixed(1)}%</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </>
   );
 }
 
@@ -5367,7 +5753,7 @@ function sectionTitle(section: Section): string {
   return {
     dashboard: "Dashboard",
     sales: "Atender",
-    links: "Smart Links",
+    links: "Links e Atribuição",
     leads: "Atendimentos",
     crm: "CRM",
     integrations: "Integrações",

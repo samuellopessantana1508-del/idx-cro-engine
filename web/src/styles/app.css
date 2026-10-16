@@ -3268,3 +3268,231 @@ td small {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* UTM Central */
+
+.links-tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--line);
+  margin-bottom: 1rem;
+}
+
+.links-tab-bar button {
+  flex: 1;
+  padding: 11px 16px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.links-tab-bar button:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+
+.links-tab-bar button.active {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+  font-weight: 600;
+}
+
+.utm-templates {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.utm-template-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.utm-template-btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--ink);
+}
+
+.utm-template-btn.active {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+.utm-preview {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--soft);
+  font-size: 0.82rem;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  word-break: break-all;
+  margin-bottom: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.utm-preview strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.attr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.attr-table th {
+  text-align: left;
+  padding: 10px 8px;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border-bottom: 2px solid var(--line);
+  white-space: nowrap;
+}
+
+.attr-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+.attr-table tr:last-child td {
+  border-bottom: none;
+}
+
+.attr-table .attr-campaign {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.attr-table .attr-source-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.attr-table .attr-source-meta {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.attr-table .attr-source-google {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.attr-table .attr-source-organic {
+  background: var(--purple-soft);
+  color: var(--purple);
+}
+
+.attr-table .attr-source-default {
+  background: var(--accent-soft);
+  color: var(--muted);
+}
+
+.attr-conv-rate {
+  font-weight: 600;
+}
+
+.attr-conv-good {
+  color: var(--green);
+}
+
+.attr-conv-ok {
+  color: var(--amber);
+}
+
+.attr-conv-low {
+  color: var(--muted);
+}
+
+.attr-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.attr-filters select,
+.attr-filters input {
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.attr-filters input {
+  max-width: 180px;
+}
+
+.attr-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.attr-summary-item {
+  text-align: center;
+  padding: 12px 8px;
+  border-radius: 8px;
+  background: var(--soft);
+}
+
+.attr-summary-item .attr-sum-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.attr-summary-item .attr-sum-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.origin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  background: var(--accent-soft);
+  color: var(--muted);
+}
+
+.origin-badge.origin-known {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
