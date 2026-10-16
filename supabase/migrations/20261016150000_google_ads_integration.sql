@@ -28,10 +28,8 @@ create table if not exists public.tenant_google_credentials (
 
 alter table public.tenant_google_credentials enable row level security;
 
-create policy google_creds_select_member
-on public.tenant_google_credentials for select
-to authenticated
-using (idx_private.has_tenant_role(tenant_id));
+-- No SELECT for authenticated: tokens live here, only edge functions (service_role) access this table.
+-- Frontend gets safe fields via the google-ads edge function.
 
 create policy google_creds_service_only
 on public.tenant_google_credentials for all
@@ -39,7 +37,6 @@ to service_role
 using (true)
 with check (true);
 
-grant select on public.tenant_google_credentials to authenticated;
 grant select, insert, update, delete on public.tenant_google_credentials to service_role;
 
 -- 2. Extend integration_oauth_states to support google provider
@@ -205,6 +202,9 @@ alter table public.tracking_sessions
   add column if not exists wbraid text;
 
 -- 9. Attribution view: Google Ads campaigns + IDX leads/sales
+-- Uses DISTINCT ON to assign each session to exactly one campaign (prevents
+-- duplicate counting when multiple campaign mappings match the same session).
+-- Leads = sessions with real evidence of contact (WhatsApp confirmed or CRM status changed).
 create or replace view public.vw_google_campaign_roi
 with (security_invoker = true) as
 with google as (
@@ -224,21 +224,45 @@ with google as (
   from public.google_campaign_insights
   group by tenant_id, campaign_id
 ),
-tracked as (
-  select
+deduped_sessions as (
+  select distinct on (ts.id)
+    ts.id,
     ts.tenant_id,
-    coalesce(m.google_campaign_id, ts.utm_campaign) as campaign_key,
-    count(distinct ts.id) as leads,
-    count(distinct ts.id) filter (where ts.lead_status = 'qualified') as qualified,
-    count(distinct ts.id) filter (where ts.lead_status = 'sold') as sales,
-    coalesce(sum(ts.revenue) filter (where ts.lead_status = 'sold'), 0) as revenue
+    ts.lead_status,
+    ts.whatsapp_opened_at,
+    ts.revenue,
+    coalesce(m.google_campaign_id, ts.utm_campaign) as campaign_key
   from public.tracking_sessions ts
   left join public.google_campaign_mappings m
     on m.tenant_id = ts.tenant_id
    and lower(m.utm_campaign) = lower(ts.utm_campaign)
   where ts.gclid is not null or ts.gbraid is not null or ts.wbraid is not null
      or lower(ts.utm_source) = 'google'
-  group by ts.tenant_id, coalesce(m.google_campaign_id, ts.utm_campaign)
+  order by ts.id, m.google_campaign_id nulls last
+),
+tracked as (
+  select
+    tenant_id,
+    campaign_key,
+    count(*) filter (
+      where whatsapp_opened_at is not null or lead_status <> 'new'
+    ) as leads,
+    count(*) filter (where lead_status = 'qualified') as qualified,
+    count(*) filter (where lead_status = 'sold') as sales,
+    coalesce(sum(revenue) filter (where lead_status = 'sold'), 0) as revenue
+  from deduped_sessions
+  group by tenant_id, campaign_key
+),
+matched as (
+  select g.tenant_id, g.campaign_id,
+    sum(t.leads) as leads,
+    sum(t.qualified) as qualified,
+    sum(t.sales) as sales,
+    sum(t.revenue) as revenue
+  from google g
+  join tracked t on t.tenant_id = g.tenant_id
+    and lower(t.campaign_key) in (lower(g.campaign_id), lower(g.campaign_name))
+  group by g.tenant_id, g.campaign_id
 )
 select
   g.tenant_id,
@@ -252,20 +276,20 @@ select
   g.impressions,
   g.clicks as google_clicks,
   g.google_conversions,
-  coalesce(t.leads, 0) as idx_leads,
-  coalesce(t.qualified, 0) as idx_qualified,
-  coalesce(t.sales, 0) as idx_sales,
-  coalesce(t.revenue, 0) as idx_revenue,
-  case when coalesce(t.leads, 0) = 0 then null
-       else round(g.spend / t.leads, 2) end as cpl,
-  case when coalesce(t.sales, 0) = 0 then null
-       else round(g.spend / t.sales, 2) end as cpv,
+  coalesce(m.leads, 0) as idx_leads,
+  coalesce(m.qualified, 0) as idx_qualified,
+  coalesce(m.sales, 0) as idx_sales,
+  coalesce(m.revenue, 0) as idx_revenue,
+  case when coalesce(m.leads, 0) = 0 then null
+       else round(g.spend / m.leads, 2) end as cpl,
+  case when coalesce(m.sales, 0) = 0 then null
+       else round(g.spend / m.sales, 2) end as cpv,
   case when g.spend = 0 then null
-       else round(t.revenue / g.spend, 2) end as roas
+       else round(coalesce(m.revenue, 0) / g.spend, 2) end as roas
 from google g
-left join tracked t
-  on t.tenant_id = g.tenant_id
- and lower(t.campaign_key) in (lower(g.campaign_id), lower(g.campaign_name));
+left join matched m
+  on m.tenant_id = g.tenant_id
+ and m.campaign_id = g.campaign_id;
 
 grant select on public.vw_google_campaign_roi to authenticated;
 grant select on public.tenant_google_conversion_actions to service_role;
