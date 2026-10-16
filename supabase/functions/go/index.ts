@@ -432,6 +432,8 @@ Deno.serve(async (req: Request) => {
         fbp,
         fbclid,
         gclid: param(url, "gclid"),
+        gbraid: param(url, "gbraid"),
+        wbraid: param(url, "wbraid"),
         ttclid: param(url, "ttclid"),
         utm_source,
         utm_medium,

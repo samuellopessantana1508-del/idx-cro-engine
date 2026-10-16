@@ -33,6 +33,7 @@ import {
   ChevronUp,
   Download,
   Target,
+  Zap,
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
 import type { AiPatterns, CampaignMetric, CapiEvent, CapiHealth, ConversationInsight, CrmActivity, CustomerProfile, FinancialSummary, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, MonthlyPoint, Offer, SaleSignal, SaleSignalCapiStatus, SmartLink, Tenant, TenantUser, WebhookKey, WhatsAppConversation, WhatsAppInstance, WhatsAppMessage } from "./lib/types";
@@ -67,7 +68,46 @@ function cleanAiArray(arr: string[] | null | undefined): string[] {
   return arr.filter((v) => !isAiPlaceholder(v));
 }
 
-type Section = "dashboard" | "sales" | "links" | "leads" | "crm" | "integrations" | "whatsapp" | "clients" | "users" | "reports" | "capi" | "ai-sales" | "intelligence" | "settings" | "follow-ups" | "segments";
+type Section = "dashboard" | "sales" | "links" | "leads" | "crm" | "integrations" | "whatsapp" | "clients" | "users" | "reports" | "capi" | "ai-sales" | "intelligence" | "settings" | "follow-ups" | "segments" | "google-ads";
+
+type GoogleCampaignRoi = {
+  tenant_id: string;
+  campaign_id: string;
+  campaign_name: string;
+  campaign_status: string | null;
+  campaign_type: string | null;
+  date_start: string | null;
+  date_stop: string | null;
+  spend: number;
+  impressions: number;
+  google_clicks: number;
+  google_conversions: number;
+  idx_leads: number;
+  idx_qualified: number;
+  idx_sales: number;
+  idx_revenue: number;
+  cpl: number | null;
+  cpv: number | null;
+  roas: number | null;
+};
+
+type GoogleCredentials = {
+  customer_id: string | null;
+  customer_descriptive_name: string | null;
+  manager_customer_id: string | null;
+  google_user_email: string | null;
+  integration_status: string;
+  enabled: boolean;
+  last_synced_at: string | null;
+  last_error: string | null;
+  currency_code: string | null;
+};
+
+type GoogleCustomer = {
+  id: string;
+  name: string;
+  manager: boolean;
+};
 
 type PlatformRole = "owner" | "admin" | "support" | "viewer";
 
@@ -195,7 +235,7 @@ type MetaAdAccountAsset = {
 };
 
 const META_OAUTH_CALLBACK_URL = "https://idxparasuaempresa.com.br/meta-oauth-callback.html";
-const validSections: Section[] = ["dashboard", "sales", "links", "leads", "crm", "integrations", "whatsapp", "clients", "users", "reports", "capi", "ai-sales", "intelligence", "settings", "follow-ups", "segments"];
+const validSections: Section[] = ["dashboard", "sales", "links", "leads", "crm", "integrations", "whatsapp", "clients", "users", "reports", "capi", "ai-sales", "intelligence", "settings", "follow-ups", "segments", "google-ads"];
 
 const emptyDraft: DraftLink = {
   offerName: "",
@@ -509,6 +549,12 @@ export function App() {
   const [fiTab, setFiTab] = useState<"overview" | "campaigns" | "customers" | "ai">("overview");
   const [fiExporting, setFiExporting] = useState(false);
 
+  const [googleCreds, setGoogleCreds] = useState<GoogleCredentials | null>(null);
+  const [googleCampaigns, setGoogleCampaigns] = useState<GoogleCampaignRoi[]>([]);
+  const [googleCustomers, setGoogleCustomers] = useState<GoogleCustomer[]>([]);
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [googleSyncDays, setGoogleSyncDays] = useState(30);
+
   const tenant = tenants.find((item) => item.id === tenantId) ?? tenants[0];
   const isPlatformUser = Boolean(platformRole);
   const canCreateClients = ["owner", "admin", "support"].includes(String(platformRole)) || tenantSetupRequired;
@@ -529,7 +575,7 @@ export function App() {
   );
   const currentTenantRole = currentTenantUser?.role ?? (isPlatformUser ? "owner" : null);
   const isSellerExperience = currentTenantRole === "operator" && !isPlatformUser;
-  const secondaryMobileSections: Section[] = isSellerExperience ? ["leads"] : ["integrations", "whatsapp", "leads", "clients", "users", "reports", "capi", "settings", "follow-ups", "segments"];
+  const secondaryMobileSections: Section[] = isSellerExperience ? ["leads"] : ["integrations", "whatsapp", "leads", "clients", "users", "reports", "capi", "settings", "follow-ups", "segments", "google-ads"];
   const moreActive = secondaryMobileSections.includes(active);
 
   function goToSection(section: Section) {
@@ -1579,6 +1625,108 @@ export function App() {
     setToast(`${data.synced ?? 0} linhas de campanhas sincronizadas.`);
   }
 
+  async function loadGoogleAdsData() {
+    if (!tenant || !isConfigured || !supabase) return;
+    setGoogleBusy(true);
+    const res = await authFetch(`google-ads?tenant_id=${tenant.id}`, { method: "GET" });
+    const data = await res.json();
+    setGoogleBusy(false);
+    if (res.ok) {
+      setGoogleCreds(data.credentials ?? null);
+      setGoogleCampaigns(data.campaigns ?? []);
+    }
+  }
+
+  async function startGoogleLogin() {
+    if (!tenant) return;
+    if (!isConfigured || !supabase) {
+      setToast("Configure o Supabase para conectar o Google Ads.");
+      return;
+    }
+    setGoogleBusy(true);
+    const res = await authFetch("google-oauth", {
+      method: "POST",
+      body: JSON.stringify({
+        tenant_id: tenant.id,
+        redirect_to: `${window.location.origin}${window.location.pathname}?section=google-ads`,
+      }),
+    });
+    const data = await res.json();
+    setGoogleBusy(false);
+    if (!res.ok) return setToast(humanError(data.error) || "Erro ao iniciar Google Login.");
+    window.location.href = data.auth_url;
+  }
+
+  async function syncGoogleAds() {
+    if (!tenant) return;
+    if (!isConfigured || !supabase) {
+      setToast("Configure o Supabase para sincronizar campanhas Google.");
+      return;
+    }
+    setGoogleBusy(true);
+    const res = await authFetch("google-ads", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "sync_campaigns",
+        tenant_id: tenant.id,
+        days: googleSyncDays,
+      }),
+    });
+    const data = await res.json();
+    setGoogleBusy(false);
+    if (!res.ok) return setToast(data.error || "Erro ao sincronizar Google Ads.");
+    setGoogleCampaigns(data.campaigns ?? []);
+    setToast(`${data.synced ?? 0} linhas de campanhas Google sincronizadas.`);
+  }
+
+  async function listGoogleCustomers() {
+    if (!tenant) return;
+    if (!isConfigured || !supabase) return;
+    setGoogleBusy(true);
+    const res = await authFetch("google-ads", {
+      method: "POST",
+      body: JSON.stringify({ action: "list_customers", tenant_id: tenant.id }),
+    });
+    const data = await res.json();
+    setGoogleBusy(false);
+    if (!res.ok) return setToast(data.error || "Erro ao listar contas Google.");
+    setGoogleCustomers(data.customers ?? []);
+  }
+
+  async function selectGoogleCustomer(customer: GoogleCustomer) {
+    if (!tenant) return;
+    setGoogleBusy(true);
+    const res = await authFetch("google-ads", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "select_customer",
+        tenant_id: tenant.id,
+        customer_id: customer.id,
+        customer_name: customer.name,
+      }),
+    });
+    const data = await res.json();
+    setGoogleBusy(false);
+    if (!res.ok) return setToast(data.error || "Erro ao selecionar conta.");
+    setToast(`Conta ${customer.name} selecionada.`);
+    await loadGoogleAdsData();
+  }
+
+  async function disconnectGoogle() {
+    if (!tenant) return;
+    setGoogleBusy(true);
+    const res = await authFetch("google-ads", {
+      method: "POST",
+      body: JSON.stringify({ action: "disconnect", tenant_id: tenant.id }),
+    });
+    await res.json();
+    setGoogleBusy(false);
+    setGoogleCreds(null);
+    setGoogleCampaigns([]);
+    setGoogleCustomers([]);
+    setToast("Google Ads desconectado.");
+  }
+
   async function syncMetaAudiences() {
     if (!tenant) return;
 
@@ -2183,6 +2331,10 @@ export function App() {
   }, [active, tenant?.id]);
 
   useEffect(() => {
+    if (active === "google-ads" && tenant) loadGoogleAdsData();
+  }, [active, tenant?.id]);
+
+  useEffect(() => {
     if (waMessages.length > 0) {
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
     }
@@ -2413,6 +2565,7 @@ export function App() {
             <NavButton icon={<Link2 />} label="Links" active={active === "links"} onClick={() => goToSection("links")} />
             <NavButton icon={<LayoutList />} label="Clientes" active={active === "clients"} onClick={() => goToSection("clients")} />
             <NavButton icon={<BarChart3 />} label="Inteligência" active={active === "intelligence"} onClick={() => goToSection("intelligence")} />
+            <NavButton icon={<Zap />} label="Google Ads" active={active === "google-ads"} onClick={() => goToSection("google-ads")} />
             <div className="nav-separator" />
             <NavButton icon={<ShieldCheck />} label="Integrações" active={active === "integrations"} onClick={() => goToSection("integrations")} />
             <NavButton icon={<Activity />} label="CAPI" active={active === "capi"} onClick={() => goToSection("capi")} />
@@ -3292,6 +3445,47 @@ export function App() {
             <section className="panel">
               <div className="panel-head">
                 <div>
+                  <h2>Google Ads</h2>
+                  <p>Conecte o Google Ads para cruzar campanhas, gastos, CPL e ROAS com os leads do IDX.</p>
+                </div>
+                <Zap size={18} />
+              </div>
+              <div className="google-connect-box">
+                {googleCreds?.integration_status === "connected" ? (
+                  <div className="google-status-row">
+                    <div className="google-status-connected">
+                      <Check size={16} /> Conectado
+                      {googleCreds.google_user_email && <span className="muted"> — {googleCreds.google_user_email}</span>}
+                    </div>
+                    {googleCreds.customer_descriptive_name && (
+                      <ReadOnly label="Conta" value={`${googleCreds.customer_descriptive_name} (${googleCreds.customer_id})`} />
+                    )}
+                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                      <button className="primary-button" onClick={() => goToSection("google-ads")} disabled={googleBusy}>
+                        Dashboard Google Ads
+                      </button>
+                      <button className="ghost-button" onClick={disconnectGoogle} disabled={googleBusy}>
+                        Desconectar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="muted" style={{ marginBottom: 12 }}>Conecte via OAuth para importar campanhas e enviar conversões offline ao Google Ads.</p>
+                    <button className="primary-button" onClick={startGoogleLogin} disabled={googleBusy}>
+                      Conectar Google Ads <ArrowRight size={16} />
+                    </button>
+                  </div>
+                )}
+                {googleCreds?.last_error && googleCreds.integration_status === "needs_attention" && (
+                  <div className="google-error-box">Atenção: {googleCreds.last_error}</div>
+                )}
+              </div>
+            </section>
+
+            <section className="panel">
+              <div className="panel-head">
+                <div>
                   <h2>Supabase</h2>
                   <p>A plataforma já vem conectada. O cliente local não precisa logar no Supabase.</p>
                 </div>
@@ -3307,6 +3501,133 @@ export function App() {
                 <button className="primary-button" onClick={checkSupabaseHealth} disabled={integrationBusy}>Verificar Supabase</button>
               </div>
             </section>
+          </section>
+        )}
+
+        {active === "google-ads" && (
+          <section className="stack">
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <h2>Google Ads</h2>
+                  <p>Campanhas, investimento e atribuição com leads IDX.</p>
+                </div>
+                <Zap size={18} />
+              </div>
+
+              {(!googleCreds || googleCreds.integration_status !== "connected") ? (
+                <div className="google-connect-box" style={{ textAlign: "center", padding: "32px 16px" }}>
+                  <p style={{ marginBottom: 16 }}>Conecte o Google Ads na seção <button className="link-button" onClick={() => goToSection("integrations")}>Integrações</button> para ver campanhas aqui.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="kpi-grid">
+                    <Kpi label="Investimento" value={formatMoney(googleCampaigns.reduce((s, c) => s + (c.spend ?? 0), 0))} accent="#4285F4" />
+                    <Kpi label="Cliques" value={String(googleCampaigns.reduce((s, c) => s + (c.google_clicks ?? 0), 0))} accent="#34A853" />
+                    <Kpi label="Leads IDX" value={String(googleCampaigns.reduce((s, c) => s + (c.idx_leads ?? 0), 0))} accent="#FBBC04" />
+                    <Kpi label="Vendas IDX" value={String(googleCampaigns.reduce((s, c) => s + (c.idx_sales ?? 0), 0))} accent="#EA4335" />
+                    <Kpi label="Receita" value={formatMoney(googleCampaigns.reduce((s, c) => s + (c.idx_revenue ?? 0), 0))} accent="#34A853" />
+                    <Kpi label="ROAS médio" value={(() => {
+                      const totalSpend = googleCampaigns.reduce((s, c) => s + (c.spend ?? 0), 0);
+                      const totalRevenue = googleCampaigns.reduce((s, c) => s + (c.idx_revenue ?? 0), 0);
+                      return totalSpend > 0 ? `${(totalRevenue / totalSpend).toFixed(2)}x` : "—";
+                    })()} accent="#4285F4" />
+                  </div>
+
+                  <div className="ad-sync-row" style={{ marginTop: 16 }}>
+                    <select value={googleSyncDays} onChange={(e) => setGoogleSyncDays(Number(e.target.value))}>
+                      <option value={7}>7 dias</option>
+                      <option value={14}>14 dias</option>
+                      <option value={30}>30 dias</option>
+                      <option value={60}>60 dias</option>
+                      <option value={90}>90 dias</option>
+                    </select>
+                    <button className="primary-button" onClick={syncGoogleAds} disabled={googleBusy}>
+                      <RefreshCw size={15} /> Sincronizar Google Ads
+                    </button>
+                    <button className="ghost-button" onClick={listGoogleCustomers} disabled={googleBusy}>
+                      Trocar conta
+                    </button>
+                  </div>
+
+                  {googleCustomers.length > 0 && (
+                    <div className="google-customer-list">
+                      <label className="mini-label">Selecionar conta Google Ads</label>
+                      {googleCustomers.filter((c) => !c.manager).map((c) => (
+                        <button
+                          key={c.id}
+                          className={`ghost-button ${c.id === googleCreds?.customer_id ? "active" : ""}`}
+                          onClick={() => selectGoogleCustomer(c)}
+                          disabled={googleBusy}
+                        >
+                          {c.name} ({c.id})
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {googleCreds.last_synced_at && (
+                    <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Última sincronização: {formatDate(googleCreds.last_synced_at)}</p>
+                  )}
+                </>
+              )}
+            </section>
+
+            {googleCampaigns.length > 0 && (
+              <section className="panel wide">
+                <div className="panel-head">
+                  <div>
+                    <h2>Campanhas Google Ads × IDX</h2>
+                    <p>Investimento real cruzado com leads, vendas e receita do IDX.</p>
+                  </div>
+                  <Target size={18} />
+                </div>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Campanha</th>
+                        <th>Status</th>
+                        <th>Tipo</th>
+                        <th>Investimento</th>
+                        <th>Impressões</th>
+                        <th>Cliques</th>
+                        <th>Leads</th>
+                        <th>Qualif.</th>
+                        <th>Vendas</th>
+                        <th>Receita</th>
+                        <th>CPL</th>
+                        <th>CPV</th>
+                        <th>ROAS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {googleCampaigns.map((c) => (
+                        <tr key={c.campaign_id}>
+                          <td title={c.campaign_id}>{c.campaign_name}</td>
+                          <td><span className={`status-badge ${c.campaign_status === "ENABLED" ? "active" : "inactive"}`}>{c.campaign_status === "ENABLED" ? "Ativa" : c.campaign_status ?? "—"}</span></td>
+                          <td>{c.campaign_type ?? "—"}</td>
+                          <td>{formatMoney(c.spend)}</td>
+                          <td>{c.impressions?.toLocaleString("pt-BR") ?? 0}</td>
+                          <td>{c.google_clicks?.toLocaleString("pt-BR") ?? 0}</td>
+                          <td>{c.idx_leads}</td>
+                          <td>{c.idx_qualified}</td>
+                          <td>{c.idx_sales}</td>
+                          <td>{formatMoney(c.idx_revenue)}</td>
+                          <td>{c.cpl != null ? formatMoney(c.cpl) : "—"}</td>
+                          <td>{c.cpv != null ? formatMoney(c.cpv) : "—"}</td>
+                          <td>{c.roas != null ? `${c.roas}x` : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
+            {googleCampaigns.length === 0 && googleCreds?.integration_status === "connected" && (
+              <EmptyState text="Nenhuma campanha Google Ads sincronizada. Clique em Sincronizar para importar." />
+            )}
           </section>
         )}
 
@@ -4844,6 +5165,7 @@ export function App() {
           <button type="button" onClick={() => goToSection("capi")} className={active === "capi" ? "active" : ""}><Activity size={17} /> CAPI</button>
           <button type="button" onClick={() => goToSection("ai-sales")} className={active === "ai-sales" ? "active" : ""}><TrendingUp size={17} /> Vendas IA</button>
           <button type="button" onClick={() => goToSection("intelligence")} className={active === "intelligence" ? "active" : ""}><BarChart3 size={17} /> Inteligência</button>
+          <button type="button" onClick={() => goToSection("google-ads")} className={active === "google-ads" ? "active" : ""}><Zap size={17} /> Google Ads</button>
           <button type="button" onClick={() => goToSection("settings")} className={active === "settings" ? "active" : ""}><Settings size={17} /> Config</button>
           <button type="button" onClick={logout}><LogOut size={17} /> Sair</button>
         </section>
@@ -6299,6 +6621,7 @@ function sectionTitle(section: Section): string {
     settings: "Configuração",
     "follow-ups": "Follow-ups",
     segments: "Segmentação",
+    "google-ads": "Google Ads",
   }[section];
 }
 

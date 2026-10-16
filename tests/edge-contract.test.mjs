@@ -26,6 +26,8 @@ function mustExist(path) {
   "supabase/functions/_shared/access.ts",
   "supabase/functions/_shared/meta-audiences.ts",
   "supabase/functions/crm/index.ts",
+  "supabase/functions/google-oauth/index.ts",
+  "supabase/functions/google-ads/index.ts",
 ].forEach(mustExist);
 
 const migration1 = read("supabase/migrations/202606300001_init.sql");
@@ -50,6 +52,9 @@ const sharedAccess = read("supabase/functions/_shared/access.ts");
 const sharedMetaAudiences = read("supabase/functions/_shared/meta-audiences.ts");
 const crm = read("supabase/functions/crm/index.ts");
 const supabaseHealth = read("supabase/functions/supabase-health/index.ts");
+const googleOauth = read("supabase/functions/google-oauth/index.ts");
+const googleAds = read("supabase/functions/google-ads/index.ts");
+const migrationGoogle = read("supabase/migrations/20261016150000_google_ads_integration.sql");
 
 assert.match(migration1, /create table public\.tenants/);
 assert.match(migration1, /create table public\.smart_links/);
@@ -196,5 +201,45 @@ assert.match(supabaseHealth, /single_owned_multi_tenant/);
 assert.match(supabaseHealth, /tenant_id \+ rls \+ edge_functions/);
 assert.match(supabaseHealth, /platform_users/);
 assert.match(supabaseHealth, /invalid_link_events/);
+
+assert.match(googleOauth, /accounts\.google\.com\/o\/oauth2/);
+assert.match(googleOauth, /oauth2\.googleapis\.com\/token/);
+assert.match(googleOauth, /GOOGLE_CLIENT_ID/);
+assert.match(googleOauth, /GOOGLE_CLIENT_SECRET/);
+assert.match(googleOauth, /GOOGLE_DEVELOPER_TOKEN/);
+assert.match(googleOauth, /integration_oauth_states/);
+assert.match(googleOauth, /tenant_google_credentials/);
+assert.match(googleOauth, /canOperateTenantOrPlatform/);
+assert.match(googleOauth, /refresh_token/);
+assert.match(googleOauth, /listAccessibleCustomers/);
+
+assert.match(googleAds, /googleads\.googleapis\.com/);
+assert.match(googleAds, /sync_campaigns/);
+assert.match(googleAds, /list_customers/);
+assert.match(googleAds, /upload_conversion/);
+assert.match(googleAds, /list_conversion_actions/);
+assert.match(googleAds, /uploadClickConversions/);
+assert.match(googleAds, /google_campaign_insights/);
+assert.match(googleAds, /vw_google_campaign_roi/);
+assert.match(googleAds, /canReadTenantOrPlatform/);
+assert.match(googleAds, /canOperateTenantOrPlatform/);
+assert.match(googleAds, /tenant_google_conversion_actions/);
+assert.match(googleAds, /google_conversion_uploads/);
+
+assert.match(migrationGoogle, /tenant_google_credentials/);
+assert.match(migrationGoogle, /google_campaign_insights/);
+assert.match(migrationGoogle, /google_campaign_mappings/);
+assert.match(migrationGoogle, /google_conversion_uploads/);
+assert.match(migrationGoogle, /tenant_google_conversion_actions/);
+assert.match(migrationGoogle, /vw_google_campaign_roi/);
+assert.match(migrationGoogle, /gbraid/);
+assert.match(migrationGoogle, /wbraid/);
+assert.match(migrationGoogle, /enable row level security/);
+
+assert.match(config, /\[functions\.google-oauth\][\s\S]*verify_jwt = false/);
+assert.match(config, /\[functions\.google-ads\][\s\S]*verify_jwt = true/);
+
+assert.match(go, /gbraid/);
+assert.match(go, /wbraid/);
 
 console.log("Edge function contract tests passed.");

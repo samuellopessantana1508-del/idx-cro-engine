@@ -44,3 +44,9 @@ verify_jwt = false
 
 [functions.financial-intelligence]
 verify_jwt = true
+
+[functions.google-oauth]
+verify_jwt = false
+
+[functions.google-ads]
+verify_jwt = true

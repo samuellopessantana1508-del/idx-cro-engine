@@ -3794,3 +3794,47 @@ td small {
 :root[data-theme="dark"] .comparison-col.highlight {
   background: rgba(37, 211, 102, 0.08);
 }
+
+/* Google Ads */
+.google-connect-box {
+  padding: 16px 0;
+}
+.google-status-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.google-status-connected {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #34a853;
+  font-weight: 600;
+  font-size: 14px;
+}
+.google-error-box {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: rgba(234, 67, 53, 0.1);
+  color: #ea4335;
+  font-size: 13px;
+  border: 1px solid rgba(234, 67, 53, 0.2);
+}
+.google-customer-list {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.google-customer-list .ghost-button.active {
+  border-color: #4285f4;
+  color: #4285f4;
+}
+.status-badge.active {
+  color: #34a853;
+}
+.status-badge.inactive {
+  color: var(--muted);
+}
