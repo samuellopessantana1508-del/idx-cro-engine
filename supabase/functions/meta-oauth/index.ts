@@ -134,9 +134,19 @@ async function saveFacebookToken(
   const { error } = await supa.from("tenant_meta_credentials").upsert(row, { onConflict: "tenant_id" });
   if (!error) return null;
 
-  // Banco ainda sem a coluna ads_access_token (migration não aplicada): grava
-  // como antes para a conexão não falhar.
+  // Banco ainda sem a coluna ads_access_token (migration não aplicada).
   if (/ads_access_token/.test(error.message)) {
+    // Empresa com Token CAPI salvo: não sobrescreve, senão o CAPI (go, crm,
+    // convert) passa a usar o token do usuário. Pede a migration.
+    if (current?.access_token) {
+      await supa.from("tenant_meta_credentials").update({
+        integration_status: "needs_attention",
+        last_error: "Aplique a migration 20261020120000_meta_ads_access_token.sql antes de conectar o Facebook (o Token CAPI foi preservado).",
+        last_verified_at: new Date().toISOString(),
+      }).eq("tenant_id", tenantId);
+      return "migration_required";
+    }
+    // Sem Token CAPI: grava em access_token, como antes.
     delete row.ads_access_token;
     row.access_token = accessToken;
     const retry = await supa.from("tenant_meta_credentials").upsert(row, { onConflict: "tenant_id" });
@@ -275,7 +285,7 @@ Deno.serve(async (req: Request) => {
   const me = await fetch(meUrl.toString()).then((res) => res.json()).catch(() => ({}));
 
   const saveError = await saveFacebookToken(stateRow.tenant_id, stateRow.user_id, accessToken, expiresIn, me, version);
-  if (saveError) return backToPanel(stateRow.redirect_to, "save_error");
+  if (saveError) return backToPanel(stateRow.redirect_to, saveError === "migration_required" ? "migration_required" : "save_error");
 
   const assets = await autoSelectMetaAssets(stateRow.tenant_id, accessToken, version);
   await supa.from("tenant_onboarding").upsert({ tenant_id: stateRow.tenant_id, meta_connected: true });

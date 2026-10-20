@@ -247,6 +247,7 @@ const META_RETURN_MESSAGES: Record<string, string> = {
   state_error: "O link de conexão expirou ou já foi usado. Clique em Conectar Facebook de novo.",
   token_error: "O Facebook não liberou o token. Confira se a URI de retorno está cadastrada na Meta App e tente de novo.",
   save_error: "Não foi possível salvar a conexão com o Facebook. Tente de novo.",
+  migration_required: "Falta aplicar a migration do token do Facebook no banco. O Token CAPI foi preservado; aplique a migration e conecte de novo.",
   config_error: "Meta App não configurada no servidor (META_APP_ID / META_APP_SECRET).",
   error: "Não foi possível concluir a conexão com o Facebook. Tente de novo.",
 };
