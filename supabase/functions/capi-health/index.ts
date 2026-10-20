@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { canOperateTenantOrPlatform, canReadTenantOrPlatform } from "../_shared/access.ts";
+import { publicAppUrl } from "../_shared/meta-config.ts";
 
 const supa = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -84,7 +85,7 @@ Deno.serve(async (req: Request) => {
         event_name: "Lead",
         event_time: Math.floor(Date.now() / 1000),
         event_id: `test_${crypto.randomUUID()}`,
-        event_source_url: Deno.env.get("APP_URL") ?? "https://idxparasuaempresa.com.br",
+        event_source_url: publicAppUrl(),
         action_source: "website",
         user_data: cleanObject({
           client_ip_address: clientIp(req),

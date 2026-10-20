@@ -1,3 +1,5 @@
+import { adsAccessToken } from "./meta-config.ts";
+
 export type AudienceKey = "qualified" | "purchased";
 
 type SupabaseLike = {
@@ -122,7 +124,7 @@ export async function ensureMetaAudience(
 
   const { data: creds, error: credsError } = await supa
     .from("tenant_meta_credentials")
-    .select("access_token, graph_version, selected_ad_account_id")
+    .select("*")
     .eq("tenant_id", tenantId)
     .maybeSingle();
 
@@ -131,7 +133,8 @@ export async function ensureMetaAudience(
     return { ok: false, audience_key: audienceKey, status: "failed", error: credsError.message };
   }
 
-  if (!creds?.access_token) {
+  const adsToken = adsAccessToken(creds);
+  if (!adsToken) {
     const error = "meta_not_connected";
     await markAudience(supa, tenantId, audienceKey, { sync_status: "failed", last_error: error });
     return { ok: false, audience_key: audienceKey, status: "failed", error };
@@ -151,7 +154,7 @@ export async function ensureMetaAudience(
   form.set("description", audienceConfig[audienceKey].description);
   form.set("subtype", "CUSTOM");
   form.set("customer_file_source", "USER_PROVIDED_ONLY");
-  form.set("access_token", creds.access_token);
+  form.set("access_token", adsToken);
 
   const response = await fetch(endpoint, { method: "POST", body: form });
   const payload = await response.json().catch(() => ({}));
@@ -223,7 +226,7 @@ export async function syncSessionToMetaAudience(
 
   const { data: creds } = await supa
     .from("tenant_meta_credentials")
-    .select("access_token, graph_version")
+    .select("*")
     .eq("tenant_id", session.tenant_id)
     .maybeSingle();
 
@@ -234,7 +237,7 @@ export async function syncSessionToMetaAudience(
     schema: identifiers.schema,
     data: [identifiers.row],
   }));
-  form.set("access_token", creds?.access_token ?? "");
+  form.set("access_token", adsAccessToken(creds) ?? "");
 
   const response = await fetch(endpoint, { method: "POST", body: form });
   const payload = await response.json().catch(() => ({}));

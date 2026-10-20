@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { canOperateTenantOrPlatform, canReadTenantOrPlatform } from "../_shared/access.ts";
+import { adsAccessToken } from "../_shared/meta-config.ts";
 
 const supa = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -72,11 +73,12 @@ Deno.serve(async (req: Request) => {
 
   const { data: creds } = await supa
     .from("tenant_meta_credentials")
-    .select("access_token, selected_ad_account_id, selected_ad_account_name, graph_version")
+    .select("*")
     .eq("tenant_id", tenantId)
     .maybeSingle();
 
-  if (!creds?.access_token) return json({ error: "meta_not_connected" }, 400);
+  const adsToken = adsAccessToken(creds);
+  if (!adsToken) return json({ error: "meta_not_connected" }, 400);
 
   const adAccountId = normalizeActId(String(body.ad_account_id ?? creds.selected_ad_account_id ?? ""));
   if (!adAccountId || adAccountId === "act_") return json({ error: "missing_ad_account_id" }, 400);
@@ -107,7 +109,7 @@ Deno.serve(async (req: Request) => {
   insightsUrl.searchParams.set("time_increment", "1");
   insightsUrl.searchParams.set("limit", "500");
   insightsUrl.searchParams.set("time_range", JSON.stringify(range));
-  insightsUrl.searchParams.set("access_token", creds.access_token);
+  insightsUrl.searchParams.set("access_token", adsToken);
 
   const response = await fetch(insightsUrl.toString());
   const payload = await response.json().catch(() => ({}));

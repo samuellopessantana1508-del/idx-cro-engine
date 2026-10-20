@@ -1,6 +1,6 @@
 param(
   [string]$ProjectRef = "tykeycwworjtfpssjevw",
-  [string]$AppUrl = "https://idxparasuaempresa.com.br",
+  [string]$AppUrl = "https://cro.sanmarfidelize.com",
   [switch]$IncludeLocalDevRedirects,
   [string]$SmtpHost = $env:SMTP_HOST,
   [int]$SmtpPort = 587,

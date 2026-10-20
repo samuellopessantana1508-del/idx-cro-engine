@@ -54,8 +54,27 @@ https://SEU-DOMINIO.com/meta-oauth-callback.html
 No ambiente atual da IDX, use:
 
 ```txt
-https://idxparasuaempresa.com.br/meta-oauth-callback.html
+https://cro.sanmarfidelize.com/meta-oauth-callback.html
 ```
+
+Cadastre também `cro.sanmarfidelize.com` em **Configurações > Básico > Domínios
+do app**.
+
+Para conferir qual URI a função está usando de verdade (sem expor segredo):
+
+```bash
+curl "https://tykeycwworjtfpssjevw.supabase.co/functions/v1/meta-oauth?check=1"
+```
+
+O campo `redirect_uri` da resposta precisa ser exatamente a URI cadastrada na Meta.
+
+Se `APP_URL` ou `META_REDIRECT_URI` ainda apontarem para o domínio antigo
+(`idxparasuaempresa.com.br`), a função ignora esses valores e usa
+`https://cro.sanmarfidelize.com`. Mesmo assim, atualize os secrets.
+
+O token do Facebook Login fica em `ads_access_token` (contas de anúncio,
+campanhas, públicos). O Token CAPI colado no painel continua em `access_token` e
+não é apagado ao conectar o Facebook.
 
 Essa página estática recebe `code/state` da Meta e redireciona para a Edge
 Function `meta-oauth` no Supabase. Se no futuro você expuser as Edge Functions em
@@ -64,12 +83,12 @@ domínio próprio, pode trocar o fluxo para usar esse domínio direto.
 ### 4. Configurar Secrets no Supabase
 
 ```bash
-supabase secrets set APP_URL=https://idxparasuaempresa.com.br
+supabase secrets set APP_URL=https://cro.sanmarfidelize.com
 supabase secrets set FALLBACK_URL=https://wa.me/5564999999999
 supabase secrets set META_GRAPH_VERSION=v25.0
 supabase secrets set META_APP_ID=SEU_APP_ID
 supabase secrets set META_APP_SECRET=SEU_APP_SECRET
-supabase secrets set META_REDIRECT_URI=https://idxparasuaempresa.com.br/meta-oauth-callback.html
+supabase secrets set META_REDIRECT_URI=https://cro.sanmarfidelize.com/meta-oauth-callback.html
 supabase secrets set META_LOGIN_CONFIG_ID=SEU_FACEBOOK_LOGIN_FOR_BUSINESS_CONFIG_ID
 ```
 

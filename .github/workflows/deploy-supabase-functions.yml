@@ -1,0 +1,56 @@
+name: Deploy Supabase Edge Functions
+
+# Execução manual: GitHub > Actions > "Deploy Supabase Edge Functions" > Run workflow.
+# Requer o secret do repositório SUPABASE_ACCESS_TOKEN (supabase.com > Account > Access Tokens).
+# Para aplicar migrations, também SUPABASE_DB_PASSWORD (senha do banco do projeto).
+on:
+  workflow_dispatch:
+    inputs:
+      functions:
+        description: "Funções a publicar (separadas por espaço)"
+        required: true
+        default: "meta-oauth meta-assets meta-insights meta-audiences capi-health"
+      push_migrations:
+        description: "Aplicar migrations pendentes antes (supabase db push). Deixe desligado se o banco recebeu SQL manual."
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: tykeycwworjtfpssjevw
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.118.0
+
+      - name: Validate secrets
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN" || (echo "::error::Cadastre o secret SUPABASE_ACCESS_TOKEN" && exit 1)
+
+      - name: Push migrations
+        if: ${{ inputs.push_migrations }}
+        run: |
+          test -n "$SUPABASE_DB_PASSWORD" || (echo "::error::Cadastre o secret SUPABASE_DB_PASSWORD para aplicar migrations" && exit 1)
+          supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+          supabase db push --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Deploy functions
+        run: |
+          for fn in ${{ inputs.functions }}; do
+            echo "Deploying $fn"
+            supabase functions deploy "$fn" --project-ref "$PROJECT_REF"
+          done
+
+      - name: Check Meta OAuth config
+        run: curl -fsS "https://$PROJECT_REF.supabase.co/functions/v1/meta-oauth?check=1"
