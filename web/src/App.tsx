@@ -1662,6 +1662,27 @@ export function App() {
     setToast(`${data.synced ?? 0} linhas de campanhas sincronizadas.`);
   }
 
+  // Volta do Google OAuth (Google Ads).
+  const [googleReturn, setGoogleReturn] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get("google");
+    return result ? { result, reason: params.get("reason") ?? "" } : null;
+  });
+
+  useEffect(() => {
+    if (!googleReturn || !tenant?.id) return;
+    const { result, reason } = googleReturn;
+    setGoogleReturn(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("google");
+    url.searchParams.delete("reason");
+    window.history.replaceState(null, "", url.toString());
+    setActive("google-ads");
+    const key = result === "error" ? reason : result;
+    setToast(GOOGLE_RETURN_MESSAGES[key] ?? `${GOOGLE_RETURN_MESSAGES.error}${reason ? ` (${reason})` : ""}`);
+    if (result === "connected" || result === "no_customer") void loadGoogleAdsData();
+  }, [googleReturn, tenant?.id]);
+
   async function loadGoogleAdsData() {
     if (!tenant || !isConfigured || !supabase) return;
     setGoogleBusy(true);
@@ -6435,6 +6456,17 @@ function platformRoleLabel(role: PlatformRole | null): string {
     viewer: "Leitura",
   }[role];
 }
+
+// Resultado do retorno do Google (?google=...&reason=...), definido pela Edge Function google-oauth.
+const GOOGLE_RETURN_MESSAGES: Record<string, string> = {
+  connected: "Google Ads conectado. Carregando contas e campanhas...",
+  no_customer: "Google conectado, mas nenhuma conta do Google Ads foi encontrada para este login (ou o developer token não está configurado).",
+  access_denied: "Conexão cancelada no Google. Clique em Conectar Google Ads e aceite as permissões.",
+  invalid_state: "O link de conexão expirou ou já foi usado. Clique em Conectar Google Ads de novo.",
+  token_exchange_failed: "O Google não liberou o token. Confira se a redirect_uri está cadastrada no cliente OAuth do Google Cloud.",
+  save_failed: "Não foi possível salvar a conexão com o Google. Tente de novo.",
+  error: "Não foi possível concluir a conexão com o Google. Tente de novo.",
+};
 
 function humanError(error?: string | null): string {
   return {
