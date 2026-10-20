@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { canOperateTenantOrPlatform } from "../_shared/access.ts";
+import { metaRedirectUri, publicAppUrl, safeReturnUrl } from "../_shared/meta-config.ts";
 
 const supa = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -31,14 +32,14 @@ function accountPixels(account: Record<string, any>): Record<string, any>[] {
   return Array.isArray(pixels?.data) ? pixels.data : [];
 }
 
-async function autoSelectMetaAssets(tenantId: string, accessToken: string, version: string) {
+async function autoSelectMetaAssets(tenantId: string, accessToken: string, version: string): Promise<"kept" | "selected" | "no_ad_accounts" | "failed"> {
   const { data: current } = await supa
     .from("tenant_meta_credentials")
     .select("pixel_id, selected_ad_account_id")
     .eq("tenant_id", tenantId)
     .maybeSingle();
 
-  if (current?.selected_ad_account_id) return;
+  if (current?.selected_ad_account_id) return "kept";
 
   const assetsUrl = new URL(`https://graph.facebook.com/${version}/me/adaccounts`);
   assetsUrl.searchParams.set("fields", "id,account_id,name,adspixels{id,name}");
@@ -47,7 +48,8 @@ async function autoSelectMetaAssets(tenantId: string, accessToken: string, versi
 
   const response = await fetch(assetsUrl.toString());
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !Array.isArray(payload.data) || !payload.data.length) return;
+  if (!response.ok) return "failed";
+  if (!Array.isArray(payload.data) || !payload.data.length) return "no_ad_accounts";
 
   const currentPixelId = String(current?.pixel_id ?? "");
   const matchingAccount = currentPixelId
@@ -68,6 +70,7 @@ async function autoSelectMetaAssets(tenantId: string, accessToken: string, versi
   if (!currentPixelId && selectedPixel?.id) updates.pixel_id = selectedPixel.id;
 
   await supa.from("tenant_meta_credentials").update(updates).eq("tenant_id", tenantId);
+  return "selected";
 }
 
 async function currentUser(req: Request) {
@@ -78,20 +81,94 @@ async function currentUser(req: Request) {
   return data.user ?? null;
 }
 
+// Volta para o painel em Integrações com ?meta=<resultado>, sem perder a rota
+// da empresa (/slug). Antes a URL ficava "?section=integrations?meta=connected".
+function backToPanel(returnTo: unknown, result: string): Response {
+  const url = safeReturnUrl(returnTo);
+  url.searchParams.set("section", "integrations");
+  url.searchParams.set("meta", result);
+  return Response.redirect(url.toString(), 302);
+}
+
+async function markMetaError(tenantId: string, error: unknown) {
+  await supa.from("tenant_meta_credentials").update({
+    integration_status: "needs_attention",
+    last_error: typeof error === "string" ? error : JSON.stringify(error).slice(0, 1000),
+    last_verified_at: new Date().toISOString(),
+  }).eq("tenant_id", tenantId);
+}
+
+// Guarda o token do Facebook Login sem apagar o Token CAPI salvo manualmente:
+// o CAPI continua usando access_token; Ads/campanhas/públicos usam
+// ads_access_token. Se a empresa não tinha Token CAPI, o token do Facebook
+// também passa a servir para o CAPI (comportamento anterior).
+async function saveFacebookToken(
+  tenantId: string,
+  userId: string | null,
+  accessToken: string,
+  expiresIn: number,
+  me: Record<string, any>,
+  version: string,
+): Promise<string | null> {
+  const { data: current } = await supa
+    .from("tenant_meta_credentials")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  const row: Record<string, unknown> = {
+    tenant_id: tenantId,
+    facebook_user_id: me.id ?? null,
+    facebook_user_name: me.name ?? null,
+    facebook_token_expires_at: expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null,
+    integration_status: "connected",
+    enabled: current ? current.enabled ?? true : true,
+    graph_version: version,
+    updated_by: userId,
+    last_verified_at: new Date().toISOString(),
+    last_error: null,
+    ads_access_token: accessToken,
+  };
+  if (!current?.access_token) row.access_token = accessToken;
+
+  const { error } = await supa.from("tenant_meta_credentials").upsert(row, { onConflict: "tenant_id" });
+  if (!error) return null;
+
+  // Banco ainda sem a coluna ads_access_token (migration não aplicada).
+  if (/ads_access_token/.test(error.message)) {
+    // Empresa com Token CAPI salvo: não sobrescreve, senão o CAPI (go, crm,
+    // convert) passa a usar o token do usuário. Pede a migration.
+    if (current?.access_token) {
+      await supa.from("tenant_meta_credentials").update({
+        integration_status: "needs_attention",
+        last_error: "Aplique a migration 20261020120000_meta_ads_access_token.sql antes de conectar o Facebook (o Token CAPI foi preservado).",
+        last_verified_at: new Date().toISOString(),
+      }).eq("tenant_id", tenantId);
+      return "migration_required";
+    }
+    // Sem Token CAPI: grava em access_token, como antes.
+    delete row.ads_access_token;
+    row.access_token = accessToken;
+    const retry = await supa.from("tenant_meta_credentials").upsert(row, { onConflict: "tenant_id" });
+    return retry.error?.message ?? null;
+  }
+  return error.message;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
   const appId = Deno.env.get("META_APP_ID");
   const appSecret = Deno.env.get("META_APP_SECRET");
-  const redirectUri = Deno.env.get("META_REDIRECT_URI");
+  const redirectUri = metaRedirectUri();
   const loginConfigId = Deno.env.get("META_LOGIN_CONFIG_ID") ?? Deno.env.get("META_CONFIG_ID");
-  const appUrl = Deno.env.get("APP_URL") ?? "https://idxparasuaempresa.com.br";
+  const appUrl = publicAppUrl();
   const version = Deno.env.get("META_GRAPH_VERSION") ?? "v25.0";
 
   if (req.method === "POST") {
     const user = await currentUser(req);
     if (!user) return json({ error: "unauthorized" }, 401);
-    if (!appId || !redirectUri) return json({ error: "missing_meta_app_env" }, 500);
+    if (!appId || !appSecret) return json({ error: "missing_meta_app_env" }, 500);
 
     const body = await req.json().catch(() => ({}));
     const tenantId = String(body.tenant_id ?? "");
@@ -102,14 +179,15 @@ Deno.serve(async (req: Request) => {
 
     const state = randomState();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    await supa.from("integration_oauth_states").insert({
+    const { error: stateError } = await supa.from("integration_oauth_states").insert({
       tenant_id: tenantId,
       user_id: user.id,
       provider: "meta",
       state,
-      redirect_to: body.redirect_to ?? `${appUrl}/?section=integrations`,
+      redirect_to: safeReturnUrl(body.redirect_to).toString(),
       expires_at: expiresAt,
     });
+    if (stateError) return json({ error: "oauth_state_failed", detail: stateError.message }, 500);
 
     const scope = (Deno.env.get("META_OAUTH_SCOPES") ?? [
       "ads_read",
@@ -127,28 +205,55 @@ Deno.serve(async (req: Request) => {
       authUrl.searchParams.set("config_id", loginConfigId);
       authUrl.searchParams.set("override_default_response_type", "true");
     }
-    return json({ ok: true, auth_url: authUrl.toString() });
+    return json({ ok: true, auth_url: authUrl.toString(), redirect_uri: redirectUri });
   }
 
   if (req.method !== "GET") return json({ error: "method_not_allowed" }, 405);
 
   const url = new URL(req.url);
-  const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
-  if (!code || !state || !appId || !appSecret || !redirectUri) {
-    return Response.redirect(`${appUrl}/?section=integrations&meta=error`, 302);
+
+  // Diagnóstico sem segredo: mostra a URI que precisa estar cadastrada na Meta.
+  if (url.searchParams.get("check") === "1") {
+    return json({
+      ok: Boolean(appId && appSecret),
+      app_url: appUrl,
+      redirect_uri: redirectUri,
+      meta_app_id_set: Boolean(appId),
+      meta_app_secret_set: Boolean(appSecret),
+      login_config_id_set: Boolean(loginConfigId),
+    });
   }
 
-  const { data: stateRow } = await supa
-    .from("integration_oauth_states")
-    .select("*")
-    .eq("state", state)
-    .eq("provider", "meta")
-    .is("used_at", null)
-    .gt("expires_at", new Date().toISOString())
-    .maybeSingle();
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const fbError = url.searchParams.get("error");
 
-  if (!stateRow) return Response.redirect(`${appUrl}/?section=integrations&meta=state_error`, 302);
+  // Consome o state uma única vez (atômico): impede reuso do mesmo retorno.
+  const claimState = async () => {
+    if (!state) return null;
+    const { data } = await supa
+      .from("integration_oauth_states")
+      .update({ used_at: new Date().toISOString() })
+      .eq("state", state)
+      .eq("provider", "meta")
+      .is("used_at", null)
+      .gt("expires_at", new Date().toISOString())
+      .select("*")
+      .maybeSingle();
+    return data ?? null;
+  };
+
+  if (fbError) {
+    // Usuário cancelou ou negou permissão no Facebook.
+    const stateRow = await claimState();
+    return backToPanel(stateRow?.redirect_to, fbError === "access_denied" ? "denied" : "error");
+  }
+
+  if (!code || !state) return backToPanel(null, "error");
+  if (!appId || !appSecret) return backToPanel(null, "config_error");
+
+  const stateRow = await claimState();
+  if (!stateRow) return backToPanel(null, "state_error");
 
   const tokenUrl = new URL(`https://graph.facebook.com/${version}/oauth/access_token`);
   tokenUrl.searchParams.set("client_id", appId);
@@ -157,9 +262,10 @@ Deno.serve(async (req: Request) => {
   tokenUrl.searchParams.set("code", code);
 
   const shortTokenResponse = await fetch(tokenUrl.toString());
-  const shortToken = await shortTokenResponse.json();
+  const shortToken = await shortTokenResponse.json().catch(() => ({}));
   if (!shortTokenResponse.ok || !shortToken.access_token) {
-    return Response.redirect(`${stateRow.redirect_to ?? appUrl}/?meta=token_error`, 302);
+    await markMetaError(stateRow.tenant_id, { step: "code_exchange", redirect_uri: redirectUri, detail: shortToken });
+    return backToPanel(stateRow.redirect_to, "token_error");
   }
 
   const longUrl = new URL(`https://graph.facebook.com/${version}/oauth/access_token`);
@@ -169,31 +275,20 @@ Deno.serve(async (req: Request) => {
   longUrl.searchParams.set("fb_exchange_token", shortToken.access_token);
 
   const longResponse = await fetch(longUrl.toString());
-  const longToken = await longResponse.json();
+  const longToken = await longResponse.json().catch(() => ({}));
   const accessToken = longToken.access_token ?? shortToken.access_token;
   const expiresIn = Number(longToken.expires_in ?? shortToken.expires_in ?? 0);
 
-  const meResponse = await fetch(`https://graph.facebook.com/${version}/me?fields=id,name&access_token=${accessToken}`);
-  const me = await meResponse.json().catch(() => ({}));
+  const meUrl = new URL(`https://graph.facebook.com/${version}/me`);
+  meUrl.searchParams.set("fields", "id,name");
+  meUrl.searchParams.set("access_token", accessToken);
+  const me = await fetch(meUrl.toString()).then((res) => res.json()).catch(() => ({}));
 
-  await supa.from("tenant_meta_credentials").upsert({
-    tenant_id: stateRow.tenant_id,
-    facebook_user_id: me.id ?? null,
-    facebook_user_name: me.name ?? null,
-    access_token: accessToken,
-    facebook_token_expires_at: expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null,
-    integration_status: "connected",
-    enabled: true,
-    graph_version: version,
-    updated_by: stateRow.user_id,
-    last_verified_at: new Date().toISOString(),
-    last_error: null,
-  });
+  const saveError = await saveFacebookToken(stateRow.tenant_id, stateRow.user_id, accessToken, expiresIn, me, version);
+  if (saveError) return backToPanel(stateRow.redirect_to, saveError === "migration_required" ? "migration_required" : "save_error");
 
-  await autoSelectMetaAssets(stateRow.tenant_id, accessToken, version);
-
-  await supa.from("integration_oauth_states").update({ used_at: new Date().toISOString() }).eq("id", stateRow.id);
+  const assets = await autoSelectMetaAssets(stateRow.tenant_id, accessToken, version);
   await supa.from("tenant_onboarding").upsert({ tenant_id: stateRow.tenant_id, meta_connected: true });
 
-  return Response.redirect(`${stateRow.redirect_to ?? appUrl}?meta=connected`, 302);
+  return backToPanel(stateRow.redirect_to, assets === "no_ad_accounts" ? "no_ad_accounts" : "connected");
 });

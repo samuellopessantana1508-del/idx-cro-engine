@@ -234,7 +234,23 @@ type MetaAdAccountAsset = {
   adspixels?: { data?: MetaPixelAsset[] } | MetaPixelAsset[] | null;
 };
 
-const META_OAUTH_CALLBACK_URL = "https://idxparasuaempresa.com.br/meta-oauth-callback.html";
+// Domínio público do painel. A URI abaixo é a que precisa estar em
+// Meta Developers > Facebook Login > Valid OAuth Redirect URIs.
+const PUBLIC_APP_URL = String(import.meta.env.VITE_PUBLIC_APP_URL ?? "").replace(/\/+$/, "") || "https://cro.sanmarfidelize.com";
+const META_OAUTH_CALLBACK_URL = `${PUBLIC_APP_URL}/meta-oauth-callback.html`;
+
+// Resultado do retorno do Facebook Login (?meta=...), definido pela Edge Function meta-oauth.
+const META_RETURN_MESSAGES: Record<string, string> = {
+  connected: "Facebook conectado. Sincronizando contas e campanhas...",
+  no_ad_accounts: "Facebook conectado, mas este login não tem acesso a nenhuma conta de anúncios. Peça acesso no Gerenciador de Negócios e conecte de novo.",
+  denied: "Conexão cancelada no Facebook. Clique em Conectar Facebook e aceite as permissões.",
+  state_error: "O link de conexão expirou ou já foi usado. Clique em Conectar Facebook de novo.",
+  token_error: "O Facebook não liberou o token. Confira se a URI de retorno está cadastrada na Meta App e tente de novo.",
+  save_error: "Não foi possível salvar a conexão com o Facebook. Tente de novo.",
+  migration_required: "Falta aplicar a migration do token do Facebook no banco. O Token CAPI foi preservado; aplique a migration e conecte de novo.",
+  config_error: "Meta App não configurada no servidor (META_APP_ID / META_APP_SECRET).",
+  error: "Não foi possível concluir a conexão com o Facebook. Tente de novo.",
+};
 const validSections: Section[] = ["dashboard", "sales", "links", "leads", "crm", "integrations", "whatsapp", "clients", "users", "reports", "capi", "ai-sales", "intelligence", "settings", "follow-ups", "segments", "google-ads"];
 
 const emptyDraft: DraftLink = {
@@ -482,6 +498,7 @@ export function App() {
   const [metaAdAccounts, setMetaAdAccounts] = useState<MetaAdAccountAsset[]>([]);
   const [selectedMetaAsset, setSelectedMetaAsset] = useState("");
   const [metaAssetsLoaded, setMetaAssetsLoaded] = useState(false);
+  const [metaReturn, setMetaReturn] = useState(() => new URLSearchParams(window.location.search).get("meta"));
   const [crmNotes, setCrmNotes] = useState<Record<string, string>>({});
   const [crmContacts, setCrmContacts] = useState<Record<string, ContactDraft>>({});
   const [crmFollowUps, setCrmFollowUps] = useState<Record<string, string>>({});
@@ -897,6 +914,26 @@ export function App() {
       setActive(section);
     }
   }, []);
+
+  // Volta do Facebook Login: avisa o resultado e, se conectou, já busca as
+  // contas e sincroniza as campanhas da empresa.
+  useEffect(() => {
+    if (!metaReturn || !tenant?.id) return;
+    const result = metaReturn;
+    setMetaReturn(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("meta");
+    window.history.replaceState(null, "", url.toString());
+    setActive("integrations");
+    setToast(META_RETURN_MESSAGES[result] ?? META_RETURN_MESSAGES.error);
+    if (result === "connected" || result === "no_ad_accounts") {
+      void (async () => {
+        await loadTenantData(tenant.id);
+        await loadMetaAssets();
+        if (result === "connected") await syncMetaInsights();
+      })();
+    }
+  }, [metaReturn, tenant?.id]);
 
   useEffect(() => {
     if (!isSellerExperience || requestedSection) return;

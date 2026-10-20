@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { adsAccessToken } from "../_shared/meta-config.ts";
 import { canOperateTenantOrPlatform } from "../_shared/access.ts";
 
 const supa = createClient(
@@ -55,16 +56,17 @@ Deno.serve(async (req: Request) => {
 
     const { data: creds } = await supa
       .from("tenant_meta_credentials")
-      .select("access_token, pixel_id, selected_pixel_name, selected_ad_account_id, selected_ad_account_name")
+      .select("*")
       .eq("tenant_id", tenantId)
       .maybeSingle();
 
-    if (!creds?.access_token) return json({ error: "meta_not_connected" }, 400);
+    const adsToken = adsAccessToken(creds);
+    if (!adsToken) return json({ error: "meta_not_connected" }, 400);
 
     const graphUrl = new URL(`https://graph.facebook.com/${version}/me/adaccounts`);
     graphUrl.searchParams.set("fields", "id,account_id,name,adspixels{id,name}");
     graphUrl.searchParams.set("limit", "50");
-    graphUrl.searchParams.set("access_token", creds.access_token);
+    graphUrl.searchParams.set("access_token", adsToken);
 
     const response = await fetch(graphUrl.toString());
     const data = await response.json().catch(() => ({}));
