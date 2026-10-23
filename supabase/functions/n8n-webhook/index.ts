@@ -43,6 +43,10 @@ async function logEvent(
   return data?.id ?? "";
 }
 
+// Instância já registrada em OUTRA empresa: recusa. Evita que uma chave de
+// webhook errada no n8n grave conversas de uma empresa dentro de outra.
+class InstanceOwnedByOtherTenant extends Error {}
+
 async function findOrCreateInstance(tenantId: string, instanceName: string) {
   const { data: existing } = await supa
     .from("whatsapp_instances")
@@ -52,6 +56,17 @@ async function findOrCreateInstance(tenantId: string, instanceName: string) {
     .maybeSingle();
 
   if (existing) return existing;
+
+  if (instanceName !== "default") {
+    const { data: other } = await supa
+      .from("whatsapp_instances")
+      .select("id")
+      .eq("instance_name", instanceName)
+      .neq("tenant_id", tenantId)
+      .limit(1)
+      .maybeSingle();
+    if (other) throw new InstanceOwnedByOtherTenant(instanceName);
+  }
 
   const { data: created } = await supa
     .from("whatsapp_instances")
@@ -220,7 +235,10 @@ async function handleMessageReceived(tenantId: string, payload: Record<string, u
 
   const waId = extractWaId(remoteJid);
   const waMessageId = String(msgData.key?.id ?? msgData.id ?? msgData.messageId ?? "");
-  const pushName = String(msgData.pushName ?? msgData.push_name ?? "") || undefined;
+  // Em mensagens enviadas pela empresa (fromMe), o pushName é o nome do próprio
+  // WhatsApp da empresa: não pode virar o nome do cliente.
+  const sentByCompany = Boolean((msgData.key as Record<string, unknown> | undefined)?.fromMe ?? msgData.fromMe ?? false);
+  const pushName = sentByCompany ? undefined : (String(msgData.pushName ?? msgData.push_name ?? "") || undefined);
 
   const instance = await findOrCreateInstance(tenantId, instanceName || "default");
   if (!instance) return json({ error: "instance_failed" }, 500);
@@ -403,6 +421,10 @@ Deno.serve(async (req: Request) => {
         return json({ ok: true, action: "logged" });
     }
   } catch (err) {
+    if (err instanceof InstanceOwnedByOtherTenant) {
+      await logEvent(tenantId, action || "unknown", { instance: err.message }, "failed", "instance_tenant_mismatch").catch(() => {});
+      return json({ error: "instance_tenant_mismatch" }, 403);
+    }
     const msg = err instanceof Error ? err.message : "internal_error";
     await logEvent(tenantId, action || "unknown", body, "failed", msg).catch(() => {});
     return json({ error: msg }, 500);
