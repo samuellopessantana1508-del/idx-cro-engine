@@ -1,5 +1,20 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { canOperateTenantOrPlatform, canReadTenantOrPlatform } from "../_shared/access.ts";
+import {
+  adsPost,
+  CAMPAIGN_COUNT_QUERY,
+  CAMPAIGN_METRICS_QUERY,
+  classifyAdsError,
+  cleanCustomerId,
+  developerToken,
+  GOOGLE_ADS_API_VERSION,
+  GoogleAdsError,
+  insightRow,
+  listAccessibleAccounts,
+  searchStream,
+  selectableAccounts,
+  syncRange,
+} from "../_shared/google-ads.ts";
 
 const supa = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -8,7 +23,6 @@ const supa = createClient(
 
 const GOOGLE_CLIENT_ID = Deno.env.get("GOOGLE_CLIENT_ID") ?? "";
 const GOOGLE_CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET") ?? "";
-const GOOGLE_DEVELOPER_TOKEN = Deno.env.get("GOOGLE_DEVELOPER_TOKEN") ?? "";
 
 const cors = {
   "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") || "*",
@@ -31,7 +45,63 @@ async function currentUser(req: Request) {
   return data.user ?? null;
 }
 
-async function refreshAccessToken(refreshToken: string): Promise<string | null> {
+type Creds = Record<string, any>;
+type AdsToken = { accessToken: string; customerId: string | null; loginCustomerId: string | null };
+
+async function loadCreds(tenantId: string): Promise<Creds | null> {
+  const { data } = await supa.from("tenant_google_credentials").select("*").eq("tenant_id", tenantId).maybeSingle();
+  return data ?? null;
+}
+
+// Etapa real da integração. "Google autorizado" não é o mesmo que "conta Ads
+// vinculada" nem que "dados sincronizados".
+function connectionStage(creds: Creds | null): string {
+  if (!creds || !creds.enabled || !creds.refresh_token) return "not_connected";
+  if (creds.integration_status === "needs_attention") return "needs_attention";
+  if (!creds.customer_id) return "needs_account";
+  if (!creds.last_synced_at) return "account_selected";
+  return "synced";
+}
+
+// Campos seguros para o painel: nunca tokens.
+function publicCreds(creds: Creds | null) {
+  if (!creds) return null;
+  return {
+    customer_id: creds.customer_id ?? null,
+    customer_descriptive_name: creds.customer_descriptive_name ?? null,
+    manager_customer_id: creds.manager_customer_id ?? null,
+    google_user_email: creds.google_user_email ?? null,
+    integration_status: creds.integration_status,
+    enabled: creds.enabled,
+    last_synced_at: creds.last_synced_at ?? null,
+    last_verified_at: creds.last_verified_at ?? null,
+    last_error: creds.last_error ?? null,
+    currency_code: creds.currency_code ?? null,
+    time_zone: creds.time_zone ?? null,
+    stage: connectionStage(creds),
+  };
+}
+
+async function markError(tenantId: string, err: GoogleAdsError, needsAttention: boolean) {
+  await supa.from("tenant_google_credentials").update({
+    ...(needsAttention ? { integration_status: "needs_attention" } : {}),
+    last_error: `${err.code}: ${err.detail}`.slice(0, 1000),
+    last_verified_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }).eq("tenant_id", tenantId);
+}
+
+// Erros que exigem ação fora do painel (token, API, permissão) deixam a
+// integração em "needs_attention"; limite de cota não.
+function needsAttention(code: string): boolean {
+  return code !== "quota_exceeded" && code !== "ads_api_error";
+}
+
+function adsErrorResponse(err: GoogleAdsError): Response {
+  return json({ error: err.code, detail: err.detail, api_version: GOOGLE_ADS_API_VERSION }, err.code === "quota_exceeded" ? 429 : 400);
+}
+
+async function refreshAccessToken(refreshToken: string): Promise<{ access_token: string; expires_in: number } | { error: string }> {
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -42,71 +112,49 @@ async function refreshAccessToken(refreshToken: string): Promise<string | null> 
       grant_type: "refresh_token",
     }),
   });
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data.access_token ?? null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.access_token) return { error: String(data.error ?? `HTTP ${res.status}`) };
+  return { access_token: data.access_token, expires_in: Number(data.expires_in ?? 3600) };
 }
 
-async function getValidToken(tenantId: string): Promise<{
-  accessToken: string;
-  customerId: string;
-  managerCustomerId: string | null;
-} | null> {
-  const { data: creds } = await supa
-    .from("tenant_google_credentials")
-    .select("access_token, refresh_token, token_expires_at, customer_id, manager_customer_id, enabled")
-    .eq("tenant_id", tenantId)
-    .maybeSingle();
+// Access token válido (renova pelo refresh_token). Não exige conta vinculada:
+// listar contas precisa funcionar justamente antes da escolha.
+async function getAdsToken(tenantId: string, creds: Creds | null): Promise<AdsToken | Response> {
+  if (!creds?.enabled || !creds.refresh_token) return json({ error: "google_not_connected" }, 400);
 
-  if (!creds?.enabled || !creds.refresh_token || !creds.customer_id) return null;
-
-  let accessToken = creds.access_token;
-
-  // Refresh if expired or about to expire (5 min buffer)
+  let accessToken = creds.access_token as string | null;
   const expiresAt = creds.token_expires_at ? new Date(creds.token_expires_at).getTime() : 0;
-  if (Date.now() > expiresAt - 5 * 60 * 1000) {
-    const newToken = await refreshAccessToken(creds.refresh_token);
-    if (!newToken) {
-      await supa.from("tenant_google_credentials").update({
-        integration_status: "needs_attention",
-        last_error: "Token refresh failed",
-        updated_at: new Date().toISOString(),
-      }).eq("tenant_id", tenantId);
-      return null;
+  if (!accessToken || Date.now() > expiresAt - 5 * 60 * 1000) {
+    const refreshed = await refreshAccessToken(creds.refresh_token);
+    if ("error" in refreshed) {
+      const err = new GoogleAdsError("google_token_invalid", 401, `Falha ao renovar o token do Google (${refreshed.error}). Conecte o Google Ads de novo.`);
+      await markError(tenantId, err, true);
+      return adsErrorResponse(err);
     }
-    accessToken = newToken;
+    accessToken = refreshed.access_token;
     await supa.from("tenant_google_credentials").update({
-      access_token: newToken,
-      token_expires_at: new Date(Date.now() + 3600 * 1000).toISOString(),
+      access_token: accessToken,
+      token_expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
       updated_at: new Date().toISOString(),
     }).eq("tenant_id", tenantId);
   }
 
-  return {
-    accessToken,
-    customerId: creds.customer_id,
-    managerCustomerId: creds.manager_customer_id ?? null,
-  };
+  const customerId = creds.customer_id ? cleanCustomerId(creds.customer_id) : null;
+  const loginCustomerId = creds.manager_customer_id ? cleanCustomerId(creds.manager_customer_id) : customerId;
+  return { accessToken: accessToken!, customerId, loginCustomerId };
 }
 
-function gaqlHeaders(accessToken: string, loginCustomerId?: string | null): Record<string, string> {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${accessToken}`,
-    "developer-token": GOOGLE_DEVELOPER_TOKEN,
-    "Content-Type": "application/json",
-  };
-  if (loginCustomerId) headers["login-customer-id"] = loginCustomerId;
-  return headers;
+async function campaignRoi(tenantId: string) {
+  const { data } = await supa
+    .from("vw_google_campaign_roi")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .order("spend", { ascending: false })
+    .limit(200);
+  return data ?? [];
 }
 
-function lastNDays(days: number): { start: string; end: string } {
-  const end = new Date();
-  const start = new Date(Date.now() - (days - 1) * 24 * 60 * 60 * 1000);
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  return { start: fmt(start), end: fmt(end) };
-}
-
-// GET: Return cached Google Ads campaign ROI data
+// GET: status da conexão (sem tokens) + campanhas já importadas
 async function handleGet(req: Request): Promise<Response> {
   const user = await currentUser(req);
   if (!user) return json({ error: "unauthorized" }, 401);
@@ -119,22 +167,7 @@ async function handleGet(req: Request): Promise<Response> {
     return json({ error: "forbidden" }, 403);
   }
 
-  // Return credentials status
-  const { data: creds } = await supa
-    .from("tenant_google_credentials")
-    .select("customer_id, customer_descriptive_name, manager_customer_id, google_user_email, integration_status, enabled, last_synced_at, last_error, currency_code")
-    .eq("tenant_id", tenantId)
-    .maybeSingle();
-
-  // Return cached campaign ROI
-  const { data: campaigns } = await supa
-    .from("vw_google_campaign_roi")
-    .select("*")
-    .eq("tenant_id", tenantId)
-    .order("spend", { ascending: false })
-    .limit(100);
-
-  // Return conversion actions
+  const creds = await loadCreds(tenantId);
   const { data: conversionActions } = await supa
     .from("tenant_google_conversion_actions")
     .select("*")
@@ -142,13 +175,16 @@ async function handleGet(req: Request): Promise<Response> {
 
   return json({
     ok: true,
-    credentials: creds ?? null,
-    campaigns: campaigns ?? [],
+    credentials: publicCreds(creds),
+    developer_token_configured: Boolean(developerToken()),
+    api_version: GOOGLE_ADS_API_VERSION,
+    campaigns: await campaignRoi(tenantId),
     conversion_actions: conversionActions ?? [],
   });
 }
 
-// POST: Actions — sync_campaigns, list_customers, select_customer, upload_conversion, list_conversion_actions, save_conversion_actions, disconnect
+// POST: sync_campaigns, list_customers, select_customer, upload_conversion,
+// list_conversion_actions, save_conversion_actions, disconnect
 async function handlePost(req: Request): Promise<Response> {
   const user = await currentUser(req);
   if (!user) return json({ error: "unauthorized" }, 401);
@@ -174,238 +210,146 @@ async function handlePost(req: Request): Promise<Response> {
   }
 
   if (action === "disconnect") return handleDisconnect(tenantId);
-  if (action === "select_customer") return handleSelectCustomer(tenantId, body);
   if (action === "save_conversion_actions") return handleSaveConversionActions(tenantId, body);
 
-  const token = await getValidToken(tenantId);
-  if (!token) return json({ error: "google_not_connected" }, 400);
+  if (!developerToken()) return json({ error: "developer_token_missing" }, 400);
 
-  if (action === "sync_campaigns") return handleSyncCampaigns(tenantId, token, body);
-  if (action === "list_customers") return handleListCustomers(token);
-  if (action === "list_conversion_actions") return handleListConversionActions(tenantId, token);
-  if (action === "upload_conversion") return handleUploadConversion(tenantId, token, body);
+  const creds = await loadCreds(tenantId);
+  const token = await getAdsToken(tenantId, creds);
+  if (token instanceof Response) return token;
+
+  try {
+    if (action === "list_customers") return await handleListCustomers(tenantId, creds!, token);
+    if (action === "select_customer") return await handleSelectCustomer(tenantId, creds!, token, body);
+
+    if (!token.customerId) return json({ error: "google_account_not_selected" }, 400);
+    if (action === "sync_campaigns") return await handleSyncCampaigns(tenantId, token, body);
+    if (action === "list_conversion_actions") return await handleListConversionActions(token);
+    if (action === "upload_conversion") return await handleUploadConversion(tenantId, token, body);
+  } catch (err) {
+    if (err instanceof GoogleAdsError) {
+      await markError(tenantId, err, needsAttention(err.code));
+      return adsErrorResponse(err);
+    }
+    throw err;
+  }
 
   return json({ error: "unknown_action" }, 400);
 }
 
-async function handleSyncCampaigns(
-  tenantId: string,
-  token: { accessToken: string; customerId: string; managerCustomerId: string | null },
-  body: Record<string, unknown>,
-): Promise<Response> {
-  const days = Math.min(Math.max(Number(body.days ?? 30), 1), 90);
-  const range = body.since && body.until
-    ? { start: String(body.since), end: String(body.until) }
-    : lastNDays(days);
+async function handleSyncCampaigns(tenantId: string, token: AdsToken, body: Record<string, unknown>): Promise<Response> {
+  const range = syncRange(body);
+  const customerId = token.customerId!;
 
-  const query = `
-    SELECT
-      campaign.id,
-      campaign.name,
-      campaign.status,
-      campaign.advertising_channel_type,
-      customer.id,
-      customer.descriptive_name,
-      metrics.impressions,
-      metrics.clicks,
-      metrics.cost_micros,
-      metrics.ctr,
-      metrics.average_cpc,
-      metrics.conversions,
-      metrics.cost_per_conversion,
-      segments.date
-    FROM campaign
-    WHERE segments.date BETWEEN '${range.start}' AND '${range.end}'
-      AND campaign.status != 'REMOVED'
-    ORDER BY segments.date DESC, metrics.cost_micros DESC
-    LIMIT 10000
-  `;
+  const results = await searchStream(token.accessToken, customerId, CAMPAIGN_METRICS_QUERY(range.start, range.end), token.loginCustomerId);
+  const rows = results
+    .map((result) => insightRow(tenantId, customerId, result))
+    .filter((row): row is Record<string, unknown> => Boolean(row));
 
-  const headers = gaqlHeaders(token.accessToken, token.managerCustomerId);
-  const res = await fetch(
-    `https://googleads.googleapis.com/v18/customers/${token.customerId}/googleAds:searchStream`,
-    { method: "POST", headers, body: JSON.stringify({ query }) },
-  );
-
-  const payload = await res.json().catch(() => []);
-
-  if (!res.ok) {
-    const errorDetail = Array.isArray(payload) ? payload[0]?.error : payload?.error;
-    await supa.from("tenant_google_credentials").update({
-      integration_status: "needs_attention",
-      last_error: JSON.stringify(errorDetail ?? payload),
-      updated_at: new Date().toISOString(),
-    }).eq("tenant_id", tenantId);
-    return json({ error: "google_ads_api_failed", detail: errorDetail ?? payload }, 400);
-  }
-
-  const rows: Record<string, unknown>[] = [];
-  for (const batch of Array.isArray(payload) ? payload : [payload]) {
-    for (const result of batch.results ?? []) {
-      const campaign = result.campaign ?? {};
-      const customer = result.customer ?? {};
-      const metrics = result.metrics ?? {};
-      const date = result.segments?.date;
-      if (!date) continue;
-
-      rows.push({
-        tenant_id: tenantId,
-        customer_id: String(customer.id ?? token.customerId),
-        customer_name: customer.descriptiveName ?? null,
-        campaign_id: String(campaign.id ?? ""),
-        campaign_name: campaign.name ?? "",
-        campaign_status: campaign.status ?? null,
-        campaign_type: campaign.advertisingChannelType ?? null,
-        date,
-        impressions: Number(metrics.impressions ?? 0),
-        clicks: Number(metrics.clicks ?? 0),
-        cost_micros: Number(metrics.costMicros ?? 0),
-        ctr: metrics.ctr != null ? Number(metrics.ctr) : null,
-        average_cpc_micros: metrics.averageCpc != null ? Number(metrics.averageCpc) : null,
-        conversions: metrics.conversions != null ? Number(metrics.conversions) : 0,
-        cost_per_conversion_micros: metrics.costPerConversion != null ? Number(metrics.costPerConversion) : null,
-        raw: result,
-        synced_at: new Date().toISOString(),
-      });
-    }
-  }
-
-  if (rows.length) {
-    const { error } = await supa.from("google_campaign_insights").upsert(rows, {
+  // Upsert pela chave única (tenant, conta, campanha, dia): sincronizar de novo
+  // atualiza os números do dia em vez de duplicar.
+  for (let i = 0; i < rows.length; i += 500) {
+    const { error } = await supa.from("google_campaign_insights").upsert(rows.slice(i, i + 500), {
       onConflict: "tenant_id,customer_id,campaign_id,date",
     });
-    if (error) return json({ error: error.message }, 500);
+    if (error) return json({ error: "save_failed", detail: error.message }, 500);
   }
 
+  // A empresa tem uma conta vinculada: métricas de outra conta (vínculo antigo)
+  // não podem somar no relatório.
+  await supa.from("google_campaign_insights").delete().eq("tenant_id", tenantId).neq("customer_id", customerId);
+
+  // Distingue "conta sem campanhas" de "campanhas sem dados no período".
+  const allCampaigns = await searchStream(token.accessToken, customerId, CAMPAIGN_COUNT_QUERY, token.loginCustomerId);
+  const campaignsWithData = new Set(rows.map((row) => row.campaign_id)).size;
+
+  const now = new Date().toISOString();
   await supa.from("tenant_google_credentials").update({
     integration_status: "connected",
     last_error: null,
-    last_synced_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    last_synced_at: now,
+    last_verified_at: now,
+    updated_at: now,
   }).eq("tenant_id", tenantId);
 
-  const { data: campaigns } = await supa
-    .from("vw_google_campaign_roi")
-    .select("*")
-    .eq("tenant_id", tenantId)
-    .order("spend", { ascending: false })
-    .limit(100);
-
-  return json({ ok: true, synced: rows.length, campaigns: campaigns ?? [] });
-}
-
-async function handleListCustomers(
-  token: { accessToken: string; customerId: string; managerCustomerId: string | null },
-): Promise<Response> {
-  const res = await fetch("https://googleads.googleapis.com/v18/customers:listAccessibleCustomers", {
-    headers: {
-      Authorization: `Bearer ${token.accessToken}`,
-      "developer-token": GOOGLE_DEVELOPER_TOKEN,
-    },
+  return json({
+    ok: true,
+    synced: rows.length,
+    range,
+    campaigns_in_account: allCampaigns.length,
+    campaigns_with_data: campaignsWithData,
+    last_synced_at: now,
+    campaigns: await campaignRoi(tenantId),
   });
-
-  if (!res.ok) return json({ error: "list_customers_failed" }, 400);
-  const data = await res.json();
-
-  const customers: { id: string; name: string; manager: boolean }[] = [];
-  for (const resourceName of data.resourceNames ?? []) {
-    const cid = resourceName.replace("customers/", "");
-    const headers = gaqlHeaders(token.accessToken, token.managerCustomerId);
-    const query = `SELECT customer.id, customer.descriptive_name, customer.manager FROM customer LIMIT 1`;
-    const infoRes = await fetch(
-      `https://googleads.googleapis.com/v18/customers/${cid}/googleAds:searchStream`,
-      { method: "POST", headers, body: JSON.stringify({ query }) },
-    );
-    if (infoRes.ok) {
-      const infoData = await infoRes.json();
-      const c = infoData?.[0]?.results?.[0]?.customer;
-      if (c) {
-        customers.push({
-          id: String(c.id),
-          name: c.descriptiveName ?? `Customer ${c.id}`,
-          manager: c.manager ?? false,
-        });
-      }
-    }
-  }
-
-  // If there's a manager, also list its child accounts
-  for (const mgr of customers.filter((c) => c.manager)) {
-    const headers = gaqlHeaders(token.accessToken, mgr.id);
-    const query = `SELECT customer_client.client_customer, customer_client.descriptive_name, customer_client.manager, customer_client.status FROM customer_client WHERE customer_client.status = 'ENABLED'`;
-    const childRes = await fetch(
-      `https://googleads.googleapis.com/v18/customers/${mgr.id}/googleAds:searchStream`,
-      { method: "POST", headers, body: JSON.stringify({ query }) },
-    );
-    if (childRes.ok) {
-      const childData = await childRes.json();
-      for (const batch of Array.isArray(childData) ? childData : [childData]) {
-        for (const result of batch.results ?? []) {
-          const cc = result.customerClient;
-          if (!cc || cc.manager) continue;
-          const childId = String(cc.clientCustomer).replace("customers/", "");
-          if (!customers.some((c) => c.id === childId)) {
-            customers.push({
-              id: childId,
-              name: cc.descriptiveName ?? `Customer ${childId}`,
-              manager: false,
-            });
-          }
-        }
-      }
-    }
-  }
-
-  return json({ ok: true, customers });
 }
 
-async function handleSelectCustomer(tenantId: string, body: Record<string, unknown>): Promise<Response> {
-  const customerId = String(body.customer_id ?? "");
-  const customerName = String(body.customer_name ?? "");
-  const managerCustomerId = body.manager_customer_id ? String(body.manager_customer_id) : null;
+async function handleListCustomers(tenantId: string, creds: Creds, token: AdsToken): Promise<Response> {
+  const accounts = await listAccessibleAccounts(token.accessToken);
+  // A API respondeu: o problema anterior (token, API desativada...) foi resolvido.
+  if (creds.integration_status === "needs_attention") {
+    await supa.from("tenant_google_credentials").update({
+      integration_status: "connected",
+      last_error: null,
+      last_verified_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq("tenant_id", tenantId);
+  }
+  return json({
+    ok: true,
+    customers: selectableAccounts(accounts),
+    managers: accounts.filter((account) => account.manager).map(({ id, name }) => ({ id, name })),
+  });
+}
 
+// Vincula a conta escolhida à empresa. Só aceita contas que este login do
+// Google realmente acessa, e guarda a MCC certa para o login-customer-id.
+async function handleSelectCustomer(tenantId: string, creds: Creds, token: AdsToken, body: Record<string, unknown>): Promise<Response> {
+  const customerId = cleanCustomerId(body.customer_id);
   if (!customerId) return json({ error: "missing_customer_id" }, 400);
 
-  const { error } = await supa.from("tenant_google_credentials").update({
-    customer_id: customerId,
-    customer_descriptive_name: customerName || null,
-    manager_customer_id: managerCustomerId,
-    updated_at: new Date().toISOString(),
-  }).eq("tenant_id", tenantId);
+  const accounts = selectableAccounts(await listAccessibleAccounts(token.accessToken));
+  const account = accounts.find((item) => item.id === customerId);
+  if (!account) return json({ error: "customer_not_accessible" }, 400);
 
-  if (error) return json({ error: error.message }, 500);
-  return json({ ok: true });
+  const previous = creds.customer_id ? cleanCustomerId(creds.customer_id) : null;
+  const now = new Date().toISOString();
+  const { error } = await supa.from("tenant_google_credentials").update({
+    customer_id: account.id,
+    customer_descriptive_name: account.name,
+    manager_customer_id: account.login_customer_id !== account.id ? account.login_customer_id : null,
+    currency_code: account.currency_code ?? creds.currency_code ?? "BRL",
+    time_zone: account.time_zone ?? creds.time_zone ?? "America/Sao_Paulo",
+    integration_status: "connected",
+    last_error: null,
+    last_synced_at: previous === account.id ? creds.last_synced_at : null,
+    last_verified_at: now,
+    updated_at: now,
+  }).eq("tenant_id", tenantId);
+  if (error) return json({ error: "save_failed", detail: error.message }, 500);
+
+  // Trocou de conta: remove as métricas da conta anterior para o relatório da
+  // empresa não somar duas contas.
+  await supa.from("google_campaign_insights").delete().eq("tenant_id", tenantId).neq("customer_id", account.id);
+
+  return json({ ok: true, customer: account });
 }
 
-async function handleListConversionActions(
-  tenantId: string,
-  token: { accessToken: string; customerId: string; managerCustomerId: string | null },
-): Promise<Response> {
-  const headers = gaqlHeaders(token.accessToken, token.managerCustomerId);
-  const query = `SELECT conversion_action.id, conversion_action.name, conversion_action.resource_name, conversion_action.type, conversion_action.status FROM conversion_action WHERE conversion_action.status = 'ENABLED'`;
-
-  const res = await fetch(
-    `https://googleads.googleapis.com/v18/customers/${token.customerId}/googleAds:searchStream`,
-    { method: "POST", headers, body: JSON.stringify({ query }) },
+async function handleListConversionActions(token: AdsToken): Promise<Response> {
+  const results = await searchStream(
+    token.accessToken,
+    token.customerId!,
+    "SELECT conversion_action.id, conversion_action.name, conversion_action.resource_name, conversion_action.type, conversion_action.status FROM conversion_action WHERE conversion_action.status = 'ENABLED'",
+    token.loginCustomerId,
   );
-
-  if (!res.ok) return json({ error: "list_conversion_actions_failed" }, 400);
-  const data = await res.json();
-
-  const actions: { id: string; name: string; resourceName: string; type: string }[] = [];
-  for (const batch of Array.isArray(data) ? data : [data]) {
-    for (const result of batch.results ?? []) {
-      const ca = result.conversionAction;
-      if (!ca) continue;
-      actions.push({
-        id: String(ca.id),
-        name: ca.name ?? "",
-        resourceName: ca.resourceName ?? "",
-        type: ca.type ?? "",
-      });
-    }
-  }
-
+  const actions = results
+    .map((result) => result.conversionAction)
+    .filter(Boolean)
+    .map((ca: Record<string, any>) => ({
+      id: String(ca.id),
+      name: ca.name ?? "",
+      resourceName: ca.resourceName ?? "",
+      type: ca.type ?? "",
+    }));
   return json({ ok: true, conversion_actions: actions });
 }
 
@@ -443,18 +387,13 @@ async function handleSaveConversionActions(tenantId: string, body: Record<string
   return json({ ok: true });
 }
 
-async function handleUploadConversion(
-  tenantId: string,
-  token: { accessToken: string; customerId: string; managerCustomerId: string | null },
-  body: Record<string, unknown>,
-): Promise<Response> {
+async function handleUploadConversion(tenantId: string, token: AdsToken, body: Record<string, unknown>): Promise<Response> {
   const sessionId = body.tracking_session_id ? String(body.tracking_session_id) : null;
   const eventType = String(body.event_type ?? "");
   const conversionValue = body.conversion_value != null ? Number(body.conversion_value) : null;
 
   if (!eventType) return json({ error: "missing_event_type" }, 400);
 
-  // Get conversion action config
   const { data: actionConfig } = await supa
     .from("tenant_google_conversion_actions")
     .select("conversion_action_resource")
@@ -464,7 +403,6 @@ async function handleUploadConversion(
 
   if (!actionConfig) return json({ error: "no_conversion_action_configured" }, 400);
 
-  // Get tracking session for click identifiers
   let gclid: string | null = null;
   let gbraid: string | null = null;
   let wbraid: string | null = null;
@@ -476,7 +414,6 @@ async function handleUploadConversion(
       .eq("id", sessionId)
       .eq("tenant_id", tenantId)
       .maybeSingle();
-
     if (session) {
       gclid = session.gclid;
       gbraid = session.gbraid;
@@ -499,40 +436,27 @@ async function handleUploadConversion(
     .maybeSingle();
 
   const currencyCode = googleCreds?.currency_code ?? "BRL";
-  const conversionDateTime = new Date().toISOString().replace("T", " ").replace("Z", "+00:00");
+  const conversionDateTime = new Date().toISOString().replace("T", " ").replace(/\.\d+Z$/, "+00:00");
 
   const conversion: Record<string, unknown> = {
     conversionAction: actionConfig.conversion_action_resource,
     conversionDateTime,
     currencyCode,
+    conversionValue: conversionValue != null && conversionValue > 0 ? conversionValue : 0,
   };
-
   if (gclid) conversion.gclid = gclid;
   if (gbraid) conversion.gbraid = gbraid;
   if (wbraid) conversion.wbraid = wbraid;
-  if (conversionValue != null && conversionValue > 0) {
-    conversion.conversionValue = conversionValue;
-  } else {
-    conversion.conversionValue = 0;
-  }
 
-  const headers = gaqlHeaders(token.accessToken, token.managerCustomerId);
-  const uploadRes = await fetch(
-    `https://googleads.googleapis.com/v18/customers/${token.customerId}:uploadClickConversions`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        conversions: [conversion],
-        partialFailure: true,
-      }),
-    },
+  const upload = await adsPost(
+    token.accessToken,
+    `customers/${token.customerId}:uploadClickConversions`,
+    { conversions: [conversion], partialFailure: true },
+    token.loginCustomerId,
   );
+  const ok = upload.ok && !upload.payload?.partialFailureError;
+  const failure = ok ? null : (upload.ok ? null : classifyAdsError(upload.status, upload.payload));
 
-  const uploadData = await uploadRes.json().catch(() => null);
-  const ok = uploadRes.ok && !uploadData?.partialFailureError;
-
-  // Record upload attempt
   await supa.from("google_conversion_uploads").insert({
     tenant_id: tenantId,
     tracking_session_id: sessionId,
@@ -546,19 +470,19 @@ async function handleUploadConversion(
     currency_code: currencyCode,
     event_type: eventType,
     status: ok ? "sent" : "failed",
-    response_payload: uploadData,
-    error_message: ok ? null : JSON.stringify(uploadData?.partialFailureError ?? uploadData?.error ?? "unknown"),
+    response_payload: upload.payload,
+    error_message: ok ? null : JSON.stringify(upload.payload?.partialFailureError ?? failure?.detail ?? "unknown").slice(0, 1000),
     sent_at: ok ? new Date().toISOString() : null,
   });
 
   if (!ok) {
     return json({
-      error: "conversion_upload_failed",
-      detail: uploadData?.partialFailureError ?? uploadData?.error,
+      error: failure?.code ?? "conversion_upload_failed",
+      detail: upload.payload?.partialFailureError?.message ?? failure?.detail,
     }, 400);
   }
 
-  return json({ ok: true, result: uploadData });
+  return json({ ok: true, result: upload.payload });
 }
 
 async function handleDisconnect(tenantId: string): Promise<Response> {
