@@ -9,6 +9,7 @@
     "postbuild": "node ../scripts/create-spa-404.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "test:edge": "node ../tests/edge-contract.test.mjs",
+    "test:realtime": "node --test ../tests/whatsapp-realtime.test.mjs",
     "test:e2e": "playwright test"
   },
   "dependencies": {

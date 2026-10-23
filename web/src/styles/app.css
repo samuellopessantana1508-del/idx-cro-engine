@@ -2018,6 +2018,7 @@ td small {
 .wa-chat-layout {
   display: grid;
   grid-template-columns: 340px 1fr;
+  grid-template-rows: minmax(0, 1fr);
   height: calc(100vh - 80px);
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -2144,6 +2145,7 @@ td small {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
   background: #efeae2;
   background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23d5cfca' fill-opacity='0.3'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
 }
@@ -2172,6 +2174,7 @@ td small {
 
 .wa-thread-messages {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 16px 20px;
   display: flex;
@@ -3002,7 +3005,12 @@ td small {
 
   .wa-chat-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: auto;
     height: auto;
+  }
+
+  .wa-thread {
+    height: 75vh;
   }
 
   .wa-contact-list {
@@ -3837,4 +3845,56 @@ td small {
 }
 .status-badge.inactive {
   color: var(--muted);
+}
+
+/* WhatsApp em tempo real */
+.nav-button { position: relative; }
+.nav-badge {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #25d366;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+.wa-sync-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.wa-sync-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f5a524;
+}
+.wa-sync-status.live .wa-sync-dot { background: #25d366; }
+.wa-sync-status.polling .wa-sync-dot { background: #9aa0a6; }
+.wa-sync-unread { margin-left: auto; font-weight: 600; color: var(--ink, inherit); }
+.wa-contact-item.unread .wa-contact-name { font-weight: 700; }
+.wa-contact-item.unread .wa-contact-preview { color: var(--ink, inherit); font-weight: 600; }
+.wa-contact-item.unread { box-shadow: inset 3px 0 0 #25d366; }
+.wa-new-below {
+  position: sticky;
+  bottom: 56px;
+  align-self: center;
+  margin: -44px auto 8px;
+  display: block;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: #111;
+  color: #fff;
+  font-size: 0.78rem;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  z-index: 2;
 }
