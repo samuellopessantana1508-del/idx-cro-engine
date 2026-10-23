@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { canOperateTenantOrPlatform } from "../_shared/access.ts";
+import { developerToken, GOOGLE_ADS_API_VERSION, GoogleAdsError, listAccessibleAccounts, selectableAccounts } from "../_shared/google-ads.ts";
 
 const supa = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -39,7 +40,6 @@ const GOOGLE_CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET") ?? "";
 // "URIs de redirecionamento autorizados" do cliente OAuth no Google Cloud.
 const GOOGLE_REDIRECT_URI = (Deno.env.get("GOOGLE_REDIRECT_URI") ?? "").trim() ||
   `${Deno.env.get("SUPABASE_URL") ?? ""}/functions/v1/google-oauth`;
-const GOOGLE_DEVELOPER_TOKEN = Deno.env.get("GOOGLE_DEVELOPER_TOKEN") ?? "";
 const appUrl = publicAppUrl();
 const GOOGLE_SCOPES = Deno.env.get("GOOGLE_OAUTH_SCOPES") ?? "https://www.googleapis.com/auth/adwords openid email profile";
 
@@ -78,66 +78,6 @@ function randomState(): string {
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function refreshAccessToken(refreshToken: string): Promise<{ access_token: string; expires_in: number } | null> {
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: GOOGLE_CLIENT_ID,
-      client_secret: GOOGLE_CLIENT_SECRET,
-      refresh_token: refreshToken,
-      grant_type: "refresh_token",
-    }),
-  });
-  if (!res.ok) return null;
-  return res.json();
-}
-
-async function listAccessibleCustomers(accessToken: string): Promise<{ resourceNames: string[] } | null> {
-  const res = await fetch("https://googleads.googleapis.com/v18/customers:listAccessibleCustomers", {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "developer-token": GOOGLE_DEVELOPER_TOKEN,
-    },
-  });
-  if (!res.ok) return null;
-  return res.json();
-}
-
-async function getCustomerInfo(
-  accessToken: string,
-  customerId: string,
-  loginCustomerId?: string,
-): Promise<{ id: string; descriptiveName: string; manager: boolean; currencyCode: string; timeZone: string } | null> {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${accessToken}`,
-    "developer-token": GOOGLE_DEVELOPER_TOKEN,
-    "Content-Type": "application/json",
-  };
-  if (loginCustomerId) headers["login-customer-id"] = loginCustomerId;
-
-  const query = `SELECT customer.id, customer.descriptive_name, customer.manager, customer.currency_code, customer.time_zone FROM customer LIMIT 1`;
-  const res = await fetch(
-    `https://googleads.googleapis.com/v18/customers/${customerId}/googleAds:searchStream`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ query }),
-    },
-  );
-  if (!res.ok) return null;
-  const data = await res.json();
-  const row = data?.[0]?.results?.[0]?.customer;
-  if (!row) return null;
-  return {
-    id: row.id,
-    descriptiveName: row.descriptiveName ?? "",
-    manager: row.manager ?? false,
-    currencyCode: row.currencyCode ?? "BRL",
-    timeZone: row.timeZone ?? "America/Sao_Paulo",
-  };
 }
 
 // POST: Initiate Google OAuth — returns auth URL
@@ -201,7 +141,8 @@ async function handleCallback(req: Request): Promise<Response> {
       redirect_uri_from_secret: Boolean((Deno.env.get("GOOGLE_REDIRECT_URI") ?? "").trim()),
       scopes: GOOGLE_SCOPES.split(/\s+/),
       client_secret_set: Boolean(GOOGLE_CLIENT_SECRET),
-      developer_token_set: Boolean(GOOGLE_DEVELOPER_TOKEN),
+      developer_token_set: Boolean(developerToken()),
+      google_ads_api_version: GOOGLE_ADS_API_VERSION,
       app_url: appUrl,
     });
   }
@@ -271,105 +212,71 @@ async function handleCallback(req: Request): Promise<Response> {
   });
   const userInfo = await userInfoRes.json().catch(() => ({}));
 
-  // List accessible Google Ads customers
-  let customerId: string | null = null;
-  let customerName: string | null = null;
-  let managerCustomerId: string | null = null;
-  let currencyCode = "BRL";
-  let timeZone = "America/Sao_Paulo";
+  // Credenciais atuais: reconectar não pode apagar refresh_token nem a conta
+  // já vinculada (o Google só manda refresh_token no primeiro consentimento).
+  const { data: current } = await supa
+    .from("tenant_google_credentials")
+    .select("refresh_token, customer_id, customer_descriptive_name, manager_customer_id, currency_code, time_zone")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
 
-  if (GOOGLE_DEVELOPER_TOKEN) {
-    const customers = await listAccessibleCustomers(accessToken);
-    if (customers?.resourceNames?.length) {
-      for (const resourceName of customers.resourceNames) {
-        const cid = resourceName.replace("customers/", "");
-        const info = await getCustomerInfo(accessToken, cid);
-        if (info && !info.manager) {
-          customerId = cid;
-          customerName = info.descriptiveName;
-          currencyCode = info.currencyCode;
-          timeZone = info.timeZone;
-          break;
-        }
-        if (info?.manager && !managerCustomerId) {
-          managerCustomerId = cid;
-        }
-      }
-
-      // If only manager accounts found, try to get child accounts
-      if (!customerId && managerCustomerId) {
-        const childInfo = await getManagerChildAccounts(accessToken, managerCustomerId);
-        if (childInfo) {
-          customerId = childInfo.id;
-          customerName = childInfo.descriptiveName;
-          currencyCode = childInfo.currencyCode;
-          timeZone = childInfo.timeZone;
-        }
-      }
-    }
+  const storedRefreshToken = refreshToken ?? current?.refresh_token ?? null;
+  if (!storedRefreshToken) {
+    // Sem refresh_token não dá para sincronizar depois que o access token vencer.
+    return backToPanel(oauthState.redirect_to, "error", "missing_refresh_token");
   }
 
-  // Upsert credentials
+  const now = new Date().toISOString();
   const { error: upsertError } = await supa.from("tenant_google_credentials").upsert({
     tenant_id: tenantId,
     google_user_id: userInfo.id ?? null,
     google_user_email: userInfo.email ?? null,
     google_user_name: userInfo.name ?? null,
     access_token: accessToken,
-    refresh_token: refreshToken,
+    refresh_token: storedRefreshToken,
     token_expires_at: tokenExpiresAt,
-    customer_id: customerId,
-    customer_descriptive_name: customerName,
-    manager_customer_id: managerCustomerId,
-    currency_code: currencyCode,
-    time_zone: timeZone,
     integration_status: "connected",
     enabled: true,
-    last_verified_at: new Date().toISOString(),
+    last_verified_at: now,
     last_error: null,
     updated_by: oauthState.user_id,
-    updated_at: new Date().toISOString(),
+    updated_at: now,
   }, { onConflict: "tenant_id" });
 
   if (upsertError) return backToPanel(oauthState.redirect_to, "error", "save_failed");
-
-  // Update onboarding
   await supa.from("tenant_onboarding").update({ google_connected: true }).eq("tenant_id", tenantId);
 
-  return backToPanel(oauthState.redirect_to, customerId ? "connected" : "no_customer");
-}
+  // Autorização do Google concluída. Agora a parte do Google Ads: descobrir as
+  // contas que este login acessa e vincular uma à empresa.
+  if (!developerToken()) return backToPanel(oauthState.redirect_to, "authorized", "developer_token_missing");
 
-async function getManagerChildAccounts(
-  accessToken: string,
-  managerCustomerId: string,
-): Promise<{ id: string; descriptiveName: string; currencyCode: string; timeZone: string } | null> {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${accessToken}`,
-    "developer-token": GOOGLE_DEVELOPER_TOKEN,
-    "Content-Type": "application/json",
-    "login-customer-id": managerCustomerId,
-  };
+  try {
+    const accounts = selectableAccounts(await listAccessibleAccounts(accessToken));
+    const keep = current?.customer_id ? accounts.find((account) => account.id === String(current.customer_id).replace(/\D/g, "")) : null;
+    const chosen = keep ?? (accounts.length === 1 ? accounts[0] : null);
 
-  const query = `SELECT customer_client.client_customer, customer_client.descriptive_name, customer_client.manager, customer_client.currency_code, customer_client.time_zone FROM customer_client WHERE customer_client.manager = FALSE AND customer_client.status = 'ENABLED' LIMIT 1`;
+    if (!chosen) {
+      return backToPanel(oauthState.redirect_to, accounts.length ? "select_account" : "authorized", accounts.length ? undefined : "no_ads_accounts");
+    }
 
-  const res = await fetch(
-    `https://googleads.googleapis.com/v18/customers/${managerCustomerId}/googleAds:searchStream`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ query }),
-    },
-  );
-  if (!res.ok) return null;
-  const data = await res.json();
-  const row = data?.[0]?.results?.[0]?.customerClient;
-  if (!row) return null;
-  return {
-    id: String(row.clientCustomer).replace("customers/", ""),
-    descriptiveName: row.descriptiveName ?? "",
-    currencyCode: row.currencyCode ?? "BRL",
-    timeZone: row.timeZone ?? "America/Sao_Paulo",
-  };
+    await supa.from("tenant_google_credentials").update({
+      customer_id: chosen.id,
+      customer_descriptive_name: chosen.name,
+      manager_customer_id: chosen.login_customer_id !== chosen.id ? chosen.login_customer_id : null,
+      currency_code: chosen.currency_code ?? current?.currency_code ?? "BRL",
+      time_zone: chosen.time_zone ?? current?.time_zone ?? "America/Sao_Paulo",
+      updated_at: new Date().toISOString(),
+    }).eq("tenant_id", tenantId);
+    return backToPanel(oauthState.redirect_to, "connected");
+  } catch (err) {
+    if (!(err instanceof GoogleAdsError)) throw err;
+    await supa.from("tenant_google_credentials").update({
+      integration_status: "needs_attention",
+      last_error: `${err.code}: ${err.detail}`.slice(0, 1000),
+      updated_at: new Date().toISOString(),
+    }).eq("tenant_id", tenantId);
+    return backToPanel(oauthState.redirect_to, "authorized", err.code);
+  }
 }
 
 Deno.serve(async (req: Request) => {

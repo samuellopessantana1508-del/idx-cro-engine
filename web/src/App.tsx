@@ -101,12 +101,19 @@ type GoogleCredentials = {
   last_synced_at: string | null;
   last_error: string | null;
   currency_code: string | null;
+  last_verified_at?: string | null;
+  time_zone?: string | null;
+  // not_connected | needs_attention | needs_account | account_selected | synced
+  stage?: string;
 };
 
 type GoogleCustomer = {
   id: string;
   name: string;
   manager: boolean;
+  currency_code?: string | null;
+  login_customer_id?: string;
+  via_manager_name?: string | null;
 };
 
 type PlatformRole = "owner" | "admin" | "support" | "viewer";
@@ -571,6 +578,7 @@ export function App() {
   const [googleCustomers, setGoogleCustomers] = useState<GoogleCustomer[]>([]);
   const [googleBusy, setGoogleBusy] = useState(false);
   const [googleSyncDays, setGoogleSyncDays] = useState(30);
+  const [googleDevTokenOk, setGoogleDevTokenOk] = useState(true);
 
   const tenant = tenants.find((item) => item.id === tenantId) ?? tenants[0];
   const isPlatformUser = Boolean(platformRole);
@@ -1678,21 +1686,31 @@ export function App() {
     url.searchParams.delete("reason");
     window.history.replaceState(null, "", url.toString());
     setActive("google-ads");
-    const key = result === "error" ? reason : result;
-    setToast(GOOGLE_RETURN_MESSAGES[key] ?? `${GOOGLE_RETURN_MESSAGES.error}${reason ? ` (${reason})` : ""}`);
-    if (result === "connected" || result === "no_customer") void loadGoogleAdsData();
+    if (result === "error") {
+      setToast(GOOGLE_RETURN_MESSAGES[reason] ?? `${GOOGLE_RETURN_MESSAGES.error}${reason ? ` (${reason})` : ""}`);
+      return;
+    }
+    // "authorized" com motivo: Google autorizado, mas a parte do Google Ads falhou.
+    setToast(result === "authorized" && reason ? googleAdsMessage(reason) : (GOOGLE_RETURN_MESSAGES[result] ?? GOOGLE_RETURN_MESSAGES.error));
+    void (async () => {
+      const creds = await loadGoogleAdsData();
+      if (result === "connected" && creds?.customer_id) await syncGoogleAds();
+      if (result === "select_account") await listGoogleCustomers();
+    })();
   }, [googleReturn, tenant?.id]);
 
-  async function loadGoogleAdsData() {
-    if (!tenant || !isConfigured || !supabase) return;
+  async function loadGoogleAdsData(): Promise<GoogleCredentials | null> {
+    if (!tenant || !isConfigured || !supabase) return null;
     setGoogleBusy(true);
     const res = await authFetch(`google-ads?tenant_id=${tenant.id}`, { method: "GET" });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     setGoogleBusy(false);
-    if (res.ok) {
-      setGoogleCreds(data.credentials ?? null);
-      setGoogleCampaigns(data.campaigns ?? []);
-    }
+    if (!res.ok) return null;
+    const creds = (data.credentials ?? null) as GoogleCredentials | null;
+    setGoogleCreds(creds);
+    setGoogleCampaigns(data.campaigns ?? []);
+    setGoogleDevTokenOk(data.developer_token_configured !== false);
+    return creds;
   }
 
   async function startGoogleLogin() {
@@ -1730,11 +1748,18 @@ export function App() {
         days: googleSyncDays,
       }),
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     setGoogleBusy(false);
-    if (!res.ok) return setToast(data.error || "Erro ao sincronizar Google Ads.");
+    if (!res.ok) {
+      setToast(googleAdsMessage(data.error, "Erro ao sincronizar Google Ads."));
+      await loadGoogleAdsData();
+      return;
+    }
     setGoogleCampaigns(data.campaigns ?? []);
-    setToast(`${data.synced ?? 0} linhas de campanhas Google sincronizadas.`);
+    if (!data.campaigns_in_account) setToast("Sincronizado: a conta do Google Ads não tem campanhas.");
+    else if (!data.synced) setToast(`Sincronizado: ${data.campaigns_in_account} campanha(s) na conta, nenhuma com dados nos últimos ${googleSyncDays} dias.`);
+    else setToast(`${data.campaigns_with_data} campanha(s) com dados importadas (${data.synced} linhas diárias).`);
+    await loadGoogleAdsData();
   }
 
   async function listGoogleCustomers() {
@@ -1745,10 +1770,16 @@ export function App() {
       method: "POST",
       body: JSON.stringify({ action: "list_customers", tenant_id: tenant.id }),
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     setGoogleBusy(false);
-    if (!res.ok) return setToast(data.error || "Erro ao listar contas Google.");
-    setGoogleCustomers(data.customers ?? []);
+    if (!res.ok) {
+      setToast(googleAdsMessage(data.error, "Erro ao listar contas Google Ads."));
+      await loadGoogleAdsData();
+      return;
+    }
+    const customers = (data.customers ?? []) as GoogleCustomer[];
+    setGoogleCustomers(customers);
+    if (!customers.length) setToast(googleAdsMessage("no_ads_accounts"));
   }
 
   async function selectGoogleCustomer(customer: GoogleCustomer) {
@@ -1760,14 +1791,15 @@ export function App() {
         action: "select_customer",
         tenant_id: tenant.id,
         customer_id: customer.id,
-        customer_name: customer.name,
       }),
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     setGoogleBusy(false);
-    if (!res.ok) return setToast(data.error || "Erro ao selecionar conta.");
-    setToast(`Conta ${customer.name} selecionada.`);
+    if (!res.ok) return setToast(googleAdsMessage(data.error, "Erro ao vincular a conta."));
+    setGoogleCustomers([]);
+    setToast(`Conta ${customer.name} vinculada. Importando campanhas...`);
     await loadGoogleAdsData();
+    await syncGoogleAds();
   }
 
   async function disconnectGoogle() {
@@ -2389,7 +2421,9 @@ export function App() {
   }, [active, tenant?.id]);
 
   useEffect(() => {
-    if (active === "google-ads" && tenant) loadGoogleAdsData();
+    // Integrações também mostra o status do Google Ads; antes só a seção
+    // Google Ads carregava, e Integrações exibia "Conectar" mesmo conectado.
+    if ((active === "google-ads" || active === "integrations") && tenant) loadGoogleAdsData();
   }, [active, tenant?.id]);
 
   useEffect(() => {
@@ -2886,6 +2920,9 @@ export function App() {
                         <th>Campanha</th>
                         <th>Fonte</th>
                         <th>Cliques</th>
+                        <th>CTR</th>
+                        <th>CPC</th>
+                        <th>Conv. Google</th>
                         <th>Leads</th>
                         <th>Vendas</th>
                         <th>Conv.</th>
@@ -3508,37 +3545,20 @@ export function App() {
                 </div>
                 <Zap size={18} />
               </div>
-              <div className="google-connect-box">
-                {googleCreds?.integration_status === "connected" ? (
-                  <div className="google-status-row">
-                    <div className="google-status-connected">
-                      <Check size={16} /> Conectado
-                      {googleCreds.google_user_email && <span className="muted"> — {googleCreds.google_user_email}</span>}
-                    </div>
-                    {googleCreds.customer_descriptive_name && (
-                      <ReadOnly label="Conta" value={`${googleCreds.customer_descriptive_name} (${googleCreds.customer_id})`} />
-                    )}
-                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                      <button className="primary-button" onClick={() => goToSection("google-ads")} disabled={googleBusy}>
-                        Dashboard Google Ads
-                      </button>
-                      <button className="ghost-button" onClick={disconnectGoogle} disabled={googleBusy}>
-                        Desconectar
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="muted" style={{ marginBottom: 12 }}>Conecte via OAuth para importar campanhas e enviar conversões offline ao Google Ads.</p>
-                    <button className="primary-button" onClick={startGoogleLogin} disabled={googleBusy}>
-                      Conectar Google Ads <ArrowRight size={16} />
-                    </button>
-                  </div>
-                )}
-                {googleCreds?.last_error && googleCreds.integration_status === "needs_attention" && (
-                  <div className="google-error-box">Atenção: {googleCreds.last_error}</div>
-                )}
-              </div>
+              <GoogleAdsConnection
+                creds={googleCreds}
+                devTokenOk={googleDevTokenOk}
+                busy={googleBusy}
+                customers={googleCustomers}
+                syncDays={googleSyncDays}
+                onSyncDaysChange={setGoogleSyncDays}
+                onConnect={startGoogleLogin}
+                onListCustomers={listGoogleCustomers}
+                onSelectCustomer={selectGoogleCustomer}
+                onSync={syncGoogleAds}
+                onDisconnect={disconnectGoogle}
+                onOpenDashboard={() => goToSection("google-ads")}
+              />
             </section>
 
             <section className="panel">
@@ -3573,61 +3593,34 @@ export function App() {
                 <Zap size={18} />
               </div>
 
-              {(!googleCreds || googleCreds.integration_status !== "connected") ? (
-                <div className="google-connect-box" style={{ textAlign: "center", padding: "32px 16px" }}>
-                  <p style={{ marginBottom: 16 }}>Conecte o Google Ads na seção <button className="link-button" onClick={() => goToSection("integrations")}>Integrações</button> para ver campanhas aqui.</p>
+              <GoogleAdsConnection
+                creds={googleCreds}
+                devTokenOk={googleDevTokenOk}
+                busy={googleBusy}
+                customers={googleCustomers}
+                syncDays={googleSyncDays}
+                onSyncDaysChange={setGoogleSyncDays}
+                onConnect={startGoogleLogin}
+                onListCustomers={listGoogleCustomers}
+                onSelectCustomer={selectGoogleCustomer}
+                onSync={syncGoogleAds}
+                onDisconnect={disconnectGoogle}
+              />
+              {googleCampaigns.length > 0 && (
+                <div className="kpi-grid" style={{ marginTop: 16 }}>
+                  <Kpi label="Investimento" value={formatMoney(googleCampaigns.reduce((s, c) => s + Number(c.spend ?? 0), 0))} accent="#4285F4" />
+                  <Kpi label="Impressões" value={googleCampaigns.reduce((s, c) => s + Number(c.impressions ?? 0), 0).toLocaleString("pt-BR")} accent="#4285F4" />
+                  <Kpi label="Cliques" value={googleCampaigns.reduce((s, c) => s + Number(c.google_clicks ?? 0), 0).toLocaleString("pt-BR")} accent="#34A853" />
+                  <Kpi label="Conversões Google" value={googleCampaigns.reduce((s, c) => s + Number(c.google_conversions ?? 0), 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} accent="#FBBC04" />
+                  <Kpi label="Leads IDX" value={String(googleCampaigns.reduce((s, c) => s + Number(c.idx_leads ?? 0), 0))} accent="#FBBC04" />
+                  <Kpi label="Vendas IDX" value={String(googleCampaigns.reduce((s, c) => s + Number(c.idx_sales ?? 0), 0))} accent="#EA4335" />
+                  <Kpi label="Receita" value={formatMoney(googleCampaigns.reduce((s, c) => s + Number(c.idx_revenue ?? 0), 0))} accent="#34A853" />
+                  <Kpi label="ROAS médio" value={(() => {
+                    const totalSpend = googleCampaigns.reduce((s, c) => s + Number(c.spend ?? 0), 0);
+                    const totalRevenue = googleCampaigns.reduce((s, c) => s + Number(c.idx_revenue ?? 0), 0);
+                    return totalSpend > 0 ? `${(totalRevenue / totalSpend).toFixed(2)}x` : "—";
+                  })()} accent="#4285F4" />
                 </div>
-              ) : (
-                <>
-                  <div className="kpi-grid">
-                    <Kpi label="Investimento" value={formatMoney(googleCampaigns.reduce((s, c) => s + (c.spend ?? 0), 0))} accent="#4285F4" />
-                    <Kpi label="Cliques" value={String(googleCampaigns.reduce((s, c) => s + (c.google_clicks ?? 0), 0))} accent="#34A853" />
-                    <Kpi label="Leads IDX" value={String(googleCampaigns.reduce((s, c) => s + (c.idx_leads ?? 0), 0))} accent="#FBBC04" />
-                    <Kpi label="Vendas IDX" value={String(googleCampaigns.reduce((s, c) => s + (c.idx_sales ?? 0), 0))} accent="#EA4335" />
-                    <Kpi label="Receita" value={formatMoney(googleCampaigns.reduce((s, c) => s + (c.idx_revenue ?? 0), 0))} accent="#34A853" />
-                    <Kpi label="ROAS médio" value={(() => {
-                      const totalSpend = googleCampaigns.reduce((s, c) => s + (c.spend ?? 0), 0);
-                      const totalRevenue = googleCampaigns.reduce((s, c) => s + (c.idx_revenue ?? 0), 0);
-                      return totalSpend > 0 ? `${(totalRevenue / totalSpend).toFixed(2)}x` : "—";
-                    })()} accent="#4285F4" />
-                  </div>
-
-                  <div className="ad-sync-row" style={{ marginTop: 16 }}>
-                    <select value={googleSyncDays} onChange={(e) => setGoogleSyncDays(Number(e.target.value))}>
-                      <option value={7}>7 dias</option>
-                      <option value={14}>14 dias</option>
-                      <option value={30}>30 dias</option>
-                      <option value={60}>60 dias</option>
-                      <option value={90}>90 dias</option>
-                    </select>
-                    <button className="primary-button" onClick={syncGoogleAds} disabled={googleBusy}>
-                      <RefreshCw size={15} /> Sincronizar Google Ads
-                    </button>
-                    <button className="ghost-button" onClick={listGoogleCustomers} disabled={googleBusy}>
-                      Trocar conta
-                    </button>
-                  </div>
-
-                  {googleCustomers.length > 0 && (
-                    <div className="google-customer-list">
-                      <label className="mini-label">Selecionar conta Google Ads</label>
-                      {googleCustomers.filter((c) => !c.manager).map((c) => (
-                        <button
-                          key={c.id}
-                          className={`ghost-button ${c.id === googleCreds?.customer_id ? "active" : ""}`}
-                          onClick={() => selectGoogleCustomer(c)}
-                          disabled={googleBusy}
-                        >
-                          {c.name} ({c.id})
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {googleCreds.last_synced_at && (
-                    <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Última sincronização: {formatDate(googleCreds.last_synced_at)}</p>
-                  )}
-                </>
               )}
             </section>
 
@@ -3650,6 +3643,9 @@ export function App() {
                         <th>Investimento</th>
                         <th>Impressões</th>
                         <th>Cliques</th>
+                        <th>CTR</th>
+                        <th>CPC</th>
+                        <th>Conv. Google</th>
                         <th>Leads</th>
                         <th>Qualif.</th>
                         <th>Vendas</th>
@@ -3668,6 +3664,9 @@ export function App() {
                           <td>{formatMoney(c.spend)}</td>
                           <td>{c.impressions?.toLocaleString("pt-BR") ?? 0}</td>
                           <td>{c.google_clicks?.toLocaleString("pt-BR") ?? 0}</td>
+                          <td>{Number(c.impressions) > 0 ? `${((Number(c.google_clicks) / Number(c.impressions)) * 100).toFixed(2)}%` : "—"}</td>
+                          <td>{Number(c.google_clicks) > 0 ? formatMoney(Number(c.spend) / Number(c.google_clicks)) : "—"}</td>
+                          <td>{Number(c.google_conversions ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}</td>
                           <td>{c.idx_leads}</td>
                           <td>{c.idx_qualified}</td>
                           <td>{c.idx_sales}</td>
@@ -3683,8 +3682,8 @@ export function App() {
               </section>
             )}
 
-            {googleCampaigns.length === 0 && googleCreds?.integration_status === "connected" && (
-              <EmptyState text="Nenhuma campanha Google Ads sincronizada. Clique em Sincronizar para importar." />
+            {googleCampaigns.length === 0 && googleCreds?.stage === "account_selected" && (
+              <EmptyState text="Conta vinculada. Clique em Sincronizar para importar as campanhas." />
             )}
           </section>
         )}
@@ -4611,6 +4610,9 @@ export function App() {
                         <th>Campanha</th>
                         <th>Fonte / Mídia</th>
                         <th>Cliques</th>
+                        <th>CTR</th>
+                        <th>CPC</th>
+                        <th>Conv. Google</th>
                         <th>Leads</th>
                         <th>Vendas</th>
                         <th>Receita</th>
@@ -6459,14 +6461,171 @@ function platformRoleLabel(role: PlatformRole | null): string {
 
 // Resultado do retorno do Google (?google=...&reason=...), definido pela Edge Function google-oauth.
 const GOOGLE_RETURN_MESSAGES: Record<string, string> = {
-  connected: "Google Ads conectado. Carregando contas e campanhas...",
-  no_customer: "Google conectado, mas nenhuma conta do Google Ads foi encontrada para este login (ou o developer token não está configurado).",
+  connected: "Google Ads conectado e conta vinculada. Importando campanhas...",
+  select_account: "Google autorizado. Escolha qual conta do Google Ads pertence a esta empresa.",
+  authorized: "Google autorizado, mas o Google Ads ainda não foi vinculado.",
   access_denied: "Conexão cancelada no Google. Clique em Conectar Google Ads e aceite as permissões.",
   invalid_state: "O link de conexão expirou ou já foi usado. Clique em Conectar Google Ads de novo.",
   token_exchange_failed: "O Google não liberou o token. Confira se a redirect_uri está cadastrada no cliente OAuth do Google Cloud.",
+  missing_refresh_token: "O Google não enviou o token de acesso contínuo. Remova o acesso do app em myaccount.google.com/permissions e conecte de novo.",
   save_failed: "Não foi possível salvar a conexão com o Google. Tente de novo.",
   error: "Não foi possível concluir a conexão com o Google. Tente de novo.",
 };
+
+// Erros da Google Ads API devolvidos pelas Edge Functions google-ads e google-oauth.
+const GOOGLE_ADS_ERRORS: Record<string, string> = {
+  developer_token_missing: "Falta configurar o GOOGLE_DEVELOPER_TOKEN no Supabase. Sem ele a Google Ads API não responde.",
+  developer_token_not_approved: "O developer token do Google Ads só tem acesso de teste. Solicite o acesso Básico na Central de API da conta MCC.",
+  developer_token_invalid: "O developer token do Google Ads é inválido. Confira o GOOGLE_DEVELOPER_TOKEN no Supabase.",
+  google_token_invalid: "A autorização do Google expirou ou foi revogada. Conecte o Google Ads de novo.",
+  google_not_connected: "Google Ads não conectado. Clique em Conectar Google Ads.",
+  google_account_not_selected: "Escolha a conta do Google Ads desta empresa antes de sincronizar.",
+  ads_api_disabled: "A Google Ads API não está ativada no projeto do Google Cloud. Ative em APIs e serviços → Biblioteca.",
+  ads_api_version_unsupported: "A versão da Google Ads API usada foi desativada pelo Google. Atualize o secret GOOGLE_ADS_API_VERSION.",
+  permission_denied: "Este login do Google não tem permissão nessa conta do Google Ads (ou na MCC). Peça acesso ou escolha outra conta.",
+  customer_not_enabled: "A conta do Google Ads está cancelada ou suspensa.",
+  customer_not_accessible: "Essa conta não está entre as que este login do Google acessa.",
+  not_ads_user: "Este login do Google não tem nenhuma conta do Google Ads.",
+  no_ads_accounts: "Este login do Google não acessa nenhuma conta ativa do Google Ads.",
+  quota_exceeded: "Limite de requisições da Google Ads API atingido. Tente de novo em alguns minutos.",
+  ads_api_error: "A Google Ads API retornou um erro. Veja o detalhe abaixo e tente de novo.",
+  save_failed: "Os dados vieram do Google, mas não foram salvos. Tente de novo.",
+};
+
+function googleAdsMessage(code?: string | null, fallback = "Erro no Google Ads."): string {
+  if (!code) return fallback;
+  return GOOGLE_ADS_ERRORS[code] ?? GOOGLE_RETURN_MESSAGES[code] ?? fallback;
+}
+
+// last_error é gravado como "codigo: detalhe".
+function googleErrorCode(lastError?: string | null): string {
+  return String(lastError ?? "").split(":")[0].trim();
+}
+
+
+// Estado real da integração Google Ads, em etapas: autorizar o Google, vincular
+// a conta Ads da empresa e sincronizar. Usado em Integrações e em Google Ads.
+function GoogleAdsConnection({
+  creds,
+  devTokenOk,
+  busy,
+  customers,
+  syncDays,
+  onSyncDaysChange,
+  onConnect,
+  onListCustomers,
+  onSelectCustomer,
+  onSync,
+  onDisconnect,
+  onOpenDashboard,
+}: {
+  creds: GoogleCredentials | null;
+  devTokenOk: boolean;
+  busy: boolean;
+  customers: GoogleCustomer[];
+  syncDays: number;
+  onSyncDaysChange: (days: number) => void;
+  onConnect: () => void;
+  onListCustomers: () => void;
+  onSelectCustomer: (customer: GoogleCustomer) => void;
+  onSync: () => void;
+  onDisconnect: () => void;
+  onOpenDashboard?: () => void;
+}) {
+  const stage = creds?.stage ?? (creds?.integration_status === "connected" ? "account_selected" : "not_connected");
+  const errorCode = googleErrorCode(creds?.last_error);
+
+  if (stage === "not_connected") {
+    return (
+      <div className="google-connect-box">
+        <p className="muted" style={{ marginBottom: 12 }}>Conecte via OAuth para importar campanhas e enviar conversões offline ao Google Ads.</p>
+        <button className="primary-button" onClick={onConnect} disabled={busy}>
+          Conectar Google Ads <ArrowRight size={16} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="google-connect-box">
+      <div className="google-status-row">
+        <div className="google-status-connected">
+          {stage === "synced" || stage === "account_selected" ? <><Check size={16} /> Google Ads conectado</> : stage === "needs_account" ? "Google autorizado — falta vincular a conta Google Ads" : "Google Ads precisa de atenção"}
+          {creds?.google_user_email && <span className="muted"> — {creds.google_user_email}</span>}
+        </div>
+
+        {creds?.customer_id && (
+          <div className="settings-grid compact-grid">
+            <ReadOnly label="Conta Google Ads" value={creds.customer_descriptive_name ?? "—"} />
+            <ReadOnly label="ID da conta" value={creds.customer_id.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3")} />
+            {creds.manager_customer_id && <ReadOnly label="Via MCC" value={creds.manager_customer_id.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3")} />}
+            <ReadOnly label="Última sincronização" value={creds.last_synced_at ? formatDate(creds.last_synced_at) : "Ainda não sincronizado"} />
+          </div>
+        )}
+
+        {!devTokenOk && <div className="google-error-box">{googleAdsMessage("developer_token_missing")}</div>}
+        {creds?.last_error && (stage === "needs_attention" || stage === "needs_account") && (
+          <div className="google-error-box">
+            {googleAdsMessage(errorCode, "Atenção:")}
+            <small style={{ display: "block", marginTop: 4, opacity: 0.8 }}>{creds.last_error}</small>
+          </div>
+        )}
+
+        {stage === "needs_account" && customers.length === 0 && (
+          <p className="muted" style={{ marginTop: 8 }}>Escolha qual conta do Google Ads pertence a esta empresa.</p>
+        )}
+
+        {customers.length > 0 && (
+          <div className="google-customer-list">
+            <label className="mini-label">Selecionar conta Google Ads desta empresa</label>
+            {customers.map((customer) => (
+              <button
+                key={customer.id}
+                className={`ghost-button ${customer.id === creds?.customer_id ? "active" : ""}`}
+                onClick={() => onSelectCustomer(customer)}
+                disabled={busy}
+              >
+                {customer.name} ({customer.id}){customer.via_manager_name ? ` — via ${customer.via_manager_name}` : ""}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="ad-sync-row" style={{ marginTop: 12, flexWrap: "wrap" }}>
+          {(stage === "account_selected" || stage === "synced") && (
+            <>
+              <select value={syncDays} onChange={(event) => onSyncDaysChange(Number(event.target.value))}>
+                <option value={7}>7 dias</option>
+                <option value={14}>14 dias</option>
+                <option value={30}>30 dias</option>
+                <option value={60}>60 dias</option>
+                <option value={90}>90 dias</option>
+              </select>
+              <button className="primary-button" onClick={onSync} disabled={busy}>
+                <RefreshCw size={15} /> Sincronizar agora
+              </button>
+            </>
+          )}
+          {stage === "needs_attention" && creds?.customer_id && errorCode !== "google_token_invalid" && (
+            <button className="primary-button" onClick={onSync} disabled={busy}>
+              <RefreshCw size={15} /> Tentar sincronizar de novo
+            </button>
+          )}
+          <button className={stage === "needs_account" ? "primary-button" : "ghost-button"} onClick={onListCustomers} disabled={busy}>
+            {creds?.customer_id ? "Trocar conta" : "Escolher conta Google Ads"}
+          </button>
+          {(stage === "needs_attention" || errorCode === "google_token_invalid") && (
+            <button className="ghost-button" onClick={onConnect} disabled={busy}>Reconectar Google</button>
+          )}
+          {onOpenDashboard && (stage === "account_selected" || stage === "synced") && (
+            <button className="ghost-button" onClick={onOpenDashboard} disabled={busy}>Dashboard Google Ads</button>
+          )}
+          <button className="ghost-button" onClick={onDisconnect} disabled={busy}>Desconectar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function humanError(error?: string | null): string {
   return {

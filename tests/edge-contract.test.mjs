@@ -57,6 +57,7 @@ const crm = read("supabase/functions/crm/index.ts");
 const supabaseHealth = read("supabase/functions/supabase-health/index.ts");
 const googleOauth = read("supabase/functions/google-oauth/index.ts");
 const googleAds = read("supabase/functions/google-ads/index.ts");
+const sharedGoogleAds = read("supabase/functions/_shared/google-ads.ts");
 const migrationGoogle = read("supabase/migrations/20261016150000_google_ads_integration.sql");
 
 assert.match(migration1, /create table public\.tenants/);
@@ -226,14 +227,27 @@ assert.match(googleOauth, /google_cloud_project_number/);
 assert.match(googleOauth, /backToPanel/);
 assert.match(googleOauth, /\.is\("used_at", null\)/);
 assert.match(googleOauth, /GOOGLE_CLIENT_SECRET/);
-assert.match(googleOauth, /GOOGLE_DEVELOPER_TOKEN/);
+assert.match(googleOauth, /developerToken\(\)/);
+assert.match(sharedGoogleAds, /GOOGLE_DEVELOPER_TOKEN/);
 assert.match(googleOauth, /integration_oauth_states/);
 assert.match(googleOauth, /tenant_google_credentials/);
 assert.match(googleOauth, /canOperateTenantOrPlatform/);
 assert.match(googleOauth, /refresh_token/);
-assert.match(googleOauth, /listAccessibleCustomers/);
+assert.match(sharedGoogleAds, /listAccessibleCustomers/);
 
-assert.match(googleAds, /googleads\.googleapis\.com/);
+assert.match(sharedGoogleAds, /googleads\.googleapis\.com/);
+// v18–v21 foram desativadas pelo Google; a versão fica centralizada e configurável.
+assert.match(sharedGoogleAds, /GOOGLE_ADS_API_VERSION/);
+assert.doesNotMatch(sharedGoogleAds + googleAds + googleOauth, /googleapis\.com\/v1[89]\/|googleapis\.com\/v2[01]\//);
+assert.match(sharedGoogleAds, /login-customer-id/);
+assert.match(sharedGoogleAds, /customer_client/);
+assert.match(sharedGoogleAds, /DEVELOPER_TOKEN_NOT_APPROVED/);
+assert.match(googleAds, /connectionStage/);
+assert.match(googleAds, /customer_not_accessible/);
+assert.match(googleAds, /google_account_not_selected/);
+assert.doesNotMatch(googleAds, /refresh_token: creds\.refresh_token,\s*\n\s*access_token/);
+assert.match(googleOauth, /listAccessibleAccounts/);
+assert.match(googleOauth, /current\?\.refresh_token/);
 assert.match(googleAds, /sync_campaigns/);
 assert.match(googleAds, /list_customers/);
 assert.match(googleAds, /upload_conversion/);
