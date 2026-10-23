@@ -9,7 +9,8 @@
     "postbuild": "node ../scripts/create-spa-404.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "test:edge": "node ../tests/edge-contract.test.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:ai": "node --test ../tests/ai-grounding.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.50.2",

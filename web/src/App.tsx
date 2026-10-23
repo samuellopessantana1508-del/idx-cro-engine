@@ -2019,6 +2019,27 @@ export function App() {
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
   }, [waConversations]);
 
+  // Refaz a análise da conversa a partir das mensagens reais (corrige análises antigas).
+  async function reprocessWaInsight(conversationId: string) {
+    if (!tenant || !conversationId) return;
+    setWaBusy(true);
+    try {
+      const res = await authFetch("ai-analyze", {
+        method: "POST",
+        body: JSON.stringify({ action: "reprocess_conversation", tenant_id: tenant.id, conversation_id: conversationId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) setToast(humanError(data.error) || "Não foi possível reanalisar a conversa.");
+      else {
+        setToast(data.ai_error ? "Análise refeita pelas regras (IA indisponível no momento)." : "Análise refeita a partir das mensagens reais.");
+        await loadWaInsights(conversationId);
+        await loadWaConversations();
+      }
+    } finally {
+      setWaBusy(false);
+    }
+  }
+
   async function loadWaInsights(conversationId: string) {
     if (!supabase) return;
     const { data: insight } = await supabase
@@ -3855,7 +3876,7 @@ export function App() {
                             ) : waInsight.updated_at ? (
                               <div className="wa-ai-section">
                                 <div className="wa-ai-section-title">Produtos de interesse</div>
-                                <div className="wa-ai-section-text empty-hint">Nenhum identificado</div>
+                                <div className="wa-ai-section-text empty-hint">Produto ou serviço não identificado na conversa</div>
                               </div>
                             ) : null}
                             {cleanAiArray(waInsight.objections).length > 0 ? (
@@ -3868,7 +3889,7 @@ export function App() {
                             ) : waInsight.updated_at ? (
                               <div className="wa-ai-section">
                                 <div className="wa-ai-section-title">Objeções</div>
-                                <div className="wa-ai-section-text empty-hint">Nenhum identificado</div>
+                                <div className="wa-ai-section-text empty-hint">Nenhuma objeção identificada</div>
                               </div>
                             ) : null}
                             {cleanAiText(waInsight.commercial_notes) && (
@@ -3899,6 +3920,9 @@ export function App() {
                             )}
                             <div className="wa-ai-footer">
                               {waInsight.messages_analyzed_count != null && <span>{waInsight.messages_analyzed_count} mensagens analisadas</span>}
+                              <button className="link-button" onClick={() => reprocessWaInsight(waInsight.conversation_id)} disabled={waBusy} title="Refaz a análise a partir das mensagens reais desta conversa">
+                                Reanalisar
+                              </button>
                               {waInsight.model_used && <span>Modelo: {waInsight.model_used}</span>}
                               {waInsight.updated_at && <span>Última análise: {timeAgo(waInsight.updated_at)}</span>}
                             </div>

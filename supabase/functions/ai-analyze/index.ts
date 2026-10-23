@@ -2,6 +2,16 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validateWebhookKey } from "../_shared/webhook-auth.ts";
 import { normalizePhone } from "../_shared/phone-utils.ts";
 import { canOperateTenantOrPlatform } from "../_shared/access.ts";
+import {
+  type AnalysisContext,
+  buildUserPrompt,
+  type ConversationMessage,
+  type GroundedAnalysis,
+  groundAnalysis,
+  isAnalysisContaminated,
+  parseModelJson,
+  SYSTEM_PROMPT,
+} from "../_shared/ai-grounding.ts";
 
 const supa = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -26,20 +36,6 @@ const MIN_NEW_MESSAGES = Number(Deno.env.get("AI_MIN_NEW_MESSAGES") ?? "1");
 const MAX_CONTEXT_MESSAGES = 80;
 const AI_TIMEOUT_MS = Number(Deno.env.get("AI_TIMEOUT_MS") ?? "120000");
 
-const VALID_SIGNAL_TYPES = [
-  "interest",
-  "high_intent",
-  "negotiation",
-  "declared_purchase",
-  "confirmed_sale",
-  "abandonment",
-] as const;
-
-const LEGACY_TYPE_MAP: Record<string, string> = {
-  commitment: "high_intent",
-  post_sale: "declared_purchase",
-};
-
 type AuthResult =
   | { ok: true; isWebhook: false; userId: string; userEmail: string | null }
   | { ok: true; isWebhook: true; tenantId: string }
@@ -59,119 +55,6 @@ async function authenticate(req: Request): Promise<AuthResult> {
     if (result.ok) return { ok: true, isWebhook: true, tenantId: result.tenantId };
   }
   return { ok: false, error: "unauthorized" };
-}
-
-const SYSTEM_PROMPT = `Você é um assistente de inteligência comercial para negócios locais brasileiros.
-Analise conversas de WhatsApp e extraia informações comerciais estruturadas.
-
-REGRAS OBRIGATÓRIAS:
-- Extraia APENAS informações explicitamente mencionadas na conversa
-- Se uma informação não está clara ou é ambígua, marque confiança abaixo de 0.5
-- NÃO invente, suponha ou infira dados não mencionados
-- Preserve exatamente como as informações foram escritas pelo contato
-- Para cada dado extraído, cite a mensagem fonte
-- Identifique sinais de venda baseados SOMENTE em evidências concretas
-- Respeite minimização de dados: extraia apenas o necessário para CRM comercial
-- Informações sensíveis (CPF, RG, dados bancários) devem ser IGNORADAS
-
-TAXONOMIA DE SINAIS COMERCIAIS (use exatamente estes tipos):
-
-1. "interest" — Demonstração inicial de interesse. O cliente pergunta sobre produto/serviço, pede informações, demonstra curiosidade.
-   Exemplos: "Quanto custa?", "Vocês têm esse produto?", "Como funciona?"
-   confidence típica: 0.5-0.8
-
-2. "high_intent" — Forte intenção mas sem compromisso concreto. O cliente demonstra urgência ou forte desejo mas ainda não fechou negócio.
-   Exemplos: "Quero contratar hoje", "Preciso disso urgente", "Estou decidido a comprar", "quero comprar agora"
-   confidence típica: 0.7-0.9
-
-3. "negotiation" — Negociação ativa. O cliente está negociando preço, condições, prazos ou detalhes da compra.
-   Exemplos: "Tem desconto?", "Pode parcelar?", "Se fechar hoje, qual o valor?", "Aceita PIX?"
-   confidence típica: 0.6-0.85
-
-4. "declared_purchase" — O cliente AFIRMA ter comprado, mas NÃO há comprovação verificável na conversa. O cliente diz que pagou, que comprou, que fechou — mas são apenas palavras, sem comprovante, recibo, número de pedido ou confirmação de pagamento do sistema.
-   IMPORTANTE: "Comprei e gostei muito", "Já paguei", "Acabei de comprar", "Compra finalizada" são SEMPRE declared_purchase.
-   confidence MÁXIMA para este tipo: 0.85 (nunca acima)
-
-5. "confirmed_sale" — Venda VERIFICADA com evidência concreta na conversa: comprovante de pagamento enviado, confirmação do sistema, número de pedido compartilhado, screenshot de pagamento, link de rastreamento, ou a EMPRESA confirma o recebimento do pagamento.
-   NUNCA classifique como confirmed_sale apenas com base na declaração verbal do cliente.
-   Apenas se a EMPRESA respondeu confirmando o pagamento ou há evidência sistêmica.
-   confidence MÍNIMA: 0.9
-
-6. "abandonment" — O cliente mostrou interesse mas desistiu, sumiu, disse que não quer mais, ou não responde há muito tempo.
-   Exemplos: "Vou pensar melhor", "Agora não posso", "Não tenho interesse mais", "Desisto", silêncio após interesse demonstrado
-   confidence típica: 0.5-0.8
-
-REGRAS CRÍTICAS DE CLASSIFICAÇÃO:
-- Uma declaração verbal de compra ("comprei", "paguei", "fechei") é SEMPRE "declared_purchase", NUNCA "confirmed_sale"
-- "confirmed_sale" EXIGE evidência de pagamento verificável ou confirmação da empresa
-- Na dúvida entre declared_purchase e confirmed_sale, use SEMPRE declared_purchase
-- Múltiplos sinais podem existir na mesma conversa (ex: interest → high_intent → negotiation → declared_purchase)
-- Cada sinal deve ter uma evidência textual específica da conversa
-- Não duplique sinais do mesmo tipo para a mesma evidência
-
-REGRAS ABSOLUTAS DE PREENCHIMENTO DO JSON:
-- Se um campo não tem informação real extraída da conversa, use null (não use a palavra "string")
-- Se não há produtos de interesse identificados, retorne um array vazio: "products_of_interest": []
-- Se não há objeções identificadas, retorne um array vazio: "objections": []
-- Se não há preferências identificadas, retorne um objeto vazio: "preferences": {}
-- NUNCA copie textos do template como dados reais. Exemplos PROIBIDOS: "string", "string ou null", "value", "key", "ids", "João Silva", "Corte de cabelo", "Achei caro", "abc12345", "def67890"
-- Se o exemplo diz "João Silva", NÃO escreva "João Silva" — escreva o nome REAL do cliente ou null
-- Se o exemplo diz "Corte de cabelo", NÃO escreva "Corte de cabelo" — escreva o produto REAL ou []
-- Se o exemplo diz "Achei caro", NÃO escreva "Achei caro" — escreva a objeção REAL ou []
-- Cada valor retornado DEVE ser uma informação que EXISTE nas mensagens da conversa
-
-Retorne EXCLUSIVAMENTE um JSON válido, sem markdown, sem explicações adicionais.`;
-
-function buildUserPrompt(
-  messages: Array<{ direction: string; body: string | null; timestamp: string; id: string; content_type: string }>,
-  previousInsight: Record<string, unknown> | null,
-): string {
-  const msgLines = messages.map((m) => {
-    const who = m.direction === "inbound" ? "CLIENTE" : "EMPRESA";
-    const ts = new Date(m.timestamp).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
-    const text = m.content_type === "text" ? (m.body ?? "") : `[${m.content_type}]${m.body ? ` ${m.body}` : ""}`;
-    return `[${ts}] ${who} (msg:${m.id.substring(0, 8)}): ${text}`;
-  }).join("\n");
-
-  const previousContext = previousInsight
-    ? `\nANÁLISE ANTERIOR (atualize com as novas mensagens, não descarte dados anteriores confirmados):\n${JSON.stringify(previousInsight, null, 2)}\n`
-    : "";
-
-  return `${previousContext}
-MENSAGENS PARA ANALISAR:
-${msgLines}
-
-Retorne um JSON com esta estrutura exata (use null quando não houver dado real, [] para listas vazias, {} para objeto vazio):
-{
-  "contact_info": {
-    "name": {"value": null, "confidence": 0.0, "source_msg_ids": []},
-    "email": {"value": null, "confidence": 0.0, "source_msg_ids": []},
-    "phone": {"value": null, "confidence": 0.0, "source_msg_ids": []},
-    "address": {"value": null, "confidence": 0.0, "source_msg_ids": []}
-  },
-  "commercial": {
-    "products_of_interest": [],
-    "objections": [],
-    "preferences": {},
-    "budget_mentioned": null,
-    "urgency": null
-  },
-  "sale_signals": [],
-  "summary": null,
-  "intent": null,
-  "sentiment": "neutral",
-  "purchase_probability": 0.0,
-  "commercial_notes": null
-}
-
-REGRAS PARA PREENCHER:
-- Preencha SOMENTE campos que tenham informação REAL nas mensagens acima
-- contact_info.name.value: coloque o nome REAL que o cliente escreveu, ou null se não disse o nome
-- products_of_interest: liste SOMENTE produtos que o cliente realmente perguntou nas mensagens. Se nenhum produto foi mencionado, mantenha []
-- objections: liste SOMENTE reclamações ou resistências que o cliente realmente expressou. Se não houve, mantenha []
-- sale_signals.evidence: copie um TRECHO REAL de uma mensagem acima como prova
-- summary: escreva um resumo do que REALMENTE aconteceu na conversa
-- NÃO invente dados. NÃO copie os exemplos. Use SOMENTE o que está nas mensagens`;
 }
 
 async function callAI(systemPrompt: string, userPrompt: string): Promise<{ text: string; model: string }> {
@@ -208,7 +91,7 @@ async function callAI(systemPrompt: string, userPrompt: string): Promise<{ text:
           ],
           format: "json",
           stream: false,
-          options: { temperature: 0.1, num_ctx: 8192 },
+          options: { temperature: 0, num_ctx: 8192 },
         }),
         signal: controller.signal,
       });
@@ -281,241 +164,122 @@ async function callAI(systemPrompt: string, userPrompt: string): Promise<{ text:
   }
 }
 
-function parseAIResponse(raw: string): Record<string, unknown> | null {
-  let text = raw.trim();
-  const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) text = jsonMatch[1].trim();
+type ConversationRow = Record<string, any>;
 
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start === -1 || end === -1) return null;
-  text = text.substring(start, end + 1);
+// Contexto da análise: SOMENTE mensagens desta conversa, desta empresa.
+async function loadContext(tenantId: string, conv: ConversationRow): Promise<{ ctx: AnalysisContext; unanalyzedIds: string[] }> {
+  // Últimas mensagens (antes pegava as 80 mais ANTIGAS e ignorava as novas).
+  const { data: rows } = await supa
+    .from("whatsapp_messages")
+    .select("id, direction, body, timestamp, content_type, ai_analyzed")
+    .eq("tenant_id", tenantId)
+    .eq("conversation_id", conv.id)
+    .in("content_type", ["text", "image", "document", "location", "contact"])
+    .order("timestamp", { ascending: false })
+    .limit(MAX_CONTEXT_MESSAGES);
+  const ordered = (rows ?? []).slice().reverse();
+  const messages: ConversationMessage[] = ordered
+    .filter((m) => m.body && String(m.body).trim().length > 0)
+    .map((m) => ({ id: m.id, direction: m.direction, body: m.body, content_type: m.content_type, timestamp: m.timestamp }));
 
-  try {
-    const parsed = JSON.parse(text);
-    return validateAnalysis(parsed);
-  } catch {
-    return null;
+  const { data: tenant } = await supa.from("tenants").select("name").eq("id", tenantId).maybeSingle();
+  const { data: onboarding } = await supa
+    .from("tenant_onboarding")
+    .select("business_segment")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  // Nome real: CRM (se preenchido) ou o nome do WhatsApp. Nunca o que a IA "acha".
+  let crmName: string | null = null;
+  if (conv.tracking_session_id) {
+    const { data: session } = await supa
+      .from("tracking_sessions")
+      .select("customer_name")
+      .eq("id", conv.tracking_session_id)
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    crmName = session?.customer_name ?? null;
   }
-}
+  const contact = conv.contact as ConversationRow | null;
+  const contactName = (crmName || contact?.push_name || "").trim() || null;
 
-const PLACEHOLDER_VALUES = new Set([
-  "string", "string ou null", "ids", "key", "value", "null",
-  "citação curta da conversa", "resumo conciso da conversa em 1-2 frases",
-  "intenção principal do cliente", "observações comerciais relevantes ou null",
-  "observações comerciais relevantes", "nome do produto", "product name",
-  "name", "text", "example", "exemplo", "n/a", "none", "nenhum",
-  "nenhuma", "não identificado", "não informado", "desconhecido",
-  "unknown", "not available", "not found", "sem informação",
-  "abc12345", "def67890", "corte de cabelo", "achei caro",
-  "joão silva", "joao silva",
-]);
-
-function isPlaceholder(v: unknown): boolean {
-  if (v === null || v === undefined) return false;
-  if (typeof v === "string") {
-    const trimmed = v.trim().toLowerCase();
-    return PLACEHOLDER_VALUES.has(trimmed) || trimmed === "";
-  }
-  return false;
-}
-
-function sanitizeContactField(field: unknown): Record<string, unknown> {
-  if (!field || typeof field !== "object") return { value: null, confidence: 0, source_msg_ids: [] };
-  const f = field as Record<string, unknown>;
-  if (isPlaceholder(f.value)) {
-    f.value = null;
-    f.confidence = 0;
-  }
-  if (Array.isArray(f.source_msg_ids)) {
-    f.source_msg_ids = f.source_msg_ids.filter((id) => !isPlaceholder(id));
-  }
-  return f;
-}
-
-function validateAnalysis(obj: unknown): Record<string, unknown> | null {
-  if (!obj || typeof obj !== "object") return null;
-  const a = obj as Record<string, unknown>;
-
-  if (!a.summary && !a.sale_signals && !a.contact_info) return null;
-
-  if (isPlaceholder(a.summary)) a.summary = null;
-  if (isPlaceholder(a.intent)) a.intent = null;
-  if (isPlaceholder(a.commercial_notes)) a.commercial_notes = null;
-
-  const contact = a.contact_info as Record<string, unknown> | undefined;
-  if (contact) {
-    contact.name = sanitizeContactField(contact.name);
-    contact.email = sanitizeContactField(contact.email);
-    contact.phone = sanitizeContactField(contact.phone);
-    contact.address = sanitizeContactField(contact.address);
-  }
-
-  const commercial = a.commercial as Record<string, unknown> | undefined;
-  if (commercial) {
-    if (Array.isArray(commercial.products_of_interest)) {
-      commercial.products_of_interest = (commercial.products_of_interest as Array<Record<string, unknown>>)
-        .filter((p) => p.name && !isPlaceholder(p.name));
-    }
-    if (Array.isArray(commercial.objections)) {
-      commercial.objections = (commercial.objections as Array<Record<string, unknown>>)
-        .filter((o) => o.text && !isPlaceholder(o.text));
-    }
-    if (isPlaceholder(commercial.budget_mentioned)) commercial.budget_mentioned = null;
-    const prefs = commercial.preferences as Record<string, unknown> | undefined;
-    if (prefs) {
-      for (const k of Object.keys(prefs)) {
-        if (isPlaceholder(k) || isPlaceholder(prefs[k])) delete prefs[k];
-      }
-    }
-  }
-
-  if (Array.isArray(a.sale_signals)) {
-    a.sale_signals = (a.sale_signals as Array<Record<string, unknown>>)
-      .filter((sig) => sig.evidence && !isPlaceholder(sig.evidence))
-      .map((sig) => {
-        let rawType = String(sig.type ?? "interest").toLowerCase();
-        if (LEGACY_TYPE_MAP[rawType]) rawType = LEGACY_TYPE_MAP[rawType];
-        if (!(VALID_SIGNAL_TYPES as readonly string[]).includes(rawType)) rawType = "interest";
-        sig.type = rawType;
-
-        if (isPlaceholder(sig.product)) sig.product = null;
-        if (Array.isArray(sig.source_msg_ids)) {
-          sig.source_msg_ids = sig.source_msg_ids.filter((id: unknown) => !isPlaceholder(id));
-        }
-
-        sig.confidence = Math.min(1, Math.max(0, Number(sig.confidence ?? 0.5)));
-
-        if (rawType === "declared_purchase" && (sig.confidence as number) > 0.85) {
-          sig.confidence = 0.85;
-        }
-        if (rawType === "confirmed_sale" && (sig.confidence as number) < 0.9) {
-          sig.confidence = 0.9;
-        }
-
-        return sig;
-      });
-  }
-
-  a.purchase_probability = Math.min(1, Math.max(0, Number(a.purchase_probability ?? 0)));
-  const validSentiments = ["positive", "neutral", "negative"];
-  if (!validSentiments.includes(String(a.sentiment))) a.sentiment = "neutral";
-
-  return a;
-}
-
-function extractField(obj: unknown): { value: string | null; confidence: number; sources: string[] } {
-  if (!obj || typeof obj !== "object") return { value: null, confidence: 0, sources: [] };
-  const o = obj as Record<string, unknown>;
-  const raw = o.value ? String(o.value) : null;
-  const value = raw && !isPlaceholder(raw) ? raw : null;
   return {
-    value,
-    confidence: value ? Number(o.confidence ?? 0) : 0,
-    sources: Array.isArray(o.source_msg_ids) ? o.source_msg_ids.map(String).filter((s) => !isPlaceholder(s)) : [],
+    ctx: {
+      tenantName: tenant?.name ?? null,
+      businessSegment: onboarding?.business_segment ?? null,
+      contactName,
+      messages,
+    },
+    unanalyzedIds: ordered.filter((m) => !m.ai_analyzed).map((m) => m.id),
   };
 }
 
-async function updateCRM(
-  tenantId: string,
-  conversationId: string,
-  analysis: Record<string, unknown>,
-) {
-  const contact = analysis.contact_info as Record<string, unknown> | undefined;
-  if (!contact) return;
-
-  const { data: conv } = await supa
-    .from("whatsapp_conversations")
-    .select("tracking_session_id")
-    .eq("id", conversationId)
+async function updateCRM(tenantId: string, conv: ConversationRow, analysis: GroundedAnalysis) {
+  if (!conv.tracking_session_id) return;
+  const { data: session } = await supa
+    .from("tracking_sessions")
+    .select("customer_name, customer_email, customer_phone")
+    .eq("id", conv.tracking_session_id)
+    .eq("tenant_id", tenantId)
     .maybeSingle();
+  if (!session) return;
 
-  if (!conv?.tracking_session_id) return;
-
-  const name = extractField(contact.name);
-  const email = extractField(contact.email);
-  const phone = extractField(contact.phone);
-
+  // Só dados escritos na conversa e só para campos vazios: não sobrescreve o CRM.
   const updates: Record<string, unknown> = {};
-  if (name.value && name.confidence >= 0.7) updates.customer_name = name.value;
-  if (email.value && email.confidence >= 0.7) updates.customer_email = email.value;
-  if (phone.value && phone.confidence >= 0.7) {
-    const normalized = normalizePhone(phone.value);
+  const info = analysis.contact_info;
+  if (info.name.value && !session.customer_name) updates.customer_name = info.name.value;
+  if (info.email.value && !session.customer_email) updates.customer_email = info.email.value;
+  if (info.phone.value && !session.customer_phone) {
+    const normalized = normalizePhone(info.phone.value);
     if (normalized) updates.customer_phone = normalized;
   }
+  if (!Object.keys(updates).length) return;
 
-  if (Object.keys(updates).length > 0) {
-    updates.last_crm_activity_at = new Date().toISOString();
-    await supa.from("tracking_sessions").update(updates).eq("id", conv.tracking_session_id);
-
-    await supa.from("crm_activities").insert({
-      tenant_id: tenantId,
-      tracking_session_id: conv.tracking_session_id,
-      activity_type: "system",
-      body: "ai_data_extraction",
-      metadata: {
-        source: "ai_analyzer",
-        fields_updated: Object.keys(updates).filter((k) => k !== "last_crm_activity_at"),
-        confidence: { name: name.confidence, email: email.confidence, phone: phone.confidence },
-      },
-    });
-  }
+  updates.last_crm_activity_at = new Date().toISOString();
+  await supa.from("tracking_sessions").update(updates).eq("id", conv.tracking_session_id).eq("tenant_id", tenantId);
+  await supa.from("crm_activities").insert({
+    tenant_id: tenantId,
+    tracking_session_id: conv.tracking_session_id,
+    activity_type: "system",
+    body: "ai_data_extraction",
+    metadata: { source: "ai_analyzer", fields_updated: Object.keys(updates).filter((k) => k !== "last_crm_activity_at") },
+  });
 }
 
-async function upsertInsight(
+async function saveAnalysis(
   tenantId: string,
-  conversationId: string,
-  analysis: Record<string, unknown>,
+  conv: ConversationRow,
+  analysis: GroundedAnalysis,
+  messagesCount: number,
   lastMsgId: string,
-  analyzedCount: number,
   model: string,
-) {
-  const contact = analysis.contact_info as Record<string, unknown> | undefined;
-  const commercial = analysis.commercial as Record<string, unknown> | undefined;
-  const saleSignals = analysis.sale_signals as Array<Record<string, unknown>> | undefined;
-
-  const name = extractField(contact?.name);
-  const email = extractField(contact?.email);
-  const phone = extractField(contact?.phone);
-  const address = extractField(contact?.address);
-
-  const products = Array.isArray(commercial?.products_of_interest)
-    ? (commercial.products_of_interest as Array<Record<string, unknown>>).map((p) => String(p.name ?? p)).filter(Boolean)
-    : [];
-  const objections = Array.isArray(commercial?.objections)
-    ? (commercial.objections as Array<Record<string, unknown>>).map((o) => String(o.text ?? o)).filter(Boolean)
-    : [];
-
-  const purchaseProb = Math.min(1, Math.max(0, Number(analysis.purchase_probability ?? 0)));
-  const sentiment = ["positive", "neutral", "negative"].includes(String(analysis.sentiment))
-    ? String(analysis.sentiment)
-    : "neutral";
-
+): Promise<number> {
   const insightRow = {
     tenant_id: tenantId,
-    conversation_id: conversationId,
-    extracted_name: name.value,
-    extracted_email: email.value,
-    extracted_phone: phone.value,
-    extracted_address: address.value,
-    products_of_interest: products,
-    objections,
-    preferences: commercial?.preferences ?? {},
-    commercial_notes: analysis.commercial_notes ? String(analysis.commercial_notes) : null,
-    summary: analysis.summary ? String(analysis.summary) : null,
-    intent: analysis.intent ? String(analysis.intent) : null,
-    sentiment,
-    purchase_probability: purchaseProb,
-    confidence_score: Math.min(1, Math.max(0,
-      (name.confidence + email.confidence + phone.confidence) / 3,
-    )),
+    conversation_id: conv.id,
+    extracted_name: analysis.contact_info.name.value,
+    extracted_email: analysis.contact_info.email.value,
+    extracted_phone: analysis.contact_info.phone.value,
+    extracted_address: analysis.contact_info.address.value,
+    products_of_interest: analysis.commercial.products_of_interest.map((p) => p.name),
+    objections: analysis.commercial.objections.map((o) => o.text),
+    preferences: {},
+    commercial_notes: analysis.commercial_notes,
+    summary: analysis.summary,
+    intent: analysis.intent,
+    sentiment: analysis.sentiment,
+    purchase_probability: analysis.purchase_probability,
+    confidence_score: analysis.sale_signals.length ? Math.max(...analysis.sale_signals.map((s) => s.confidence)) : 0,
     last_analyzed_message_id: lastMsgId,
-    messages_analyzed_count: analyzedCount,
+    // Total de mensagens com texto que a análise leu (antes somava a cada execução).
+    messages_analyzed_count: messagesCount,
     model_used: model,
-    extracted_data: analysis.contact_info ?? {},
+    extracted_data: analysis.contact_info,
     evidence: {
-      commercial: analysis.commercial ?? {},
-      sale_signals: saleSignals ?? [],
+      stage: analysis.stage,
+      commercial: analysis.commercial,
+      sale_signals: analysis.sale_signals,
+      discarded_unsupported: analysis.discarded,
     },
     processing_basis: "legitimate_interest",
     updated_at: new Date().toISOString(),
@@ -523,110 +287,134 @@ async function upsertInsight(
 
   const { data: existing } = await supa
     .from("conversation_insights")
-    .select("id, messages_analyzed_count")
+    .select("id")
     .eq("tenant_id", tenantId)
-    .eq("conversation_id", conversationId)
+    .eq("conversation_id", conv.id)
     .maybeSingle();
-
-  if (existing) {
-    insightRow.messages_analyzed_count = (existing.messages_analyzed_count ?? 0) + analyzedCount;
-    await supa.from("conversation_insights").update(insightRow).eq("id", existing.id);
-  } else {
-    await supa.from("conversation_insights").insert(insightRow);
-  }
+  if (existing) await supa.from("conversation_insights").update(insightRow).eq("id", existing.id).eq("tenant_id", tenantId);
+  else await supa.from("conversation_insights").insert(insightRow);
 
   await supa.from("whatsapp_conversations").update({
-    ai_summary: insightRow.summary,
-    ai_intent: insightRow.intent,
-    ai_sentiment: insightRow.sentiment,
-    ai_purchase_probability: insightRow.purchase_probability,
+    ai_summary: analysis.summary,
+    ai_intent: analysis.intent,
+    ai_sentiment: analysis.sentiment,
+    ai_purchase_probability: analysis.purchase_probability,
     ai_analyzed_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-  }).eq("id", conversationId);
+  }).eq("id", conv.id).eq("tenant_id", tenantId);
 
-  let signalsCreated = 0;
-  if (saleSignals && saleSignals.length > 0) {
-    const { data: conv } = await supa
-      .from("whatsapp_conversations")
-      .select("tracking_session_id")
-      .eq("id", conversationId)
+  let created = 0;
+  for (const sig of analysis.sale_signals) {
+    const { data: existingSignal } = await supa
+      .from("sale_signals")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("conversation_id", conv.id)
+      .eq("signal_type", sig.type)
+      .in("status", ["detected", "confirmed", "converted"])
+      .limit(1)
       .maybeSingle();
+    if (existingSignal) continue;
 
-    for (const sig of saleSignals) {
-      let signalType = String(sig.type ?? "interest");
-      if (LEGACY_TYPE_MAP[signalType]) signalType = LEGACY_TYPE_MAP[signalType];
-      if (!(VALID_SIGNAL_TYPES as readonly string[]).includes(signalType)) continue;
-
-      const conf = Math.min(1, Math.max(0, Number(sig.confidence ?? 0)));
-      if (conf < 0.3) continue;
-
-      const { data: existingSignal } = await supa
-        .from("sale_signals")
-        .select("id")
-        .eq("conversation_id", conversationId)
-        .eq("signal_type", signalType)
-        .eq("tenant_id", tenantId)
-        .in("status", ["detected", "confirmed"])
-        .limit(1)
-        .maybeSingle();
-      if (existingSignal) continue;
-
-      const isConfirmedSale = signalType === "confirmed_sale" && conf >= 0.9 && sig.evidence;
-      const isDeclaredPurchase = signalType === "declared_purchase";
-
-      const { data: insertedSig, error: insertErr } = await supa.from("sale_signals").insert({
-        tenant_id: tenantId,
-        conversation_id: conversationId,
-        tracking_session_id: conv?.tracking_session_id ?? null,
-        product_name: sig.product ? String(sig.product) : null,
-        product_category: sig.category ? String(sig.category) : null,
-        estimated_value: sig.estimated_value ? Number(sig.estimated_value) : null,
-        signal_type: signalType,
-        confidence: conf,
-        evidence_text: sig.evidence ? String(sig.evidence) : null,
-        evidence_messages: sig.source_msg_ids ?? [],
-        requires_human_confirmation: isDeclaredPurchase ? true : !isConfirmedSale,
-        status: isConfirmedSale ? "confirmed" : "detected",
-        confirmed_at: isConfirmedSale ? new Date().toISOString() : null,
-        purchase_data: isConfirmedSale ? {
-          product: sig.product,
-          value: sig.estimated_value,
-          evidence: sig.evidence,
-          detected_at: new Date().toISOString(),
-          ready_for_capi: true,
-          auto_confirmed: true,
-        } : isDeclaredPurchase ? {
-          product: sig.product,
-          value: sig.estimated_value,
-          evidence: sig.evidence,
-          detected_at: new Date().toISOString(),
-          ready_for_capi: false,
-          requires_verification: true,
-        } : null,
-      }).select("id").maybeSingle();
-      if (!insertErr) {
-        signalsCreated++;
-        if (isConfirmedSale && insertedSig?.id) {
-          const funcUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/sale-confirm`;
-          fetch(funcUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
-            },
-            body: JSON.stringify({
-              action: "confirm_sale",
-              tenant_id: tenantId,
-              signal_id: insertedSig.id,
-            }),
-          }).catch(() => {});
-        }
-      }
+    // Venda confirmada exige confirmação escrita pela empresa (validada em ai-grounding).
+    const isConfirmedSale = sig.type === "confirmed_sale";
+    const isDeclared = sig.type === "declared_purchase";
+    const { data: inserted, error } = await supa.from("sale_signals").insert({
+      tenant_id: tenantId,
+      conversation_id: conv.id,
+      tracking_session_id: conv.tracking_session_id ?? null,
+      product_name: sig.product,
+      product_category: null,
+      estimated_value: null,
+      signal_type: sig.type,
+      confidence: sig.confidence,
+      evidence_text: sig.evidence,
+      evidence_messages: sig.source_msg_ids,
+      requires_human_confirmation: !isConfirmedSale,
+      status: isConfirmedSale ? "confirmed" : "detected",
+      confirmed_at: isConfirmedSale ? new Date().toISOString() : null,
+      purchase_data: isConfirmedSale || isDeclared ? {
+        product: sig.product,
+        evidence: sig.evidence,
+        detected_at: new Date().toISOString(),
+        ready_for_capi: isConfirmedSale,
+        requires_verification: !isConfirmedSale,
+      } : null,
+    }).select("id").maybeSingle();
+    if (error) continue;
+    created++;
+    if (isConfirmedSale && inserted?.id) {
+      fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/sale-confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` },
+        body: JSON.stringify({ action: "confirm_sale", tenant_id: tenantId, signal_id: inserted.id }),
+      }).catch(() => {});
     }
   }
-  return signalsCreated;
+  return created;
 }
 
+async function markAnalyzed(tenantId: string, ids: string[]) {
+  for (let i = 0; i < ids.length; i += 100) {
+    await supa.from("whatsapp_messages").update({ ai_analyzed: true }).eq("tenant_id", tenantId).in("id", ids.slice(i, i + 100));
+  }
+}
+
+function safeError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : "unknown_error";
+  return msg.replace(/sk-[a-zA-Z0-9_-]+/g, "sk-***").replace(/key[=: ]+\S+/gi, "key=***");
+}
+
+// Chama a IA e valida a resposta contra as mensagens. Se a IA falhar ou
+// devolver lixo, a análise sai só das regras sobre as mensagens.
+async function analyzeWithAI(ctx: AnalysisContext): Promise<{ analysis: GroundedAnalysis; model: string; aiError: string | null }> {
+  try {
+    const result = await callAI(SYSTEM_PROMPT, buildUserPrompt(ctx));
+    const raw = parseModelJson(result.text);
+    return { analysis: groundAnalysis(raw, ctx), model: raw ? result.model : `${result.model} (resposta inválida; regras)`, aiError: raw ? null : "ai_parse_failed" };
+  } catch (err) {
+    const aiError = safeError(err);
+    console.error("ai_call_failed:", aiError);
+    return { analysis: groundAnalysis(null, ctx), model: "regras (IA indisponível)", aiError };
+  }
+}
+
+// Sinais antigos sem base nas mensagens viram "rejected". Vendas já
+// confirmadas/convertidas não são alteradas (registro comercial legítimo).
+async function rejectUnsupportedSignals(tenantId: string, convId: string, analysis: GroundedAnalysis, ctx: AnalysisContext): Promise<number> {
+  const { data: signals } = await supa
+    .from("sale_signals")
+    .select("id, signal_type, evidence_text, status")
+    .eq("tenant_id", tenantId)
+    .eq("conversation_id", convId)
+    .eq("status", "detected");
+  const bodies = ctx.messages.map((m) => String(m.body ?? "").toLowerCase());
+  const validTypes = new Set<string>(analysis.sale_signals.map((s) => s.type));
+  // Etapas iniciais com trecho real continuam válidas mesmo abaixo da etapa atual.
+  const earlyStages = analysis.stage === "abandonment" ? [] : ["interest", "high_intent"];
+  let rejected = 0;
+  for (const sig of signals ?? []) {
+    const evidence = String(sig.evidence_text ?? "").toLowerCase().trim();
+    const evidenceFound = evidence.length > 1 && bodies.some((b) => b.includes(evidence));
+    if (evidenceFound && (validTypes.has(sig.signal_type) || earlyStages.includes(sig.signal_type))) continue;
+    await supa.from("sale_signals").update({ status: "rejected" }).eq("id", sig.id).eq("tenant_id", tenantId);
+    rejected++;
+  }
+  return rejected;
+}
+
+async function reprocessConversation(tenantId: string, conv: ConversationRow, useAI: boolean) {
+  const { ctx, unanalyzedIds } = await loadContext(tenantId, conv);
+  if (!ctx.messages.length) return { conversation_id: conv.id, skipped: "no_analyzable_content" };
+  const { analysis, model, aiError } = useAI
+    ? await analyzeWithAI(ctx)
+    : { analysis: groundAnalysis(null, ctx), model: "regras", aiError: null };
+  const lastMsgId = ctx.messages[ctx.messages.length - 1].id;
+  const created = await saveAnalysis(tenantId, conv, analysis, ctx.messages.length, lastMsgId, model);
+  const rejected = await rejectUnsupportedSignals(tenantId, conv.id, analysis, ctx);
+  await markAnalyzed(tenantId, unanalyzedIds);
+  return { conversation_id: conv.id, summary: analysis.summary, stage: analysis.stage, signals_created: created, signals_rejected: rejected, ai_error: aiError };
+}
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -637,20 +425,50 @@ Deno.serve(async (req: Request) => {
   const body = await req.json().catch(() => ({}));
   const action = String(body.action ?? "analyze_conversation");
   const tenantId = String(body.tenant_id ?? (auth.isWebhook ? auth.tenantId : "") ?? "");
-  const conversationId = String(body.conversation_id ?? "");
-
   if (!tenantId) return json({ error: "missing_tenant_id" }, 400);
-  if (!conversationId) return json({ error: "missing_conversation_id" }, 400);
 
   if (auth.isWebhook) {
-    if (auth.tenantId !== tenantId) {
-      return json({ error: "tenant_mismatch" }, 403);
-    }
+    if (auth.tenantId !== tenantId) return json({ error: "tenant_mismatch" }, 403);
   } else {
-    if (!(await canOperateTenantOrPlatform(supa, tenantId, auth.userId, auth.userEmail))) {
+    const roles = action.startsWith("reprocess") ? ["owner", "admin"] as const : undefined;
+    if (!(await canOperateTenantOrPlatform(supa, tenantId, auth.userId, auth.userEmail, roles ? [...roles] : undefined))) {
       return json({ error: "forbidden" }, 403);
     }
   }
+
+  // Reprocessa as análises da empresa a partir das mensagens reais.
+  // Por padrão só as contaminadas (nome/produto/objeção que não existem na conversa);
+  // {"all": true} reprocessa todas.
+  if (action === "reprocess_tenant") {
+    const limit = Math.min(Math.max(Number(body.limit ?? 200), 1), 500);
+    const { data: insights } = await supa
+      .from("conversation_insights")
+      .select("conversation_id, summary, extracted_name, products_of_interest, objections")
+      .eq("tenant_id", tenantId)
+      .order("updated_at", { ascending: false })
+      .limit(limit);
+    const results: unknown[] = [];
+    let checked = 0;
+    for (const insight of insights ?? []) {
+      const { data: conv } = await supa
+        .from("whatsapp_conversations")
+        .select("*, contact:whatsapp_contacts(*)")
+        .eq("id", insight.conversation_id)
+        .eq("tenant_id", tenantId)
+        .maybeSingle();
+      if (!conv) continue;
+      checked++;
+      if (!body.all) {
+        const { ctx } = await loadContext(tenantId, conv);
+        if (!isAnalysisContaminated(insight, ctx) && !/\b(joão silva|joao silva|corte de cabelo|achei caro)\b/i.test(String(insight.summary ?? ""))) continue;
+      }
+      results.push(await reprocessConversation(tenantId, conv, body.use_ai !== false));
+    }
+    return json({ ok: true, action, checked, reprocessed: results.length, results });
+  }
+
+  const conversationId = String(body.conversation_id ?? "");
+  if (!conversationId) return json({ error: "missing_conversation_id" }, 400);
 
   const { data: conv } = await supa
     .from("whatsapp_conversations")
@@ -658,214 +476,94 @@ Deno.serve(async (req: Request) => {
     .eq("id", conversationId)
     .eq("tenant_id", tenantId)
     .maybeSingle();
-
   if (!conv) return json({ error: "conversation_not_found" }, 404);
 
-  if (action === "analyze_conversation") {
-    const lastAnalyzed = conv.ai_analyzed_at ? new Date(conv.ai_analyzed_at).getTime() : 0;
-    const elapsed = Date.now() - lastAnalyzed;
-
-    const { count: newMsgCount } = await supa
-      .from("whatsapp_messages")
-      .select("id", { count: "exact", head: true })
-      .eq("conversation_id", conversationId)
-      .eq("ai_analyzed", false);
-
-    const newCount = newMsgCount ?? 0;
-    if (elapsed < MIN_INTERVAL_MS && newCount < MIN_NEW_MESSAGES) {
-      return json({ ok: true, skipped: "cooldown", new_messages: newCount, next_eligible_ms: MIN_INTERVAL_MS - elapsed });
-    }
-
-    if (newCount === 0) {
-      return json({ ok: true, skipped: "no_new_messages" });
-    }
-
-    const { data: allMessages } = await supa
-      .from("whatsapp_messages")
-      .select("id, direction, body, timestamp, content_type, ai_analyzed")
-      .eq("conversation_id", conversationId)
-      .in("content_type", ["text", "image", "document", "location", "contact"])
-      .order("timestamp", { ascending: true })
-      .limit(MAX_CONTEXT_MESSAGES);
-
-    if (!allMessages || allMessages.length === 0) {
-      return json({ ok: true, skipped: "no_text_messages" });
-    }
-
-    const textMessages = allMessages.filter((m) => m.body && m.body.trim().length > 0);
-    if (textMessages.length === 0) {
-      return json({ ok: true, skipped: "no_analyzable_content" });
-    }
-
-    const unanalyzedIds = allMessages.filter((m) => !m.ai_analyzed).map((m) => m.id);
-
-    let previousInsight: Record<string, unknown> | null = null;
-    const { data: existingInsight } = await supa
-      .from("conversation_insights")
-      .select("extracted_data, evidence, summary, intent, sentiment, purchase_probability")
-      .eq("conversation_id", conversationId)
-      .maybeSingle();
-    if (existingInsight) previousInsight = existingInsight;
-
-    const prompt = buildUserPrompt(textMessages, previousInsight);
-
-    let aiResult: { text: string; model: string };
-    try {
-      aiResult = await callAI(SYSTEM_PROMPT, prompt);
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : "unknown_error";
-      const safeMsg = errMsg.replace(/sk-[a-zA-Z0-9_-]+/g, "sk-***").replace(/key[=: ]+\S+/gi, "key=***");
-      console.error("ai_call_failed:", safeMsg);
-      return json({ error: "ai_call_failed", reason: safeMsg }, 502);
-    }
-
-    const analysis = parseAIResponse(aiResult.text);
-    if (!analysis) {
-      return json({ error: "ai_parse_failed", raw_length: aiResult.text.length }, 502);
-    }
-
-    const lastMsgId = allMessages[allMessages.length - 1].id;
-    const signalsCreated = await upsertInsight(tenantId, conversationId, analysis, lastMsgId, unanalyzedIds.length, aiResult.model);
-    await updateCRM(tenantId, conversationId, analysis);
-
-    if (unanalyzedIds.length > 0) {
-      const batchSize = 100;
-      for (let i = 0; i < unanalyzedIds.length; i += batchSize) {
-        const batch = unanalyzedIds.slice(i, i + batchSize);
-        await supa
-          .from("whatsapp_messages")
-          .update({ ai_analyzed: true })
-          .in("id", batch);
-      }
-    }
-
-    return json({
-      ok: true,
-      conversation_id: conversationId,
-      messages_analyzed: unanalyzedIds.length,
-      summary: analysis.summary,
-      sentiment: analysis.sentiment,
-      purchase_probability: analysis.purchase_probability,
-      sale_signals_count: Array.isArray(analysis.sale_signals) ? analysis.sale_signals.length : 0,
-      sale_signals_created: signalsCreated,
-    });
+  if (action === "reprocess_conversation") {
+    return json({ ok: true, action, ...(await reprocessConversation(tenantId, conv, body.use_ai !== false)) });
   }
 
-  if (action === "prepare_analysis") {
+  if (action === "analyze_conversation" || action === "prepare_analysis") {
     const lastAnalyzed = conv.ai_analyzed_at ? new Date(conv.ai_analyzed_at).getTime() : 0;
     const elapsed = Date.now() - lastAnalyzed;
-
     const { count: newMsgCount } = await supa
       .from("whatsapp_messages")
       .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
       .eq("conversation_id", conversationId)
       .eq("ai_analyzed", false);
-
     const newCount = newMsgCount ?? 0;
     if (elapsed < MIN_INTERVAL_MS && newCount < MIN_NEW_MESSAGES) {
       return json({ ok: true, skipped: "cooldown", new_messages: newCount, next_eligible_ms: MIN_INTERVAL_MS - elapsed });
     }
+    if (newCount === 0) return json({ ok: true, skipped: "no_new_messages" });
 
-    if (newCount === 0) {
-      return json({ ok: true, skipped: "no_new_messages" });
+    const { ctx, unanalyzedIds } = await loadContext(tenantId, conv);
+    if (!ctx.messages.length) return json({ ok: true, skipped: "no_analyzable_content" });
+    const lastMsgId = ctx.messages[ctx.messages.length - 1].id;
+
+    if (action === "prepare_analysis") {
+      // Fluxo n8n (Prepare → Ollama → Submit): prompt sem exemplos e sem análise anterior.
+      return json({
+        ok: true,
+        action,
+        conversation_id: conversationId,
+        tenant_id: tenantId,
+        system_prompt: SYSTEM_PROMPT,
+        user_prompt: buildUserPrompt(ctx),
+        messages_count: ctx.messages.length,
+        unanalyzed_count: unanalyzedIds.length,
+        last_message_id: lastMsgId,
+        model_suggestion: Deno.env.get("AI_MODEL") ?? "qwen2.5:7b",
+        ollama_options: { temperature: 0, format: "json" },
+      });
     }
 
-    const { data: allMessages } = await supa
-      .from("whatsapp_messages")
-      .select("id, direction, body, timestamp, content_type, ai_analyzed")
-      .eq("conversation_id", conversationId)
-      .in("content_type", ["text", "image", "document", "location", "contact"])
-      .order("timestamp", { ascending: true })
-      .limit(MAX_CONTEXT_MESSAGES);
-
-    if (!allMessages || allMessages.length === 0) {
-      return json({ ok: true, skipped: "no_text_messages" });
-    }
-
-    const textMessages = allMessages.filter((m) => m.body && m.body.trim().length > 0);
-    if (textMessages.length === 0) {
-      return json({ ok: true, skipped: "no_analyzable_content" });
-    }
-
-    const unanalyzedIds = allMessages.filter((m) => !m.ai_analyzed).map((m) => m.id);
-
-    let previousInsight: Record<string, unknown> | null = null;
-    const { data: existingInsight } = await supa
-      .from("conversation_insights")
-      .select("extracted_data, evidence, summary, intent, sentiment, purchase_probability")
-      .eq("conversation_id", conversationId)
-      .maybeSingle();
-    if (existingInsight) previousInsight = existingInsight;
-
-    const userPrompt = buildUserPrompt(textMessages, previousInsight);
-
+    const { analysis, model, aiError } = await analyzeWithAI(ctx);
+    const created = await saveAnalysis(tenantId, conv, analysis, ctx.messages.length, lastMsgId, model);
+    await updateCRM(tenantId, conv, analysis);
+    await markAnalyzed(tenantId, unanalyzedIds);
     return json({
       ok: true,
-      action: "prepare_analysis",
       conversation_id: conversationId,
-      tenant_id: tenantId,
-      system_prompt: SYSTEM_PROMPT,
-      user_prompt: userPrompt,
-      messages_count: textMessages.length,
-      unanalyzed_count: unanalyzedIds.length,
-      last_message_id: allMessages[allMessages.length - 1].id,
-      model_suggestion: Deno.env.get("AI_MODEL") ?? "qwen2.5:7b",
+      messages_analyzed: ctx.messages.length,
+      summary: analysis.summary,
+      stage: analysis.stage,
+      sentiment: analysis.sentiment,
+      purchase_probability: analysis.purchase_probability,
+      sale_signals_count: analysis.sale_signals.length,
+      sale_signals_created: created,
+      discarded_unsupported: analysis.discarded.length,
+      ai_error: aiError,
     });
   }
 
   if (action === "submit_analysis") {
     const aiResponseText = body.ai_response_text;
-    if (!aiResponseText || typeof aiResponseText !== "string") {
-      return json({ error: "missing_ai_response_text" }, 400);
-    }
+    if (!aiResponseText || typeof aiResponseText !== "string") return json({ error: "missing_ai_response_text" }, 400);
 
-    const modelUsed = String(body.model_used ?? "ollama-via-n8n");
-    const lastMessageId = String(body.last_message_id ?? "");
-    const unanalyzedCount = Number(body.unanalyzed_count ?? 0);
-
-    if (!lastMessageId) {
-      return json({ error: "missing_last_message_id" }, 400);
-    }
-
-    const analysis = parseAIResponse(aiResponseText);
-    if (!analysis) {
-      return json({ error: "ai_parse_failed", raw_length: aiResponseText.length }, 502);
-    }
-
-    const signalsCreated = await upsertInsight(tenantId, conversationId, analysis, lastMessageId, unanalyzedCount, modelUsed);
-    await updateCRM(tenantId, conversationId, analysis);
-
-    if (unanalyzedCount > 0) {
-      const { data: unanalyzedMsgs } = await supa
-        .from("whatsapp_messages")
-        .select("id")
-        .eq("conversation_id", conversationId)
-        .eq("ai_analyzed", false)
-        .limit(MAX_CONTEXT_MESSAGES);
-
-      if (unanalyzedMsgs && unanalyzedMsgs.length > 0) {
-        const ids = unanalyzedMsgs.map((m) => m.id);
-        const batchSize = 100;
-        for (let i = 0; i < ids.length; i += batchSize) {
-          const batch = ids.slice(i, i + batchSize);
-          await supa
-            .from("whatsapp_messages")
-            .update({ ai_analyzed: true })
-            .in("id", batch);
-        }
-      }
-    }
-
+    // Valida contra as mensagens reais desta conversa (não confia no texto do n8n).
+    const { ctx, unanalyzedIds } = await loadContext(tenantId, conv);
+    if (!ctx.messages.length) return json({ ok: true, skipped: "no_analyzable_content" });
+    const raw = parseModelJson(aiResponseText);
+    const analysis = groundAnalysis(raw, ctx);
+    const model = `${String(body.model_used ?? "ollama-via-n8n")}${raw ? "" : " (resposta inválida; regras)"}`;
+    const lastMsgId = ctx.messages[ctx.messages.length - 1].id;
+    const created = await saveAnalysis(tenantId, conv, analysis, ctx.messages.length, lastMsgId, model);
+    await updateCRM(tenantId, conv, analysis);
+    await markAnalyzed(tenantId, unanalyzedIds);
     return json({
       ok: true,
-      action: "submit_analysis",
+      action,
       conversation_id: conversationId,
-      messages_analyzed: unanalyzedCount,
+      messages_analyzed: ctx.messages.length,
       summary: analysis.summary,
+      stage: analysis.stage,
       sentiment: analysis.sentiment,
       purchase_probability: analysis.purchase_probability,
-      sale_signals_count: Array.isArray(analysis.sale_signals) ? analysis.sale_signals.length : 0,
-      sale_signals_created: signalsCreated,
+      sale_signals_count: analysis.sale_signals.length,
+      sale_signals_created: created,
+      discarded_unsupported: analysis.discarded.length,
+      ai_parse_failed: !raw,
     });
   }
 
@@ -873,15 +571,15 @@ Deno.serve(async (req: Request) => {
     const { data: insight } = await supa
       .from("conversation_insights")
       .select("*")
+      .eq("tenant_id", tenantId)
       .eq("conversation_id", conversationId)
       .maybeSingle();
-
     const { data: signals } = await supa
       .from("sale_signals")
       .select("*")
+      .eq("tenant_id", tenantId)
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: false });
-
     return json({ ok: true, insight, sale_signals: signals ?? [] });
   }
 
