@@ -36,7 +36,7 @@ import {
   Zap,
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
-import type { AiPatterns, CampaignMetric, CapiEvent, CapiHealth, ConversationInsight, CrmActivity, CustomerProfile, FinancialSummary, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, MonthlyPoint, Offer, SaleSignal, SaleSignalCapiStatus, SmartLink, Tenant, TenantUser, WebhookKey, WhatsAppConversation, WhatsAppInstance, WhatsAppMessage } from "./lib/types";
+import type { AiPatterns, CampaignMetric, CapiEvent, CapiHealth, ConversationInsight, CrmActivity, CustomerProfile, FinancialSummary, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, MonthlyPoint, Offer, SaleSignal, SaleSignalCapiStatus, SmartLink, Tenant, TenantUser, WebhookKey, WhatsAppContact, WhatsAppConversation, WhatsAppInstance, WhatsAppMessage } from "./lib/types";
 import { envConfigured, formatDate, formatMoney, linkCode, slugify, smartLinkUrl, timeAgo } from "./lib/utils";
 
 const AI_PLACEHOLDER_VALUES = new Set([
@@ -541,6 +541,18 @@ export function App() {
   const waSelectedConvIdRef = useRef("");
   const waConvLoadingRef = useRef(false);
   const selectConvTokenRef = useRef(0);
+  // Tempo real (Supabase Realtime + polling de reserva).
+  const [waSyncState, setWaSyncState] = useState<"connecting" | "live" | "reconnecting" | "polling">("connecting");
+  const [waPreviews, setWaPreviews] = useState<Record<string, WaPreview>>({});
+  const [waNewBelow, setWaNewBelow] = useState(false);
+  const [waChannelAttempt, setWaChannelAttempt] = useState(0);
+  const waConvReloadPendingRef = useRef(false);
+  const waConversationsRef = useRef<WhatsAppConversation[]>([]);
+  const waMessagesRef = useRef<WhatsAppMessage[]>([]);
+  const waNearBottomRef = useRef(true);
+  const waThreadRef = useRef<HTMLDivElement>(null);
+  const waFailuresRef = useRef(0);
+  const activeSectionRef = useRef<Section>("dashboard");
 
   const [aiSales, setAiSales] = useState<SaleSignal[]>([]);
   const [aiSalesFilter, setAiSalesFilter] = useState<SaleSignalCapiStatus | "all">("all");
@@ -1969,55 +1981,171 @@ export function App() {
     setWaBusy(false);
   }
 
+  // Recarrega a lista. Se já houver uma carga em andamento, agenda outra em vez de
+  // descartar (antes um evento que chegava durante a carga se perdia).
   async function loadWaConversations() {
     if (!tenant || !supabase) return;
-    if (waConvLoadingRef.current) return;
+    if (waConvLoadingRef.current) {
+      waConvReloadPendingRef.current = true;
+      return;
+    }
     waConvLoadingRef.current = true;
     try {
-      const { data } = await supabase
-        .from("whatsapp_conversations")
-        .select("*, contact:whatsapp_contacts(*)")
-        .eq("tenant_id", tenant.id)
-        .order("last_message_at", { ascending: false, nullsFirst: false });
-      if (data) setWaConversations(data);
+      do {
+        waConvReloadPendingRef.current = false;
+        const [convRes, lastRes] = await Promise.all([
+          supabase
+            .from("whatsapp_conversations")
+            .select("*, contact:whatsapp_contacts(*)")
+            .eq("tenant_id", tenant.id)
+            .order("last_message_at", { ascending: false, nullsFirst: false }),
+          supabase
+            .from("whatsapp_messages")
+            .select("conversation_id, body, content_type, direction, timestamp")
+            .eq("tenant_id", tenant.id)
+            .order("timestamp", { ascending: false })
+            .limit(300),
+        ]);
+        if (convRes.data) setWaConversations(convRes.data as WhatsAppConversation[]);
+        if (lastRes.data) {
+          setWaPreviews((prev) => {
+            const next = { ...prev };
+            for (const m of lastRes.data as WhatsAppMessage[]) {
+              const current = next[m.conversation_id];
+              if (!current || current.at < m.timestamp) next[m.conversation_id] = toPreview(m);
+            }
+            return next;
+          });
+        }
+      } while (waConvReloadPendingRef.current);
     } finally {
       waConvLoadingRef.current = false;
     }
   }
 
   async function loadWaMessages(conversationId: string) {
-    if (!supabase) return;
+    if (!supabase || !tenant) return;
     const { data } = await supabase
       .from("whatsapp_messages")
       .select("*")
+      .eq("tenant_id", tenant.id)
       .eq("conversation_id", conversationId)
       .order("timestamp", { ascending: true })
       .limit(500);
-    if (data) setWaMessages(data);
+    if (data && waSelectedConvIdRef.current === conversationId) setWaMessages(data);
+  }
+
+  // Zera o contador de não lidas no banco (RPC segura; o painel não tem UPDATE direto).
+  function markConversationRead(convId: string) {
+    setWaConversations((prev) => prev.map((c) => (c.id === convId && c.unread_count ? { ...c, unread_count: 0 } : c)));
+    if (!supabase) return;
+    supabase.rpc("mark_whatsapp_conversation_read", { p_conversation_id: convId }).then(({ error }) => {
+      if (error) supabase?.from("whatsapp_conversations").update({ unread_count: 0 }).eq("id", convId).then(() => {});
+    });
   }
 
   const selectConversation = useCallback(async (convId: string) => {
     const token = ++selectConvTokenRef.current;
     setWaSelectedConvId(convId);
     waSelectedConvIdRef.current = convId;
+    waNearBottomRef.current = true;
+    setWaNewBelow(false);
+    setWaMessages([]);
     setWaInsight(null);
     setWaSaleSignals([]);
     setWaInsightOpen(false);
     await loadWaMessages(convId);
     if (selectConvTokenRef.current !== token) return;
     loadWaInsights(convId);
-    if (supabase) {
-      const conv = waConversations.find((c) => c.id === convId);
-      if (conv && conv.unread_count > 0) {
-        supabase
-          .from("whatsapp_conversations")
-          .update({ unread_count: 0 })
-          .eq("id", convId)
-          .then(() => {});
-      }
+    const conv = waConversationsRef.current.find((c) => c.id === convId);
+    if (conv && conv.unread_count > 0) markConversationRead(convId);
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "auto" }), 50);
+  }, [tenant?.id]);
+
+  // Busca uma conversa (ex.: contato novo) e a coloca na lista sem recarregar tudo.
+  async function fetchConversationRow(convId: string) {
+    if (!supabase || !tenant) return;
+    const { data } = await supabase
+      .from("whatsapp_conversations")
+      .select("*, contact:whatsapp_contacts(*)")
+      .eq("tenant_id", tenant.id)
+      .eq("id", convId)
+      .maybeSingle();
+    if (data) upsertConversationLocal(data as WhatsAppConversation);
+  }
+
+  function upsertConversationLocal(row: Partial<WhatsAppConversation> & { id: string }) {
+    setWaConversations((prev) => {
+      const index = prev.findIndex((c) => c.id === row.id);
+      const merged = index >= 0 ? { ...prev[index], ...row, contact: row.contact ?? prev[index].contact } : (row as WhatsAppConversation);
+      const next = index >= 0 ? prev.map((c, i) => (i === index ? merged : c)) : [merged, ...prev];
+      return sortConversations(next);
+    });
+  }
+
+  function scrollThreadIfReading(force = false) {
+    if (force || waNearBottomRef.current) {
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 30);
+      setWaNewBelow(false);
+    } else {
+      setWaNewBelow(true);
     }
-    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-  }, [waConversations]);
+  }
+
+  function handleIncomingMessage(msg: WhatsAppMessage) {
+    setWaPreviews((prev) => {
+      const current = prev[msg.conversation_id];
+      return current && current.at > msg.timestamp ? prev : { ...prev, [msg.conversation_id]: toPreview(msg) };
+    });
+
+    const isOpen = msg.conversation_id === waSelectedConvIdRef.current;
+    if (isOpen) {
+      setWaMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg].sort((a, b) => a.timestamp.localeCompare(b.timestamp))));
+      scrollThreadIfReading(msg.direction === "outbound" && waNearBottomRef.current);
+    }
+
+    const viewing = isOpen && activeSectionRef.current === "whatsapp" && document.visibilityState === "visible";
+    const known = waConversationsRef.current.find((c) => c.id === msg.conversation_id);
+    if (!known) {
+      void fetchConversationRow(msg.conversation_id);
+      return;
+    }
+    upsertConversationLocal({
+      id: known.id,
+      last_message_at: !known.last_message_at || known.last_message_at < msg.timestamp ? msg.timestamp : known.last_message_at,
+      unread_count: msg.direction === "inbound" && !viewing ? (known.unread_count ?? 0) + 1 : viewing ? 0 : known.unread_count,
+    });
+    if (viewing && msg.direction === "inbound") markConversationRead(known.id);
+  }
+
+  // Ressincroniza depois de queda de conexão, volta da aba ou no polling de reserva.
+  async function resyncWhatsapp() {
+    if (!supabase || !tenant) return;
+    await loadWaConversations();
+    const convId = waSelectedConvIdRef.current;
+    if (!convId) return;
+    const local = waMessagesRef.current;
+    const lastTs = local.length ? local[local.length - 1].timestamp : null;
+    let query = supabase
+      .from("whatsapp_messages")
+      .select("*")
+      .eq("tenant_id", tenant.id)
+      .eq("conversation_id", convId)
+      .order("timestamp", { ascending: true })
+      .limit(200);
+    if (lastTs) query = query.gte("timestamp", lastTs);
+    const { data } = await query;
+    if (waSelectedConvIdRef.current !== convId || !data) return;
+    const fresh = (data as WhatsAppMessage[]).filter((m) => !local.some((l) => l.id === m.id));
+    if (fresh.length) {
+      setWaMessages((prev) => [...prev, ...fresh.filter((m) => !prev.some((p) => p.id === m.id))].sort((a, b) => a.timestamp.localeCompare(b.timestamp)));
+      scrollThreadIfReading();
+    }
+    // Status de entrega/leitura das mensagens já exibidas.
+    const changed = (data as WhatsAppMessage[]).filter((m) => local.some((l) => l.id === m.id && l.status !== m.status));
+    if (changed.length) setWaMessages((prev) => prev.map((m) => changed.find((c) => c.id === m.id) ?? m));
+    loadWaInsights(convId);
+  }
 
   async function loadWaInsights(conversationId: string) {
     if (!supabase) return;
@@ -2323,74 +2451,112 @@ export function App() {
     setWaBusy(false);
   }
 
+  useEffect(() => { waConversationsRef.current = waConversations; }, [waConversations]);
+  useEffect(() => { waMessagesRef.current = waMessages; }, [waMessages]);
+  useEffect(() => { activeSectionRef.current = active; }, [active]);
+
+  // Realtime da empresa atual. O filtro tenant_id + o RLS do banco garantem que só
+  // chegam eventos desta empresa. Reconecta sozinho com espera crescente.
   useEffect(() => {
-    if (!supabase || !tenant || active !== "whatsapp") return;
+    if (!supabase || !tenant) return;
+    const client = supabase;
+    let disposed = false;
+    let retryTimer: number | undefined;
+    const tenantFilter = `tenant_id=eq.${tenant.id}`;
 
-    const channel = supabase
-      .channel(`wa-messages-${tenant.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "whatsapp_messages",
-          filter: `tenant_id=eq.${tenant.id}`,
-        },
-        (payload) => {
-          const newMsg = payload.new as WhatsAppMessage;
-          if (newMsg.conversation_id === waSelectedConvIdRef.current) {
-            setWaMessages((prev) => {
-              if (prev.some((m) => m.id === newMsg.id)) return prev;
-              return [...prev, newMsg];
-            });
-            setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-          }
-          loadWaConversations();
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "whatsapp_messages",
-          filter: `tenant_id=eq.${tenant.id}`,
-        },
-        (payload) => {
-          const updated = payload.new as WhatsAppMessage;
-          setWaMessages((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "whatsapp_instances",
-          filter: `tenant_id=eq.${tenant.id}`,
-        },
-        () => { loadWaInstances(); },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "whatsapp_conversations",
-          filter: `tenant_id=eq.${tenant.id}`,
-        },
-        (payload) => {
-          const updated = payload.new as WhatsAppConversation;
-          if (updated.id === waSelectedConvIdRef.current && updated.ai_analyzed_at) {
-            loadWaInsights(updated.id);
-          }
-          loadWaConversations();
-        },
-      )
-      .subscribe();
+    const channel = client
+      .channel(`wa-live-${tenant.id}-${waChannelAttempt}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "whatsapp_messages", filter: tenantFilter }, (payload) => {
+        const msg = payload.new as WhatsAppMessage;
+        if (msg.tenant_id !== tenant.id) return;
+        handleIncomingMessage(msg);
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "whatsapp_messages", filter: tenantFilter }, (payload) => {
+        const updated = payload.new as WhatsAppMessage;
+        if (updated.tenant_id !== tenant.id) return;
+        setWaMessages((prev) => prev.map((m) => (m.id === updated.id ? { ...m, ...updated } : m)));
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "whatsapp_conversations", filter: tenantFilter }, (payload) => {
+        const row = payload.new as WhatsAppConversation;
+        if (!row?.id || row.tenant_id !== tenant.id) return;
+        const previous = waConversationsRef.current.find((c) => c.id === row.id);
+        if (!previous) {
+          void fetchConversationRow(row.id);
+          return;
+        }
+        const viewing = row.id === waSelectedConvIdRef.current && activeSectionRef.current === "whatsapp" && document.visibilityState === "visible";
+        upsertConversationLocal({ ...row, unread_count: viewing ? 0 : row.unread_count });
+        if (viewing && row.unread_count > 0) markConversationRead(row.id);
+        // Análise da IA concluída para a conversa aberta.
+        if (row.id === waSelectedConvIdRef.current && row.ai_analyzed_at && row.ai_analyzed_at !== previous.ai_analyzed_at) {
+          loadWaInsights(row.id);
+        }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "whatsapp_contacts", filter: tenantFilter }, (payload) => {
+        const contact = payload.new as WhatsAppContact;
+        if (contact.tenant_id !== tenant.id) return;
+        setWaConversations((prev) => prev.map((c) => (c.contact_id === contact.id ? { ...c, contact: { ...c.contact, ...contact } } : c)));
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversation_insights", filter: tenantFilter }, (payload) => {
+        const insight = payload.new as ConversationInsight;
+        if (insight?.conversation_id && insight.conversation_id === waSelectedConvIdRef.current) setWaInsight(insight);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "sale_signals", filter: tenantFilter }, (payload) => {
+        const signal = payload.new as { conversation_id?: string };
+        if (signal?.conversation_id && signal.conversation_id === waSelectedConvIdRef.current) loadWaInsights(signal.conversation_id);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "whatsapp_instances", filter: tenantFilter }, () => { loadWaInstances(); })
+      .subscribe((status) => {
+        if (disposed) return;
+        if (status === "SUBSCRIBED") {
+          const recovered = waFailuresRef.current > 0;
+          waFailuresRef.current = 0;
+          setWaSyncState("live");
+          if (recovered) void resyncWhatsapp();
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          waFailuresRef.current += 1;
+          setWaSyncState(waFailuresRef.current >= 3 ? "polling" : "reconnecting");
+          const delay = Math.min(30000, 2000 * 2 ** Math.min(waFailuresRef.current - 1, 4));
+          window.clearTimeout(retryTimer);
+          retryTimer = window.setTimeout(() => { if (!disposed) setWaChannelAttempt((n) => n + 1); }, delay);
+        }
+      });
 
-    return () => { supabase?.removeChannel(channel); };
-  }, [tenant?.id, active]);
+    return () => {
+      disposed = true;
+      window.clearTimeout(retryTimer);
+      client.removeChannel(channel);
+    };
+  }, [tenant?.id, waChannelAttempt]);
+
+  // Polling leve de reserva: 15 s sem Realtime na aba WhatsApp; com Realtime,
+  // só uma conferência a cada 60 s. Pausa com a aba do navegador escondida.
+  useEffect(() => {
+    if (!supabase || !tenant) return;
+    const onWhatsapp = active === "whatsapp";
+    const interval = waSyncState === "live" ? (onWhatsapp ? 60000 : 0) : (onWhatsapp ? 15000 : 60000);
+    if (!interval) return;
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") void resyncWhatsapp();
+    }, interval);
+    return () => window.clearInterval(id);
+  }, [tenant?.id, active, waSyncState]);
+
+  useEffect(() => {
+    if (!tenant) return;
+    const onBack = () => { if (document.visibilityState === "visible") void resyncWhatsapp(); };
+    window.addEventListener("online", onBack);
+    document.addEventListener("visibilitychange", onBack);
+    return () => {
+      window.removeEventListener("online", onBack);
+      document.removeEventListener("visibilitychange", onBack);
+    };
+  }, [tenant?.id]);
+
+  // Lista carregada uma vez por empresa: alimenta o contador de não lidas do menu.
+  useEffect(() => {
+    if (tenant) loadWaConversations();
+  }, [tenant?.id]);
 
   useEffect(() => {
     if (active === "whatsapp" && tenant) {
@@ -2426,11 +2592,7 @@ export function App() {
     if ((active === "google-ads" || active === "integrations") && tenant) loadGoogleAdsData();
   }, [active, tenant?.id]);
 
-  useEffect(() => {
-    if (waMessages.length > 0) {
-      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-    }
-  }, [waMessages.length]);
+  const waUnreadTotal = waConversations.reduce((sum, c) => sum + (c.unread_count > 0 ? c.unread_count : 0), 0);
 
   const filteredConversations = waConversations.filter((conv) => {
     if (!waConvSearch.trim()) return true;
@@ -2646,7 +2808,7 @@ export function App() {
           ) : (
           <nav className="nav-list">
             <NavButton icon={<Gauge />} label="Dashboard" active={active === "dashboard"} onClick={() => goToSection("dashboard")} />
-            <NavButton icon={<MessageCircle />} label="WhatsApp" active={active === "whatsapp"} onClick={() => { goToSection("whatsapp"); loadWaInstances(); loadWaKeys(); }} />
+            <NavButton icon={<MessageCircle />} label="WhatsApp" badge={waUnreadTotal} active={active === "whatsapp"} onClick={() => { goToSection("whatsapp"); loadWaInstances(); loadWaKeys(); }} />
             <NavButton icon={<TrendingUp />} label="Vendas IA" active={active === "ai-sales"} onClick={() => goToSection("ai-sales")} />
             <NavButton icon={<LayoutList />} label="CRM" active={active === "crm"} onClick={() => goToSection("crm")} />
             <NavButton icon={<Bell />} label={`Follow-ups${overdueCount ? ` (${overdueCount})` : ""}`} active={active === "follow-ups"} onClick={() => goToSection("follow-ups")} />
@@ -3707,6 +3869,11 @@ export function App() {
                 <div className="wa-contact-list">
                   <div className="wa-contact-search">
                     <input placeholder="Buscar contato..." value={waConvSearch} onChange={(e) => setWaConvSearch(e.target.value)} />
+                    <div className={`wa-sync-status ${waSyncState}`} role="status">
+                      <span className="wa-sync-dot" />
+                      {waSyncState === "live" ? "Ao vivo" : waSyncState === "polling" ? "Atualizando a cada 15 s" : waSyncState === "reconnecting" ? "Reconectando…" : "Conectando…"}
+                      {waUnreadTotal > 0 && <span className="wa-sync-unread">{waUnreadTotal} não lida{waUnreadTotal > 1 ? "s" : ""}</span>}
+                    </div>
                   </div>
                   {filteredConversations.length === 0 && (
                     <div style={{ padding: "2rem 1rem", textAlign: "center", color: "var(--muted)" }}>
@@ -3721,7 +3888,7 @@ export function App() {
                     return (
                       <div
                         key={conv.id}
-                        className={`wa-contact-item${conv.id === waSelectedConvId ? " active" : ""}`}
+                        className={`wa-contact-item${conv.id === waSelectedConvId ? " active" : ""}${conv.unread_count > 0 && conv.id !== waSelectedConvId ? " unread" : ""}`}
                         onClick={() => selectConversation(conv.id)}
                       >
                         <div className="wa-contact-avatar">{initials}</div>
@@ -3734,7 +3901,9 @@ export function App() {
                             )}
                           </div>
                           <div className="wa-contact-preview">
-                            {cleanAiText(conv.ai_summary) || (c?.phone ? c.phone : c?.wa_id)}
+                            {waPreviews[conv.id]?.text
+                              ? `${waPreviews[conv.id].direction === "outbound" ? "Você: " : ""}${waPreviews[conv.id].text}`
+                              : cleanAiText(conv.ai_summary) || (c?.phone ? c.phone : c?.wa_id)}
                           </div>
                         </div>
                         <div className="wa-contact-meta">
@@ -3907,7 +4076,16 @@ export function App() {
                       </div>
                     )}
 
-                    <div className="wa-thread-messages">
+                    <div
+                      className="wa-thread-messages"
+                      ref={waThreadRef}
+                      onScroll={(event) => {
+                        const el = event.currentTarget;
+                        const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+                        waNearBottomRef.current = near;
+                        if (near && waNewBelow) setWaNewBelow(false);
+                      }}
+                    >
                       {waMessages.reduce<{ elements: React.ReactNode[]; lastDate: string }>((acc, msg) => {
                         const msgDate = formatMsgDate(msg.timestamp);
                         if (msgDate !== acc.lastDate) {
@@ -3956,6 +4134,11 @@ export function App() {
                       }, { elements: [], lastDate: "" }).elements}
                       <div ref={messagesEndRef} />
                     </div>
+                    {waNewBelow && (
+                      <button className="wa-new-below" onClick={() => scrollThreadIfReading(true)} type="button">
+                        Novas mensagens ↓
+                      </button>
+                    )}
 
                     <div className="wa-readonly-bar">
                       Modo leitura — o IDX não envia mensagens pelo WhatsApp
@@ -5254,11 +5437,29 @@ export function App() {
   );
 }
 
-function NavButton({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
+type WaPreview = { text: string; direction: string; at: string };
+
+function toPreview(msg: Pick<WhatsAppMessage, "body" | "content_type" | "direction" | "timestamp">): WaPreview {
+  const labels: Record<string, string> = {
+    image: "Imagem", audio: "Áudio", video: "Vídeo", document: "Documento", sticker: "Figurinha",
+    location: "Localização", contact: "Contato", reaction: "Reação",
+  };
+  const body = String(msg.body ?? "").trim();
+  const text = msg.content_type === "text" || !labels[msg.content_type] ? body : `${labels[msg.content_type]}${body ? `: ${body}` : ""}`;
+  return { text: text.slice(0, 120), direction: msg.direction, at: msg.timestamp };
+}
+
+// Conversa com mensagem mais recente primeiro.
+function sortConversations(list: WhatsAppConversation[]): WhatsAppConversation[] {
+  return [...list].sort((a, b) => String(b.last_message_at ?? "").localeCompare(String(a.last_message_at ?? "")));
+}
+
+function NavButton({ icon, label, active, onClick, badge }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void; badge?: number }) {
   return (
-    <button className={`nav-button ${active ? "active" : ""}`} onClick={onClick} type="button" aria-label={label} aria-current={active ? "page" : undefined}>
+    <button className={`nav-button ${active ? "active" : ""}`} onClick={onClick} type="button" aria-label={badge ? `${label} (${badge} não lidas)` : label} aria-current={active ? "page" : undefined}>
       {icon}
       <span>{label}</span>
+      {badge ? <span className="nav-badge">{badge > 99 ? "99+" : badge}</span> : null}
     </button>
   );
 }

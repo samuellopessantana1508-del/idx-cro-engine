@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "test:realtime": "node --test ../tests/whatsapp-realtime.test.mjs",
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "postbuild": "node ../scripts/create-spa-404.mjs",
