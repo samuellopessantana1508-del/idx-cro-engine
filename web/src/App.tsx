@@ -34,8 +34,22 @@ import {
   Download,
   Target,
   Zap,
+  KanbanSquare,
+  Contact as ContactIcon,
+  Building2,
+  ListTodo,
+  Package,
+  HeartPulse,
+  Sunrise,
+  LineChart,
+  Upload,
+  Workflow,
+  Wrench,
+  Briefcase,
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
+import { CrmWorkspace, crmViewTitles } from "./crm/workspace";
+import type { CrmView } from "./crm/types";
 import type { AiPatterns, CampaignMetric, CapiEvent, CapiHealth, ConversationInsight, CrmActivity, CustomerProfile, FinancialSummary, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, MonthlyPoint, Offer, SaleSignal, SaleSignalCapiStatus, SmartLink, Tenant, TenantUser, WebhookKey, WhatsAppContact, WhatsAppConversation, WhatsAppInstance, WhatsAppMessage } from "./lib/types";
 import { envConfigured, formatDate, formatMoney, linkCode, slugify, smartLinkUrl, timeAgo } from "./lib/utils";
 
@@ -68,7 +82,7 @@ function cleanAiArray(arr: string[] | null | undefined): string[] {
   return arr.filter((v) => !isAiPlaceholder(v));
 }
 
-type Section = "dashboard" | "sales" | "links" | "leads" | "crm" | "integrations" | "whatsapp" | "clients" | "users" | "reports" | "capi" | "ai-sales" | "intelligence" | "settings" | "follow-ups" | "segments" | "google-ads";
+type Section = "dashboard" | "sales" | "links" | "leads" | "crm" | "integrations" | "whatsapp" | "clients" | "users" | "reports" | "capi" | "ai-sales" | "intelligence" | "settings" | "follow-ups" | "segments" | "google-ads" | "crm-app";
 
 type GoogleCampaignRoi = {
   tenant_id: string;
@@ -258,7 +272,7 @@ const META_RETURN_MESSAGES: Record<string, string> = {
   config_error: "Meta App não configurada no servidor (META_APP_ID / META_APP_SECRET).",
   error: "Não foi possível concluir a conexão com o Facebook. Tente de novo.",
 };
-const validSections: Section[] = ["dashboard", "sales", "links", "leads", "crm", "integrations", "whatsapp", "clients", "users", "reports", "capi", "ai-sales", "intelligence", "settings", "follow-ups", "segments", "google-ads"];
+const validSections: Section[] = ["dashboard", "sales", "links", "leads", "crm", "integrations", "whatsapp", "clients", "users", "reports", "capi", "ai-sales", "intelligence", "settings", "follow-ups", "segments", "google-ads", "crm-app"];
 
 const emptyDraft: DraftLink = {
   offerName: "",
@@ -469,6 +483,26 @@ export function App() {
   const [currentUserId, setCurrentUserId] = useState("");
   const [currentUserEmail, setCurrentUserEmail] = useState("");
   const [active, setActive] = useState<Section>(requestedSection ?? "dashboard");
+  const [crmView, setCrmView] = useState<CrmView>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const v = params.get("crm");
+    const contactId = params.get("contact");
+    if (v === "contact" && contactId) return { name: "contact", id: contactId };
+    return v && v in crmViewTitles && v !== "contact" ? ({ name: v } as CrmView) : { name: "home" };
+  });
+
+  // mantém a tela do CRM na URL: recarregar a página volta para o mesmo lugar
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (active === "crm-app") {
+      url.searchParams.set("section", "crm-app");
+      url.searchParams.set("crm", crmView.name);
+      if (crmView.name === "contact") url.searchParams.set("contact", crmView.id); else url.searchParams.delete("contact");
+    } else if (url.searchParams.get("section") === "crm-app") {
+      url.searchParams.delete("section"); url.searchParams.delete("crm"); url.searchParams.delete("contact");
+    } else return;
+    if (url.toString() !== window.location.href) window.history.replaceState(window.history.state, "", url.toString());
+  }, [active, crmView]);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [platformRole, setPlatformRole] = useState<PlatformRole | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
@@ -619,6 +653,14 @@ export function App() {
     setActive(section);
     setMobileMenuOpen(false);
   }
+
+  function goToCrm(view: CrmView) {
+    setCrmView(view);
+    setActive("crm-app");
+    setMobileMenuOpen(false);
+  }
+
+  const crmIs = (...names: CrmView["name"][]) => active === "crm-app" && names.includes(crmView.name);
 
   async function copyTenantAccessUrl() {
     if (!tenant?.slug) return;
@@ -2802,28 +2844,50 @@ export function App() {
           </div>
           {isSellerExperience ? (
             <nav className="nav-list">
+              <div className="nav-group-label">Meu dia</div>
+              <NavButton icon={<Sunrise />} label="Minha rotina" active={crmIs("routine")} onClick={() => goToCrm({ name: "routine" })} />
+              <NavButton icon={<KanbanSquare />} label="Negociações" active={crmIs("deals")} onClick={() => goToCrm({ name: "deals" })} />
+              <NavButton icon={<ContactIcon />} label="Contatos" active={crmIs("contacts", "contact")} onClick={() => goToCrm({ name: "contacts" })} />
+              <NavButton icon={<ListTodo />} label="Tarefas e agenda" active={crmIs("tasks")} onClick={() => goToCrm({ name: "tasks" })} />
+              <div className="nav-group-label">Atendimento</div>
               <NavButton icon={<PhoneCall />} label="Atender" active={active === "sales"} onClick={() => goToSection("sales")} />
               <NavButton icon={<MessageCircle />} label="Atendimentos" active={active === "leads"} onClick={() => goToSection("leads")} />
             </nav>
           ) : (
           <nav className="nav-list">
-            <NavButton icon={<Gauge />} label="Dashboard" active={active === "dashboard"} onClick={() => goToSection("dashboard")} />
+            <div className="nav-group-label">Visão geral</div>
+            <NavButton icon={<Gauge />} label="Dashboard IDX" active={active === "dashboard"} onClick={() => goToSection("dashboard")} />
+            <NavButton icon={<Briefcase />} label="Visão comercial" active={crmIs("home")} onClick={() => goToCrm({ name: "home" })} />
+            <NavButton icon={<Sunrise />} label="Minha rotina" active={crmIs("routine")} onClick={() => goToCrm({ name: "routine" })} />
+            <div className="nav-group-label">CRM</div>
+            <NavButton icon={<KanbanSquare />} label="Negociações" active={crmIs("deals")} onClick={() => goToCrm({ name: "deals" })} />
+            <NavButton icon={<ContactIcon />} label="Contatos" active={crmIs("contacts", "contact")} onClick={() => goToCrm({ name: "contacts" })} />
+            <NavButton icon={<Building2 />} label="Empresas" active={crmIs("companies")} onClick={() => goToCrm({ name: "companies" })} />
+            <NavButton icon={<ListTodo />} label="Tarefas e agenda" active={crmIs("tasks")} onClick={() => goToCrm({ name: "tasks" })} />
+            <NavButton icon={<Package />} label="Produtos e serviços" active={crmIs("products")} onClick={() => goToCrm({ name: "products" })} />
+            <div className="nav-group-label">Relacionamento</div>
             <NavButton icon={<MessageCircle />} label="WhatsApp" badge={waUnreadTotal} active={active === "whatsapp"} onClick={() => { goToSection("whatsapp"); loadWaInstances(); loadWaKeys(); }} />
-            <NavButton icon={<TrendingUp />} label="Vendas IA" active={active === "ai-sales"} onClick={() => goToSection("ai-sales")} />
-            <NavButton icon={<LayoutList />} label="CRM" active={active === "crm"} onClick={() => goToSection("crm")} />
-            <NavButton icon={<Bell />} label={`Follow-ups${overdueCount ? ` (${overdueCount})` : ""}`} active={active === "follow-ups"} onClick={() => goToSection("follow-ups")} />
-            <NavButton icon={<Tag />} label="Segmentos" active={active === "segments"} onClick={() => goToSection("segments")} />
-            <div className="nav-separator" />
             <NavButton icon={<PhoneCall />} label="Atender" active={active === "sales"} onClick={() => goToSection("sales")} />
             <NavButton icon={<MessageCircle />} label="Atendimentos" active={active === "leads"} onClick={() => goToSection("leads")} />
-            <NavButton icon={<Link2 />} label="Links" active={active === "links"} onClick={() => goToSection("links")} />
-            <NavButton icon={<LayoutList />} label="Clientes" active={active === "clients"} onClick={() => goToSection("clients")} />
-            <NavButton icon={<BarChart3 />} label="Inteligência" active={active === "intelligence"} onClick={() => goToSection("intelligence")} />
+            <NavButton icon={<HeartPulse />} label="Clientes e RFV" active={crmIs("rfv")} onClick={() => goToCrm({ name: "rfv" })} />
+            <NavButton icon={<Bell />} label={`Follow-ups${overdueCount ? ` (${overdueCount})` : ""}`} active={active === "follow-ups"} onClick={() => goToSection("follow-ups")} />
+            <NavButton icon={<Tag />} label="Segmentos" active={active === "segments"} onClick={() => goToSection("segments")} />
+            <div className="nav-group-label">Marketing</div>
+            <NavButton icon={<Link2 />} label="Links e atribuição" active={active === "links"} onClick={() => goToSection("links")} />
+            <NavButton icon={<ShieldCheck />} label="Meta Ads" active={active === "integrations"} onClick={() => goToSection("integrations")} />
             <NavButton icon={<Zap />} label="Google Ads" active={active === "google-ads"} onClick={() => goToSection("google-ads")} />
-            <div className="nav-separator" />
-            <NavButton icon={<ShieldCheck />} label="Integrações" active={active === "integrations"} onClick={() => goToSection("integrations")} />
-            <NavButton icon={<Activity />} label="CAPI" active={active === "capi"} onClick={() => goToSection("capi")} />
+            <NavButton icon={<LayoutList />} label="Funil de leads rastreados" active={active === "crm"} onClick={() => goToSection("crm")} />
+            <div className="nav-group-label">Inteligência</div>
+            <NavButton icon={<TrendingUp />} label="Vendas IA" active={active === "ai-sales"} onClick={() => goToSection("ai-sales")} />
+            <NavButton icon={<LineChart />} label="Indicadores" active={crmIs("reports")} onClick={() => goToCrm({ name: "reports" })} />
+            <NavButton icon={<BarChart3 />} label="Inteligência financeira" active={active === "intelligence"} onClick={() => goToSection("intelligence")} />
             <NavButton icon={<FileText />} label="Relatórios" active={active === "reports"} onClick={() => goToSection("reports")} />
+            <NavButton icon={<Activity />} label="Conversões (CAPI)" active={active === "capi"} onClick={() => goToSection("capi")} />
+            <div className="nav-group-label">Administração</div>
+            <NavButton icon={<Workflow />} label="Automações" active={crmIs("automations")} onClick={() => goToCrm({ name: "automations" })} />
+            <NavButton icon={<Upload />} label="Importar e exportar" active={crmIs("import")} onClick={() => goToCrm({ name: "import" })} />
+            <NavButton icon={<Wrench />} label="Configurações do CRM" active={crmIs("settings")} onClick={() => goToCrm({ name: "settings" })} />
+            <NavButton icon={<LayoutList />} label="Empresas IDX" active={active === "clients"} onClick={() => goToSection("clients")} />
             <NavButton icon={<Users />} label="Usuários" active={active === "users"} onClick={() => goToSection("users")} />
             <NavButton icon={<Settings />} label="Config" active={active === "settings"} onClick={() => goToSection("settings")} />
           </nav>
@@ -2855,7 +2919,7 @@ export function App() {
         <header className="topbar">
           <div>
             <p className="eyeline">{isPlatformUser ? `Gestor IDX · ${platformRoleLabel(platformRole)}` : "Dados reais da empresa"}</p>
-            <h1>{sectionTitle(active)}</h1>
+            <h1>{active === "crm-app" ? crmViewTitles[crmView.name] : sectionTitle(active)}</h1>
           </div>
           <div className="tenant-chip">
             <CircleDot size={14} />
@@ -2868,6 +2932,10 @@ export function App() {
             <strong>Acesso por link de empresa</strong>
             <span>{tenantRouteWarning}</span>
           </div>
+        )}
+
+        {active === "crm-app" && tenant && isConfigured && (
+          <CrmWorkspace key={tenant.id} tenantId={tenant.id} tenantName={tenant.name} userId={currentUserId} view={crmView} onNavigate={setCrmView} notify={setToast} />
         )}
 
         {active === "sales" && (
@@ -5392,6 +5460,8 @@ export function App() {
 
       {mobileMenuOpen && isSellerExperience && (
         <section className="mobile-more-sheet" aria-label="Mais opções">
+          <button type="button" onClick={() => goToCrm({ name: "contacts" })} className={crmIs("contacts", "contact") ? "active" : ""}><ContactIcon size={17} /> Contatos</button>
+          <button type="button" onClick={() => goToCrm({ name: "tasks" })} className={crmIs("tasks") ? "active" : ""}><ListTodo size={17} /> Tarefas</button>
           <button type="button" onClick={() => goToSection("leads")} className={active === "leads" ? "active" : ""}><MessageCircle size={17} /> Atendimentos</button>
           <button type="button" onClick={logout}><LogOut size={17} /> Sair</button>
         </section>
@@ -5399,6 +5469,13 @@ export function App() {
 
       {mobileMenuOpen && !isSellerExperience && (
         <section className="mobile-more-sheet" aria-label="Mais opções">
+          <button type="button" onClick={() => goToCrm({ name: "home" })} className={crmIs("home") ? "active" : ""}><Briefcase size={17} /> Visão comercial</button>
+          <button type="button" onClick={() => goToCrm({ name: "contacts" })} className={crmIs("contacts", "contact") ? "active" : ""}><ContactIcon size={17} /> Contatos</button>
+          <button type="button" onClick={() => goToCrm({ name: "tasks" })} className={crmIs("tasks") ? "active" : ""}><ListTodo size={17} /> Tarefas</button>
+          <button type="button" onClick={() => goToCrm({ name: "rfv" })} className={crmIs("rfv") ? "active" : ""}><HeartPulse size={17} /> Clientes e RFV</button>
+          <button type="button" onClick={() => goToCrm({ name: "reports" })} className={crmIs("reports") ? "active" : ""}><LineChart size={17} /> Indicadores</button>
+          <button type="button" onClick={() => goToSection("links")} className={active === "links" ? "active" : ""}><Link2 size={17} /> Links</button>
+          <button type="button" onClick={() => goToSection("crm")} className={active === "crm" ? "active" : ""}><LayoutList size={17} /> Funil rastreado</button>
           <button type="button" onClick={() => goToSection("integrations")} className={active === "integrations" ? "active" : ""}><ShieldCheck size={17} /> Meta</button>
           <button type="button" onClick={() => { goToSection("whatsapp"); loadWaInstances(); loadWaKeys(); }} className={active === "whatsapp" ? "active" : ""}><MessageCircle size={17} /> WhatsApp</button>
           <button type="button" onClick={() => goToSection("leads")} className={active === "leads" ? "active" : ""}><MessageCircle size={17} /> Atendimentos</button>
@@ -5416,8 +5493,9 @@ export function App() {
 
       {isSellerExperience && (
       <nav className="mobile-tabbar seller-mobile-tabbar" aria-label="Navegação do atendimento">
+        <NavButton icon={<Sunrise />} label="Rotina" active={crmIs("routine")} onClick={() => goToCrm({ name: "routine" })} />
+        <NavButton icon={<KanbanSquare />} label="Negócios" active={crmIs("deals")} onClick={() => goToCrm({ name: "deals" })} />
         <NavButton icon={<PhoneCall />} label="Atender" active={active === "sales"} onClick={() => goToSection("sales")} />
-        <NavButton icon={<MessageCircle />} label="Leads" active={active === "leads"} onClick={() => goToSection("leads")} />
         <NavButton icon={<MoreHorizontal />} label="Mais" active={moreActive || mobileMenuOpen} onClick={() => setMobileMenuOpen((open) => !open)} />
       </nav>
       )}
@@ -5426,8 +5504,8 @@ export function App() {
       <nav className="mobile-tabbar" aria-label="Navegação principal">
         <NavButton icon={<Gauge />} label="Início" active={active === "dashboard"} onClick={() => goToSection("dashboard")} />
         <NavButton icon={<PhoneCall />} label="Atender" active={active === "sales"} onClick={() => goToSection("sales")} />
-        <NavButton icon={<Link2 />} label="Links" active={active === "links"} onClick={() => goToSection("links")} />
-        <NavButton icon={<LayoutList />} label="CRM" active={active === "crm"} onClick={() => goToSection("crm")} />
+        <NavButton icon={<Sunrise />} label="Rotina" active={crmIs("routine")} onClick={() => goToCrm({ name: "routine" })} />
+        <NavButton icon={<KanbanSquare />} label="CRM" active={crmIs("deals")} onClick={() => goToCrm({ name: "deals" })} />
         <NavButton icon={<MoreHorizontal />} label="Mais" active={moreActive || mobileMenuOpen} onClick={() => setMobileMenuOpen((open) => !open)} />
       </nav>
       )}
@@ -7051,6 +7129,7 @@ function sectionTitle(section: Section): string {
     "follow-ups": "Follow-ups",
     segments: "Segmentação",
     "google-ads": "Google Ads",
+    "crm-app": "CRM",
   }[section];
 }
 
