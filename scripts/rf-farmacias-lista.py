@@ -2,6 +2,7 @@
 """Limpa a saída de rf-farmacias.py e gera a lista pronta para o Discador do CRM.
 
 - descarta DDD inexistente e números com formato inválido;
+- celular antigo de 8 dígitos (começando com 6-9) ganha o 9º dígito;
 - descarta telefones compartilhados por mais de MAX_SHARED estabelecimentos
   (normalmente escritório de contabilidade ou matriz, não a loja);
 - remove números repetidos (fica um registro por telefone);
@@ -24,9 +25,13 @@ def clean(num):
     if len(d) not in (10, 11) or int(d[:2]) not in DDDS:
         return None
     local = d[2:]
+    if len(local) == 8 and local[0] in "6789":
+        # celular cadastrado antes da inclusão do 9º dígito (2012–2016): acrescenta o 9
+        local = "9" + local
+        d = d[:2] + local
     if len(local) == 9 and local[0] != "9":
         return None
-    if len(local) == 8 and local[0] not in "2345":  # fixo começa com 2-5; celular antigo sem o 9 é descartado
+    if len(local) == 8 and local[0] not in "2345":  # fixo começa com 2-5
         return None
     if len(set(local)) == 1:
         return None
