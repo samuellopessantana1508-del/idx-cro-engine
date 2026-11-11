@@ -257,7 +257,7 @@ try {
     await m.locator(".dial-head").waitFor();
     const csv = `nome;telefone;cidade;uf;bairro\nFarmácia Teste ${stamp};(31) 3${stamp.slice(0, 3)}-${stamp.slice(3)}1;Belo Horizonte;MG;Centro\nDrogaria Teste ${stamp};(31) 9${stamp}2;Contagem;MG;Eldorado\n`;
     const more = m.getByRole("button", { name: "Mais opções" });
-    if (await more.count()) { await more.click(); await m.getByRole("button", { name: /Importar números/ }).click(); }
+    if (await more.count()) { await more.click(); await m.getByRole("button", { name: /Importar números \(CSV\)/ }).click(); }
     else await m.getByRole("button", { name: /Importar números/ }).click();
     const modal = m.locator(".crm-modal");
     await modal.locator("label", { hasText: "Nome da lista" }).locator("input").fill(`Farmácias E2E ${stamp}`);

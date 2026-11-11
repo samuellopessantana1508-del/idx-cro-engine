@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle, ArrowDownUp, CalendarClock, ChevronDown, Clock, Download, Filter, Flame, KanbanSquare, List, MessageCircle, Plus, Search, Trophy, X,
+  AlertTriangle, ArrowDownUp, CalendarClock, Check, ChevronDown, Clock, Download, Filter, Flame, KanbanSquare, List, MessageCircle, Pencil, Plus, Search, Trash2, Trophy, X,
 } from "lucide-react";
 import * as api from "./api";
 import { useCrm } from "./context";
@@ -162,7 +162,7 @@ function LossDialog({ deal, stage, onClose, onConfirm }: { deal: Deal; stage: St
 type Sort = { key: keyof Deal; asc: boolean };
 
 export function DealsView() {
-  const { tenantId, pipelines, stages, settings, members, userId, access, refreshKey, openDeal, quickCreate, notify, memberLabel } = useCrm();
+  const { tenantId, pipelines, stages, settings, members, userId, access, refreshKey, openDeal, quickCreate, notify, memberLabel, reloadStructure } = useCrm();
   const [pipelineId, setPipelineId] = useState(settings?.default_pipeline_id ?? pipelines[0]?.id ?? "");
   const [mode, setMode] = useState<"board" | "list">(() => (localStorage.getItem("crm.deals.mode") as "board" | "list") || "board");
   const [deals, setDeals] = useState<Deal[] | null>(null);
@@ -306,9 +306,7 @@ export function DealsView() {
                 onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOverStage(null); }}
                 onDrop={(e) => { e.preventDefault(); onDrop(st.id); }}>
                 <header className="crm-col-head" title={st.entry_criteria ?? ""}>
-                  <span className="dot" style={{ background: st.color ?? "#94a3b8" }} />
-                  <strong>{st.name}</strong>
-                  <em>{cards.length}</em>
+                  <StageHead stage={st} count={cards.length} canEdit={access.configure} onSaved={reloadStructure} />
                   <span className="sum">{brl(sum, true)}</span>
                   {st.kind === "open" && <span className="prob">{st.probability}%</span>}
                 </header>
@@ -325,6 +323,7 @@ export function DealsView() {
               </section>
             );
           })}
+          {access.configure && <AddStageColumn pipelineId={pipelineId} stages={pipelineStages} onSaved={reloadStructure} />}
         </div>
       ) : sorted.length === 0 ? (
         <Empty icon={<KanbanSquare />} title="Nenhuma negociação encontrada" text="Ajuste os filtros ou crie uma nova negociação." />
@@ -437,3 +436,108 @@ export function StagePicker({ deal, onMove }: { deal: Deal; onMove: (stageId: st
 }
 
 export { emailName };
+
+// ---------------------------------------------------------------------------
+// Etapas editáveis direto no funil
+// ---------------------------------------------------------------------------
+const stageColors = ["#94a3b8", "#0ea5e9", "#8b5cf6", "#f59e0b", "#ec4899", "#14b8a6", "#ef4444", "#22c55e"];
+
+function StageHead({ stage, count, canEdit, onSaved }: { stage: Stage; count: number; canEdit: boolean; onSaved: () => Promise<void> }) {
+  const { tenantId, notify } = useCrm();
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(stage.name);
+  const [menu, setMenu] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setName(stage.name), [stage.name]);
+
+  async function save(patch: Partial<Stage>, msg?: string) {
+    setBusy(true);
+    try { await api.saveStage({ id: stage.id, tenant_id: tenantId, ...patch }); await onSaved(); if (msg) notify(msg); }
+    catch (e) { notify(errorText(e)); }
+    finally { setBusy(false); }
+  }
+  async function commit() {
+    const v = name.trim();
+    setEditing(false);
+    if (!v) { setName(stage.name); return; }
+    if (v !== stage.name) await save({ name: v }, "Etapa renomeada");
+  }
+  async function remove() {
+    setMenu(false);
+    if (count > 0) { notify("Mova as negociações desta etapa antes de apagá-la"); return; }
+    await save({ archived_at: new Date().toISOString() }, "Etapa removida");
+  }
+
+  if (editing) {
+    return (
+      <form className="crm-col-rename" onSubmit={(e) => { e.preventDefault(); void commit(); }}>
+        <input autoFocus value={name} maxLength={60} onChange={(e) => setName(e.target.value)} onBlur={() => void commit()}
+          onKeyDown={(e) => { if (e.key === "Escape") { setName(stage.name); setEditing(false); } }} aria-label="Nome da etapa" />
+        <button type="submit" className="crm-icon-btn xs" aria-label="Salvar nome" onMouseDown={(e) => e.preventDefault()}><Check size={14} /></button>
+      </form>
+    );
+  }
+  return (
+    <>
+      <span className="dot" style={{ background: stage.color ?? "#94a3b8" }} />
+      {canEdit
+        ? <button type="button" className="crm-col-name" onClick={() => setEditing(true)} title="Clique para renomear" disabled={busy}><strong>{stage.name}</strong><Pencil size={12} /></button>
+        : <strong>{stage.name}</strong>}
+      <em>{count}</em>
+      {canEdit && (
+        <span className="crm-col-menu">
+          <button type="button" className="crm-icon-btn xs" aria-label="Opções da etapa" onClick={() => setMenu((m) => !m)}><ChevronDown size={14} /></button>
+          {menu && (
+            <div className="crm-col-pop" onMouseLeave={() => setMenu(false)}>
+              <button type="button" onClick={() => { setMenu(false); setEditing(true); }}><Pencil size={13} /> Renomear</button>
+              <div className="colors">
+                {stageColors.map((c) => <button key={c} type="button" style={{ background: c }} aria-label={`Cor ${c}`} className={stage.color === c ? "on" : ""} onClick={() => { setMenu(false); void save({ color: c }); }} />)}
+              </div>
+              {stage.kind === "open" && <button type="button" className="danger" onClick={() => void remove()}><Trash2 size={13} /> Apagar etapa</button>}
+            </div>
+          )}
+        </span>
+      )}
+    </>
+  );
+}
+
+function AddStageColumn({ pipelineId, stages, onSaved }: { pipelineId: string; stages: Stage[]; onSaved: () => Promise<void> }) {
+  const { tenantId, notify } = useCrm();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function create() {
+    const v = name.trim();
+    if (!v || busy) return;
+    setBusy(true);
+    try {
+      const openStages = stages.filter((s) => s.kind === "open");
+      const last = openStages[openStages.length - 1];
+      const created = await api.saveStage({
+        tenant_id: tenantId, pipeline_id: pipelineId, name: v, kind: "open", position: stages.length,
+        probability: Math.min(90, (last?.probability ?? 0) + 10), color: stageColors[openStages.length % stageColors.length],
+      });
+      // nova etapa entra depois da última "em andamento" (antes de ganha/perdida)
+      const ids = [...openStages.map((s) => s.id), created.id, ...stages.filter((s) => s.kind !== "open").map((s) => s.id)];
+      await api.reorderStages(pipelineId, ids);
+      await onSaved();
+      setName(""); setOpen(false); notify(`Etapa “${v}” criada`);
+    } catch (e) { notify(errorText(e)); }
+    finally { setBusy(false); }
+  }
+  return (
+    <section className="crm-col crm-col-new">
+      {open ? (
+        <form className="crm-col-rename" onSubmit={(e) => { e.preventDefault(); void create(); }}>
+          <input autoFocus value={name} maxLength={60} placeholder="Nome da etapa" onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Escape") { setOpen(false); setName(""); } }} aria-label="Nome da nova etapa" />
+          <button type="submit" className="crm-btn primary xs" disabled={busy || !name.trim()}>Criar</button>
+          <button type="button" className="crm-icon-btn xs" onClick={() => { setOpen(false); setName(""); }} aria-label="Cancelar"><X size={14} /></button>
+        </form>
+      ) : (
+        <button type="button" className="crm-col-new-btn" onClick={() => setOpen(true)}><Plus size={16} /> Nova etapa</button>
+      )}
+    </section>
+  );
+}
