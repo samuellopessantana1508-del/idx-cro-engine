@@ -24,7 +24,15 @@ const results = [];
 async function step(name, fn) {
   const t = Date.now();
   try { await fn(); results.push(["ok", name, Date.now() - t]); console.log(`ok   - ${name}`); }
-  catch (e) { results.push(["FAIL", name, Date.now() - t]); console.log(`FAIL - ${name}\n       ${String(e.message).split("\n")[0]}`); throw e; }
+  catch (e) {
+    results.push(["FAIL", name, Date.now() - t]);
+    console.log(`FAIL - ${name}\n       ${String(e.message).split("\n")[0]}`);
+    if (globalThis.__page) {
+      await globalThis.__page.screenshot({ path: `${SHOTS}/falha.png` }).catch(() => {});
+      console.log("       toasts:", await globalThis.__page.locator(".toast").allInnerTexts().catch(() => []));
+    }
+    throw e;
+  }
 }
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? "/usr/bin/google-chrome", args: ["--no-sandbox"] });
@@ -49,6 +57,7 @@ const column = (page, stage) => page.locator(".crm-col").filter({ has: page.loca
 let failed = false;
 try {
   const page = await newPage();
+  globalThis.__page = page;
   await step("login do administrador da empresa", () => login(page, "dono@clinica.local"));
 
   await step("criar contato pelo botão Novo contato (telefone normalizado com DDI)", async () => {
@@ -57,20 +66,42 @@ try {
     const modal = page.locator(".crm-modal");
     await modal.locator("label", { hasText: /^Nome/ }).locator("input").fill(NAME);
     await modal.locator("label", { hasText: "Telefone / WhatsApp" }).locator("input").fill(PHONE_FMT);
+    await modal.locator("label", { hasText: "Empresa" }).locator("input").fill(`Padaria E2E ${stamp}`);
+    await modal.locator("label", { hasText: "Observação" }).locator("textarea").fill("Pediu orçamento por telefone");
+    await modal.getByRole("button", { name: "Amanhã" }).click();
+    await modal.getByRole("button", { name: /Mais detalhes/ }).click();
     await modal.locator("label", { hasText: "E-mail" }).locator("input").fill(`e2e${stamp}@exemplo.com`);
+    const typedName = await modal.locator("label", { hasText: /^Nome/ }).locator("input").inputValue();
+    assert.equal(typedName, NAME, "nome digitado foi perdido antes de salvar");
     await modal.getByRole("button", { name: "Salvar", exact: true }).click();
-    await toast(page, /Contato cadastrado/);
+    await modal.waitFor({ state: "detached" });
     const phone = sql(`select phone from crm_contacts where name = '${NAME}'`);
     assert.equal(phone, `55${PHONE_DIGITS}`);
+    assert.equal(sql(`select co.name || '|' || c.notes || '|' || c.source_channel from crm_contacts c join crm_companies co on co.id = c.company_id where c.name = '${NAME}'`), `Padaria E2E ${stamp}|Pediu orçamento por telefone|phone`);
+    assert.equal(sql(`select count(*) from crm_timeline t join crm_contacts c on c.id = t.contact_id where c.name = '${NAME}' and t.kind = 'call_log'`), "1");
+    assert.equal(sql(`select task_type || '|' || ((due_at at time zone 'America/Sao_Paulo')::date - (now() at time zone 'America/Sao_Paulo')::date) from crm_tasks t join crm_contacts c on c.id = t.contact_id where c.name = '${NAME}'`), "call|1");
   });
 
-  await step("duplicidade: mesmo telefone em outro formato é sinalizado", async () => {
-    await page.getByRole("button", { name: "Novo contato" }).click();
+  await step("cliente rápido por teclado: tecla C, telefone, Enter salva em segundos", async () => {
+    await page.locator("body").press("c");
+    const modal = page.locator(".crm-modal");
+    await modal.locator("label", { hasText: "Telefone / WhatsApp" }).locator("input").fill(`(21) 9${stamp}12`);
+    await modal.locator("label", { hasText: /^Nome/ }).locator("input").fill(`Ligacao Rapida ${stamp}`);
+    await modal.locator("label", { hasText: /^Nome/ }).locator("input").press("Enter");
+    await modal.waitFor({ state: "detached" });
+    assert.equal(sql(`select count(*) from crm_contacts where name = 'Ligacao Rapida ${stamp}'`), "1");
+  });
+
+  await step("cliente repetido: telefone em outro formato é reconhecido e a nova ligação vai para o mesmo cadastro", async () => {
+    await page.getByRole("button", { name: "Cliente rápido" }).click();
     const modal = page.locator(".crm-modal");
     await modal.locator("label", { hasText: "Telefone / WhatsApp" }).locator("input").fill(`+55 ${PHONE_DIGITS}`);
-    await modal.locator("label", { hasText: "E-mail" }).locator("input").click();
-    await modal.locator(".crm-callout.warn", { hasText: "Possível duplicado" }).waitFor({ timeout: 5000 });
-    await page.keyboard.press("Escape");
+    await modal.locator("label", { hasText: "Observação" }).locator("textarea").fill("Ligou de novo, confirmou interesse");
+    await modal.locator(".crm-callout.warn", { hasText: "já está cadastrado" }).waitFor({ timeout: 5000 });
+    await modal.getByRole("button", { name: /Registrar ligação nele/ }).click();
+    await toast(page, /Registrado em/);
+    assert.equal(sql(`select count(*) from crm_contacts where phone = '55${PHONE_DIGITS}'`), "1");
+    assert.equal(sql(`select count(*) from crm_timeline t join crm_contacts c on c.id = t.contact_id where c.name = '${NAME}' and t.kind = 'call_log'`), "2");
   });
 
   await step("recarregar a página mantém a tela e o contato", async () => {

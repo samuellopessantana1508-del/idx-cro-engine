@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import "../styles/crm.css";
-import { Bell, Building2, Check, KanbanSquare, ListTodo, Plus, Search, ShieldAlert, User, UserPlus, X } from "lucide-react";
+import { Bell, Building2, Check, KanbanSquare, ListTodo, PhoneCall, Plus, Search, ShieldAlert, User, UserPlus, X } from "lucide-react";
 import * as api from "./api";
 import { CrmContext, useCrm, type CrmCtx, type QuickCreateKind } from "./context";
 import { brl, channelLabels, emailName, errorText, parseMoney, phoneLabel, relative } from "./format";
@@ -93,6 +93,7 @@ export function CrmWorkspace({ tenantId, tenantName, userId, view, onNavigate, n
       if (e.key === "/") { e.preventDefault(); setSearchOpen(true); }
       if (access?.write && e.key === "n") { e.preventDefault(); setQuick({ kind: "deal", defaults: {} }); }
       if (access?.write && e.key === "t") { e.preventDefault(); setQuick({ kind: "task", defaults: {} }); }
+      if (access?.write && e.key === "c") { e.preventDefault(); setQuick({ kind: "contact", defaults: {} }); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -140,6 +141,7 @@ export function CrmWorkspace({ tenantId, tenantName, userId, view, onNavigate, n
             <Search size={16} /> <span>Buscar contatos, negociações, empresas…</span> <kbd>Ctrl K</kbd>
           </button>
           <div className="crm-commandbar-right">
+            {ctx.access.write && <button type="button" className="crm-btn ghost" onClick={() => setQuick({ kind: "contact", defaults: {} })} title="Atalho: tecla C"><PhoneCall size={16} /> Cliente rápido</button>}
             {ctx.access.write && <QuickCreateMenu onPick={(kind) => setQuick({ kind, defaults: {} })} />}
             <NotificationBell />
           </div>
@@ -182,7 +184,7 @@ function QuickCreateMenu({ onPick }: { onPick: (k: QuickCreateKind) => void }) {
   const [open, setOpen] = useState(false);
   const items: { k: QuickCreateKind; label: string; icon: ReactNode; key?: string }[] = [
     { k: "deal", label: "Negociação", icon: <KanbanSquare size={15} />, key: "N" },
-    { k: "contact", label: "Contato", icon: <UserPlus size={15} /> },
+    { k: "contact", label: "Cliente / contato", icon: <UserPlus size={15} />, key: "C" },
     { k: "task", label: "Tarefa / atividade", icon: <ListTodo size={15} />, key: "T" },
     { k: "company", label: "Empresa", icon: <Building2 size={15} /> },
   ];
@@ -455,80 +457,142 @@ function DealQuickModal({ defaults, onClose, onCreated }: { defaults: Record<str
 // Criação rápida: contato
 // ---------------------------------------------------------------------------
 function ContactQuickModal({ defaults, onClose, onCreated }: { defaults: Record<string, unknown>; onClose: () => void; onCreated: (id: string, open: boolean) => void }) {
-  const { tenantId, userId, access, members, notify, openContact } = useCtx();
-  const [name, setName] = useState(String(defaults.name ?? ""));
-  const [phone, setPhone] = useState(String(defaults.phone ?? ""));
+  const { tenantId, userId, members, notify, openContact, refresh } = useCtx();
+  const blank = { phone: String(defaults.phone ?? ""), name: String(defaults.name ?? ""), company: "", note: "" };
+  const [f, setF] = useState(blank);
+  const [isCall, setIsCall] = useState(true);
+  const [followUp, setFollowUp] = useState<"none" | "1" | "3" | "7">("none");
+  const [more, setMore] = useState(false);
   const [email, setEmail] = useState("");
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [companyId, setCompanyId] = useState("");
   const [jobTitle, setJobTitle] = useState("");
   const [city, setCity] = useState("");
-  const [source, setSource] = useState("manual");
-  const [owner, setOwner] = useState(access.role === "sales" ? userId : "");
+  const [source, setSource] = useState("phone");
+  const [owner, setOwner] = useState(userId);
   const [consent, setConsent] = useState<"unknown" | "granted" | "denied">("unknown");
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [dups, setDups] = useState<Awaited<ReturnType<typeof api.findDuplicates>>>([]);
   const [busy, setBusy] = useState(false);
+  const [savedCount, setSavedCount] = useState(0);
+  const phoneRef = useRef<HTMLInputElement>(null);
   const linkDealId = defaults.link_deal_id ? String(defaults.link_deal_id) : null;
 
-  useEffect(() => { api.loadCompanies(tenantId).then(setCompanies).catch(() => setCompanies([])); }, [tenantId]);
+  useEffect(() => { api.loadCompanies(tenantId).then(setCompanies).catch(() => setCompanies([])); }, [tenantId, savedCount]);
+  useEffect(() => { if (savedCount > 0) phoneRef.current?.focus(); }, [savedCount]);
+  // procura duplicado enquanto digita o telefone (a partir de 10 dígitos)
+  useEffect(() => {
+    const digits = f.phone.replace(/\D/g, "");
+    if (digits.length < 10 && !email.trim()) { setDups([]); return; }
+    const t = setTimeout(() => { api.findDuplicates(tenantId, digits.length >= 10 ? f.phone : undefined, email || undefined).then(setDups).catch(() => setDups([])); }, 300);
+    return () => clearTimeout(t);
+  }, [f.phone, email, tenantId]);
 
-  async function checkDup() {
-    if (!phone.trim() && !email.trim()) { setDups([]); return; }
-    try { setDups(await api.findDuplicates(tenantId, phone, email)); } catch { setDups([]); }
+  const dueAt = () => { if (followUp === "none") return null; const d = new Date(); d.setDate(d.getDate() + Number(followUp)); d.setHours(9, 0, 0, 0); return d.toISOString(); };
+
+  async function logCallAndFollowUp(contactId: string, who: string) {
+    if (isCall || f.note.trim()) {
+      await api.addNote({ tenant_id: tenantId, contact_id: contactId, kind: isCall ? "call_log" : "note", title: isCall ? "Ligação" : "Observação", body: f.note.trim() || "Ligação registrada", actor_id: userId });
+    }
+    const due = dueAt();
+    if (due) await api.saveTask({ tenant_id: tenantId, task_type: "call", title: `Retornar ligação: ${who}`, description: f.note.trim() || null, contact_id: contactId, owner_id: owner || userId, due_at: due, priority: "normal" });
   }
 
-  async function save(openIt: boolean) {
-    if (!name.trim() && !phone.trim() && !email.trim()) { notify("Informe ao menos nome, telefone ou e-mail."); return; }
+  async function companyIdFor(name: string) {
+    const n = name.trim();
+    if (!n) return null;
+    const found = companies.find((c) => c.name.trim().toLowerCase() === n.toLowerCase());
+    if (found) return found.id;
+    const c = await api.saveCompany({ tenant_id: tenantId, name: n, owner_id: owner || null });
+    return c.id;
+  }
+
+  async function addToExisting(d: { id: string; name: string | null; phone: string | null }) {
     setBusy(true);
     try {
-      const c = await api.createContact({
-        tenant_id: tenantId, name: name.trim() || null, phone: phone.trim() || null, email: email.trim() || null, company_id: companyId || null,
-        job_title: jobTitle.trim() || null, city: city.trim() || null, owner_id: owner || null, source_channel: source,
-        acquisition_basis: source === "manual" ? "unknown" : "declared", marketing_consent: consent,
-      } as never);
-      if (linkDealId) await api.updateDeal(linkDealId, { contact_id: c.id, company_id: c.company_id ?? undefined } as never);
-      notify("Contato cadastrado");
-      onCreated(c.id, openIt && !linkDealId);
+      await logCallAndFollowUp(d.id, d.name ?? phoneLabel(d.phone) ?? "cliente");
+      notify(`Registrado em ${d.name ?? "contato existente"}${followUp !== "none" ? " · retorno agendado" : ""}`);
+      refresh(); onClose();
     } catch (e) { notify(errorText(e)); setBusy(false); }
   }
 
+  async function save(mode: "close" | "open" | "next") {
+    if (!f.name.trim() && !f.phone.trim() && !email.trim()) { notify("Informe ao menos o telefone ou o nome."); phoneRef.current?.focus(); return; }
+    setBusy(true);
+    try {
+      const companyId = await companyIdFor(f.company);
+      const c = await api.createContact({
+        tenant_id: tenantId, name: f.name.trim() || null, phone: f.phone.trim() || null, email: email.trim() || null, company_id: companyId,
+        job_title: jobTitle.trim() || null, city: city.trim() || null, owner_id: owner || null, notes: f.note.trim() || null,
+        source_channel: source, acquisition_basis: source === "manual" ? "unknown" : "declared", marketing_consent: consent,
+      } as never);
+      await logCallAndFollowUp(c.id, f.name.trim() || phoneLabel(c.phone) || "cliente");
+      if (linkDealId) await api.updateDeal(linkDealId, { contact_id: c.id, company_id: c.company_id ?? undefined } as never);
+      notify(`Cliente salvo${followUp !== "none" ? " · retorno agendado" : ""}`);
+      if (mode === "next") {
+        setF(blank); setEmail(""); setJobTitle(""); setCity(""); setDups([]); setFollowUp("none"); setBusy(false); setSavedCount((n) => n + 1); refresh();
+      } else onCreated(c.id, mode === "open" && !linkDealId);
+    } catch (e) { notify(errorText(e)); setBusy(false); }
+  }
+
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void save("close"); }
+    else if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT" && (e.target as HTMLInputElement).type !== "checkbox") { e.preventDefault(); void save("close"); }
+  };
+  const dup = dups[0];
+
   return (
-    <Modal open onClose={onClose} title="Novo contato" width={600}
+    <Modal open onClose={onClose} title="Novo cliente" width={560}
       footer={<>
-        <button type="button" className="crm-btn ghost" onClick={onClose}>Cancelar</button>
-        {!linkDealId && <button type="button" className="crm-btn ghost" onClick={() => save(true)} disabled={busy}>Salvar e abrir</button>}
-        <button type="button" className="crm-btn primary" onClick={() => save(false)} disabled={busy}>{busy ? "Salvando…" : "Salvar"}</button>
+        <span className="crm-muted small grow">Enter salva · {savedCount > 0 ? `${savedCount} salvo(s) nesta sessão` : "Ctrl+Enter salva de dentro da observação"}</span>
+        <button type="button" className="crm-btn ghost" onClick={() => save("next")} disabled={busy}>Salvar e novo</button>
+        {!linkDealId && <button type="button" className="crm-btn ghost" onClick={() => save("open")} disabled={busy}>Salvar e abrir</button>}
+        <button type="button" className="crm-btn primary" onClick={() => save("close")} disabled={busy}>{busy ? "Salvando…" : "Salvar"}</button>
       </>}>
-      <div className="crm-form-grid">
-        <Field label="Nome" span={2}><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome completo" /></Field>
-        <Field label="Telefone / WhatsApp" hint="Com DDD. Ex.: (11) 98888-7777 — o DDI 55 é adicionado automaticamente."><input value={phone} onChange={(e) => setPhone(e.target.value)} onBlur={checkDup} inputMode="tel" /></Field>
-        <Field label="E-mail"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} onBlur={checkDup} /></Field>
-        {dups.length > 0 && (
-          <div className="crm-callout warn span-2">
-            <span>Possível duplicado: </span>
-            {dups.map((d) => <button type="button" key={d.id} className="crm-link" onClick={() => { onClose(); openContact(d.id); }}>{d.name ?? phoneLabel(d.phone)} ({d.match_reason === "phone" ? "mesmo telefone" : "mesmo e-mail"})</button>)}
+      <div className="crm-quick" onKeyDown={onKey}>
+        <div className="crm-form-grid">
+          <Field label="Telefone / WhatsApp"><input ref={phoneRef} autoFocus value={f.phone} onChange={(e) => { const v = e.target.value; setF((x) => ({ ...x, phone: v })); }} inputMode="tel" placeholder="(11) 98888-7777" autoComplete="off" /></Field>
+          <Field label="Nome"><input value={f.name} onChange={(e) => { const v = e.target.value; setF((x) => ({ ...x, name: v })); }} placeholder="Nome do cliente" autoComplete="off" /></Field>
+          <Field label="Empresa" span={2} hint={f.company.trim() && !companies.some((c) => c.name.trim().toLowerCase() === f.company.trim().toLowerCase()) ? "Empresa nova — será cadastrada ao salvar." : undefined}>
+            <input value={f.company} onChange={(e) => { const v = e.target.value; setF((x) => ({ ...x, company: v })); }} list="crm-quick-companies" placeholder="Digite ou escolha (opcional)" autoComplete="off" />
+            <datalist id="crm-quick-companies">{companies.map((c) => <option key={c.id} value={c.name} />)}</datalist>
+          </Field>
+        </div>
+        {dup && (
+          <div className="crm-callout warn">
+            <span><strong>{dup.name ?? phoneLabel(dup.phone)}</strong> já está cadastrado ({dup.match_reason}).</span>
+            <button type="button" className="crm-btn primary xs" onClick={() => addToExisting(dup)} disabled={busy}>Registrar {isCall ? "ligação" : "observação"} nele</button>
+            <button type="button" className="crm-link small" onClick={() => { onClose(); openContact(dup.id); }}>Abrir cadastro</button>
           </div>
         )}
-        <Field label="Empresa">
-          <select value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
-            <option value="">—</option>
-            {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Cargo"><input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} /></Field>
-        <Field label="Cidade"><input value={city} onChange={(e) => setCity(e.target.value)} /></Field>
-        <Field label="Origem"><select value={source} onChange={(e) => setSource(e.target.value)}>{sourceOptions.map((s) => <option key={s} value={s}>{channelLabels[s] ?? s}</option>)}</select></Field>
-        <Field label="Responsável">
-          <select value={owner} onChange={(e) => setOwner(e.target.value)}>
-            <option value="">Sem responsável</option>
-            {members.map((m) => <option key={m.user_id} value={m.user_id}>{emailName(m.email)}</option>)}
-          </select>
-        </Field>
-        <Field label="Consentimento de marketing (LGPD)">
-          <select value={consent} onChange={(e) => setConsent(e.target.value as typeof consent)}>
-            <option value="unknown">Não informado</option><option value="granted">Autorizou comunicações</option><option value="denied">Não autorizou</option>
-          </select>
-        </Field>
+        <Field label="Observação"><textarea rows={3} value={f.note} onChange={(e) => { const v = e.target.value; setF((x) => ({ ...x, note: v })); }} placeholder="O que foi conversado, interesse, próximo passo…" /></Field>
+        <div className="crm-quick-row">
+          <label className="crm-check"><input type="checkbox" checked={isCall} onChange={(e) => setIsCall(e.target.checked)} /> Registrar como ligação no histórico</label>
+          <div className="crm-quick-follow">
+            <span>Retornar:</span>
+            {([["none", "Não"], ["1", "Amanhã"], ["3", "3 dias"], ["7", "1 semana"]] as const).map(([v, l]) => (
+              <button type="button" key={v} className={`crm-chip${followUp === v ? " on" : ""}`} onClick={() => setFollowUp(v)}>{l}</button>
+            ))}
+          </div>
+        </div>
+        <button type="button" className="crm-link small self-start" onClick={() => setMore((m) => !m)}>{more ? "Menos detalhes" : "+ Mais detalhes (e-mail, cargo, cidade, responsável, origem)"}</button>
+        {more && (
+          <div className="crm-form-grid">
+            <Field label="E-mail"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+            <Field label="Cargo"><input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} /></Field>
+            <Field label="Cidade"><input value={city} onChange={(e) => setCity(e.target.value)} /></Field>
+            <Field label="Origem"><select value={source} onChange={(e) => setSource(e.target.value)}>{["phone", ...sourceOptions].map((s) => <option key={s} value={s}>{channelLabels[s] ?? s}</option>)}</select></Field>
+            <Field label="Responsável">
+              <select value={owner} onChange={(e) => setOwner(e.target.value)}>
+                <option value="">Sem responsável</option>
+                {members.map((m) => <option key={m.user_id} value={m.user_id}>{emailName(m.email)}{m.user_id === userId ? " (eu)" : ""}</option>)}
+              </select>
+            </Field>
+            <Field label="Consentimento de marketing (LGPD)">
+              <select value={consent} onChange={(e) => setConsent(e.target.value as typeof consent)}>
+                <option value="unknown">Não informado</option><option value="granted">Autorizou comunicações</option><option value="denied">Não autorizou</option>
+              </select>
+            </Field>
+          </div>
+        )}
       </div>
     </Modal>
   );
@@ -558,7 +622,7 @@ export function CompanyModal({ company, onClose, onSaved }: { company?: Company;
     <Modal open onClose={onClose} title={company ? "Editar empresa" : "Nova empresa"} width={600}
       footer={<><button type="button" className="crm-btn ghost" onClick={onClose}>Cancelar</button><button type="button" className="crm-btn primary" onClick={save} disabled={busy}>Salvar</button></>}>
       <div className="crm-form-grid">
-        <Field label="Nome" span={2}><input value={f.name ?? ""} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
+        <Field label="Nome" span={2}><input value={f.name ?? ""} onChange={(e) => { const v = e.target.value; setF((x) => ({ ...x, name: v })); }} /></Field>
         <Field label="CNPJ / documento"><input value={f.document ?? ""} onChange={(e) => set("document", e.target.value)} /></Field>
         <Field label="Site / domínio"><input value={f.domain ?? ""} onChange={(e) => set("domain", e.target.value)} /></Field>
         <Field label="Segmento"><input value={f.segment ?? ""} onChange={(e) => set("segment", e.target.value)} placeholder="Ex.: Odontologia" /></Field>

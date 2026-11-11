@@ -227,7 +227,7 @@ export function ContactPage({ contactId }: { contactId: string }) {
       {dups.length > 0 && access.delete && (
         <div className="crm-callout warn">
           <GitMerge size={16} /> Possível cadastro duplicado:
-          {dups.map((d) => <button type="button" key={d.id} className="crm-link" onClick={() => setMerge({ id: d.id, name: d.name })}>{d.name ?? phoneLabel(d.phone)} ({d.match_reason === "phone" ? "mesmo telefone" : "mesmo e-mail"})</button>)}
+          {dups.map((d) => <button type="button" key={d.id} className="crm-link" onClick={() => setMerge({ id: d.id, name: d.name })}>{d.name ?? phoneLabel(d.phone)} ({d.match_reason})</button>)}
         </div>
       )}
 

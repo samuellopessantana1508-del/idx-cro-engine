@@ -39,7 +39,8 @@ export function Modal({ open, onClose, title, children, footer, width = 520 }: {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
-    setTimeout(() => ref.current?.querySelector<HTMLElement>("input, select, textarea")?.focus(), 30);
+    // foca o primeiro campo, mas nunca rouba o foco de quem já clicou/digitou em outro campo do modal
+    if (!ref.current?.contains(document.activeElement)) ref.current?.querySelector<HTMLElement>("input, select, textarea")?.focus();
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
   if (!open) return null;

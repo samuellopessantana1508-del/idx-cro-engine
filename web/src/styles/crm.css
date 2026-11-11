@@ -706,3 +706,13 @@ kbd {
 :root[data-theme="dark"] .crm-col { background: #1a1a1a; }
 :root[data-theme="dark"] .crm-segmented { background: #1f1f1f; }
 :root[data-theme="dark"] .crm-stagebar > button { background: #262626; }
+
+/* cadastro rápido de cliente (ligações) */
+.crm-quick { display: grid; gap: 12px; }
+.crm-quick-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.crm-quick-follow { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+.crm-quick-follow .crm-chip { height: 26px; font-size: 0.76rem; }
+@media (max-width: 720px) {
+  .crm-quick .crm-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .crm-commandbar .crm-btn.ghost { padding: 0 10px; }
+}

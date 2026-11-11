@@ -121,6 +121,7 @@ export const channelLabels: Record<string, string> = {
   outbound: "Prospecção",
   import: "Importação",
   manual: "Cadastro manual",
+  phone: "Ligação",
   organic: "Orgânico",
   instagram: "Instagram",
   site: "Site",
