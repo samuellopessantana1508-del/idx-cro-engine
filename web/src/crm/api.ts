@@ -2,7 +2,7 @@ import { supabase } from "../lib/supabaseClient";
 import type {
   AutomationRule, AutomationRun, Campaign, CampaignResult, Company, Contact, CrmAccess, CrmNotification, CrmSettings, CustomField,
   Deal, DealItem, KpiResponse, LossReason, Member, Offer, Onboarding, Order, Pipeline, Quote, RfvCustomer, RfvDashboard, Sample, Stage, Task,
-  TimelineItem, DialLead, DialOutcome, DialOverview,
+  TimelineItem, DialLead, DialOutcome, DialOverview, Cadence, CadenceEnrollment, CadenceStep, Goal, GoalProgress, AssistantPlan, AssistantResult,
 } from "./types";
 
 export function db() {
@@ -542,8 +542,8 @@ export async function dialMarkCalled(id: string) {
 export async function dialReset(id: string) {
   return check(await db().rpc("crm_dial_reset", { p_id: id })) as DialLead;
 }
-export async function dialSetOutcome(id: string, outcome: DialOutcome | null, notes?: string) {
-  return check(await db().rpc("crm_dial_set_outcome", { p_id: id, p_outcome: outcome, p_notes: notes ?? null })) as DialLead;
+export async function dialSetOutcome(id: string, outcome: DialOutcome | null, notes?: string, dueAt?: string | null, objection?: string | null) {
+  return check(await db().rpc("crm_dial_set_outcome", { p_id: id, p_outcome: outcome, p_notes: notes ?? null, p_due_at: dueAt ?? null, p_objection: objection ?? null })) as DialLead;
 }
 export async function dialImport(tenantId: string, list: string, rows: Record<string, string>[], source = "import") {
   return check(await db().rpc("crm_dial_import", { p_tenant_id: tenantId, p_list: list, p_rows: rows, p_source: source })) as {
@@ -562,4 +562,67 @@ export async function dialExport(tenantId: string, f: { list?: string | null; uf
     if (rows.length < 1000) break;
   }
   return all;
+}
+
+// ---------- cadências ----------
+export async function loadCadences(tenantId: string) {
+  return check(await db().rpc("crm_cadence_overview", { p_tenant_id: tenantId })) as Cadence[];
+}
+export async function saveCadence(tenantId: string, c: { id?: string; name: string; description?: string | null; active?: boolean; stop_on_reply?: boolean; stop_on_deal_close?: boolean }, steps: CadenceStep[], removedStepIds: string[]) {
+  const { id, ...fields } = c;
+  const row = id
+    ? check(await db().from("crm_cadences").update(fields).eq("id", id).select().single()) as { id: string }
+    : check(await db().from("crm_cadences").insert({ ...fields, tenant_id: tenantId }).select().single()) as { id: string };
+  if (removedStepIds.length) check(await db().from("crm_cadence_steps").delete().in("id", removedStepIds));
+  for (const [i, s] of steps.entries()) {
+    const payload = { position: i, wait_days: s.wait_days, channel: s.channel, title: s.title || null, template: s.template || null };
+    if (s.id) check(await db().from("crm_cadence_steps").update(payload).eq("id", s.id));
+    else check(await db().from("crm_cadence_steps").insert({ ...payload, tenant_id: tenantId, cadence_id: row.id }));
+  }
+  return row.id;
+}
+export async function setCadenceActive(id: string, active: boolean) {
+  check(await db().from("crm_cadences").update({ active }).eq("id", id));
+}
+export async function archiveCadence(id: string) {
+  check(await db().from("crm_cadences").update({ archived_at: new Date().toISOString(), active: false }).eq("id", id));
+}
+export async function enrollInCadence(cadenceId: string, contactIds: string[], dealId?: string | null) {
+  return check(await db().rpc("crm_cadence_enroll", { p_cadence_id: cadenceId, p_contact_ids: contactIds, p_deal_id: dealId ?? null })) as { enrolled: number; skipped: number };
+}
+export async function stopEnrollment(id: string) {
+  check(await db().rpc("crm_cadence_stop", { p_enrollment_id: id, p_reason: "manual" }));
+}
+export async function loadEnrollments(tenantId: string, f: { cadenceId?: string | null; contactId?: string | null }) {
+  return check(await db().rpc("crm_cadence_enrollments_list", { p_tenant_id: tenantId, p_cadence_id: f.cadenceId ?? null, p_contact_id: f.contactId ?? null })) as CadenceEnrollment[];
+}
+
+// ---------- metas ----------
+export async function loadGoalsProgress(tenantId: string) {
+  return check(await db().rpc("crm_goals_progress", { p_tenant_id: tenantId })) as GoalProgress[];
+}
+export async function saveGoal(input: Partial<Goal> & { tenant_id: string }) {
+  const { id, ...patch } = input;
+  if (id) return check(await db().from("crm_goals").update(patch).eq("id", id).select().single()) as Goal;
+  return check(await db().from("crm_goals").insert(patch).select().single()) as Goal;
+}
+export async function archiveGoal(id: string) {
+  check(await db().from("crm_goals").update({ archived_at: new Date().toISOString(), active: false }).eq("id", id));
+}
+
+// ---------- assistente (voz/texto → CRM) ----------
+export async function askAssistant(tenantId: string, text: string, source: "voice" | "text", context: { dial_lead_id?: string; contact_id?: string } = {}) {
+  const { data } = await db().auth.getSession();
+  const token = data.session?.access_token;
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/crm-assistant`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ tenant_id: tenantId, text, source, context }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `Falha ${res.status} ao interpretar`);
+  return json as AssistantResult;
+}
+export async function applyAssistant(tenantId: string, plan: AssistantPlan) {
+  return check(await db().rpc("crm_assistant_apply", { p_tenant_id: tenantId, p_plan: plan })) as { contact_id: string | null; deal_id: string | null; task_id: string | null };
 }

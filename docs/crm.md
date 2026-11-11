@@ -47,3 +47,30 @@ Os testes de integração assumem banco recém-criado: rode `reset-db.sh` + seed
 3. Agendar `select public.crm_run_scheduled_all();` (ex.: a cada hora via `pg_cron` ou n8n) para negociações paradas, tarefas atrasadas e recálculo do RFV com a passagem do tempo.
 4. Build do painel (`cd web && npm run build`) e deploy como hoje.
 5. Validar com um usuário de cada papel e duas empresas antes de liberar.
+
+## Cadências, metas, assistente por voz e extensão do WhatsApp Web (nov/2026)
+
+**Cadências** (`CRM → Cadências`): sequência de passos (ligar, WhatsApp, e-mail, tarefa) com "esperar N dias".
+Cada passo vira uma tarefa no dia certo (9h, fuso da empresa). WhatsApp **nunca é enviado automaticamente**:
+a tarefa traz o texto pronto (`{primeiro_nome}`, `{nome}`, `{empresa}`, `{cidade}`) e o botão "Abrir WhatsApp"
+abre a conversa para o vendedor conferir e enviar. A inscrição para sozinha quando o contato responde no
+WhatsApp (trigger em `whatsapp_messages`), quando a negociação é ganha/perdida, ou se a tarefa for cancelada.
+Gestor cria/edita; vendedor inscreve contatos. Tabelas: `crm_cadences`, `crm_cadence_steps`, `crm_cadence_enrollments`.
+
+**Metas** (`Inteligência → Metas`): receita ganha, vendas, reuniões marcadas, ligações e negociações abertas,
+por empresa ou vendedor, semanal/mensal/trimestral. `crm_goals_progress` devolve realizado, % e ritmo esperado.
+Ligações e reuniões vêm de `crm_activity_events` (discador + tarefas de ligação/reunião), sem contagem dupla.
+
+**Assistente (voz/texto)**: botão "Registrar" (tecla V), "Contar como foi" no Discador e "Registrar" no contato.
+O ditado usa o reconhecimento de voz do próprio navegador (pt-BR). A função `crm-assistant` monta um plano
+(IA configurada em `AI_PROVIDER`/`AI_API_KEY`; sem IA, regras em `_shared/assistant-rules.ts`) e **não grava**;
+o usuário confere e `crm_assistant_apply` grava com RLS. Nunca marca venda ganha/perdida e reaproveita contato
+(telefone) e negociação aberta.
+
+**Extensão do WhatsApp Web** (`extension/whatsapp-crm`, empacotada no build em `/extensao/idx-crm-whatsapp.zip`):
+painel ao lado da conversa com cliente, negociação (etapas em andamento), tarefas, histórico, "Registrar com IA",
+retorno rápido e cadência. Login com o usuário do painel (sessão no `chrome.storage`), só chave pública;
+o build recusa chave service role/secret. Instalação: Configurações do CRM → Extensão WhatsApp.
+
+Testes: `tests/crm/cadences-goals.test.mjs`, `tests/crm/assistant-fn.test.mjs`, `tests/fn/assistant-rules.test.ts` (Deno),
+`tests/crm/revops-ui.mjs`, `tests/ext/extension-ui.mjs`.

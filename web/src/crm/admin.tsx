@@ -3,6 +3,7 @@ import {
   AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Download, FileSpreadsheet, Lock, Play, Plus, Trash2, Upload, XCircle, Zap,
 } from "lucide-react";
 import * as api from "./api";
+import { ExtensionCard } from "./extension-card";
 import { useCrm } from "./context";
 import { brl, channelLabel, channelLabels, dateTime, emailName, errorText, lifecycleLabels, relative, roleLabels, segmentInfo, segmentOrder, taskTypeLabels } from "./format";
 import type { AutomationRule, AutomationRun, CustomField, Pipeline, RfvSegment, ScoringRule, Stage, TaskType } from "./types";
@@ -210,7 +211,7 @@ function RuleModal({ rule, onClose, onSaved }: { rule: Partial<AutomationRule>; 
 // ---------------------------------------------------------------------------
 // Configurações
 // ---------------------------------------------------------------------------
-type STab = "pipelines" | "loss" | "team" | "general" | "qualification" | "fields";
+type STab = "pipelines" | "loss" | "team" | "general" | "qualification" | "fields" | "extension";
 
 export function SettingsView() {
   const { access } = useCrm();
@@ -220,7 +221,7 @@ export function SettingsView() {
     <div className="crm-page">
       <Tabs value={tab} onChange={setTab} tabs={[
         { value: "pipelines", label: "Funis e etapas" }, { value: "loss", label: "Motivos de perda" }, { value: "team", label: "Equipe e permissões" },
-        { value: "general", label: "Geral" }, { value: "qualification", label: "Qualificação (ICP e score)" }, { value: "fields", label: "Campos personalizados" },
+        { value: "general", label: "Geral" }, { value: "qualification", label: "Qualificação (ICP e score)" }, { value: "fields", label: "Campos personalizados" }, { value: "extension", label: "Extensão WhatsApp" },
       ]} />
       {tab === "pipelines" && <PipelinesSettings />}
       {tab === "loss" && <LossReasonsSettings />}
@@ -228,6 +229,7 @@ export function SettingsView() {
       {tab === "general" && <GeneralSettings />}
       {tab === "qualification" && <QualificationSettings />}
       {tab === "fields" && <FieldsSettings />}
+      {tab === "extension" && <ExtensionCard />}
     </div>
   );
 }

@@ -6,6 +6,7 @@
   "scripts": {
     "test:realtime": "node --test ../tests/whatsapp-realtime.test.mjs",
     "dev": "vite --host 127.0.0.1",
+    "prebuild": "node ../scripts/build-extension.mjs",
     "build": "tsc -b && vite build",
     "postbuild": "node ../scripts/create-spa-404.mjs",
     "preview": "vite preview --host 127.0.0.1",

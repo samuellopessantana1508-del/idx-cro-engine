@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Download, MoreVertical, Phone, PhoneCall, RotateCcw, Search, Upload, X } from "lucide-react";
+import { Check, Download, Mic, MoreVertical, Phone, PhoneCall, RotateCcw, Search, Upload, X } from "lucide-react";
 import * as api from "./api";
 import { useCrm } from "./context";
 import { downloadCsv, parseCsv } from "./csv";
-import { errorText, phoneLabel, relative } from "./format";
+import { dateTime, errorText, fromLocalInput, phoneLabel, relative } from "./format";
 import type { DialLead, DialOutcome, DialOverview } from "./types";
 import { Empty, Field, Modal, Skeleton } from "./ui";
 
@@ -20,7 +20,7 @@ const outcomes: { v: DialOutcome; label: string; tone: string }[] = [
 const outcomeLabel = Object.fromEntries(outcomes.map((o) => [o.v, o.label])) as Record<DialOutcome, string>;
 
 export function DialerView() {
-  const { tenantId, access, refreshKey, notify, openContact } = useCrm();
+  const { tenantId, access, refreshKey, notify, openContact, openAssistant } = useCrm();
   const [ov, setOv] = useState<DialOverview | null>(null);
   const [list, setList] = useState<string | null>(() => { try { return localStorage.getItem("crm.dial.list"); } catch { return null; } });
   const [tab, setTab] = useState<"pending" | "called">("pending");
@@ -82,14 +82,14 @@ export function DialerView() {
     api.dialMarkCalled(lead.id).then(patchRow).catch((e) => { patchRow(lead); notify(`Não foi possível marcar: ${errorText(e)}`); });
   }
 
-  async function setOutcome(lead: DialLead, outcome: DialOutcome | null, notes?: string) {
+  async function setOutcome(lead: DialLead, outcome: DialOutcome | null, notes?: string, dueAt?: string | null, objection?: string | null) {
     const before = lead;
     patchRow({ ...lead, outcome });
     try {
-      const r = await api.dialSetOutcome(lead.id, outcome, notes);
+      const r = await api.dialSetOutcome(lead.id, outcome, notes, dueAt, objection);
       patchRow(r);
-      if (outcome === "meeting") notify("Reunião registrada · contato e negociação criados no CRM");
-      else if (outcome === "callback") notify("Retorno agendado para amanhã às 9h");
+      if (outcome === "meeting") notify(`Reunião registrada${dueAt ? ` para ${dateTime(dueAt)}` : ""} · contato e negociação criados no CRM`);
+      else if (outcome === "callback") notify(`Retorno agendado para ${dueAt ? dateTime(dueAt) : "amanhã às 9h"}`);
       loadOverview();
     } catch (e) { patchRow(before); notify(errorText(e)); }
   }
@@ -169,7 +169,7 @@ export function DialerView() {
                 <div className="dial-info">
                   <strong>{r.name}</strong>
                   <small>{[r.city, r.uf].filter(Boolean).join(" – ")}{r.district ? ` · ${r.district}` : ""}</small>
-                  {done && <small className="dial-done-label"><Check size={12} /> Ligado {r.called_at ? relative(r.called_at) : ""}{r.call_count > 1 ? ` · ${r.call_count}x` : ""}{r.outcome ? ` · ${outcomeLabel[r.outcome]}` : ""}</small>}
+                  {done && <small className="dial-done-label"><Check size={12} /> Ligado {r.called_at ? relative(r.called_at) : ""}{r.call_count > 1 ? ` · ${r.call_count}x` : ""}{r.outcome ? ` · ${outcomeLabel[r.outcome]}` : ""}{r.objection ? ` · “${r.objection}”` : ""}</small>}
                 </div>
                 <a className="dial-call" href={`tel:+${r.phone}`} onClick={() => onCall(r)}>
                   <Phone size={17} /> {phoneLabel(r.phone)}
@@ -182,6 +182,9 @@ export function DialerView() {
                         {o.label}
                       </button>
                     ))}
+                    {access.write && <button type="button" className="dial-chip tone-voice" onClick={() => openAssistant({ dialLead: { id: r.id, name: r.name, phone: r.phone, contact_id: r.contact_id } },
+                      (res) => { patchRow({ ...r, outcome: res.plan.dial_outcome ?? r.outcome, contact_id: res.contact_id ?? r.contact_id, objection: res.plan.objection ?? r.objection }); loadOverview(); })}>
+                      <Mic size={13} /> Contar como foi</button>}
                     {r.contact_id && <button type="button" className="dial-chip tone-ink" onClick={() => openContact(r.contact_id!)}>Abrir no CRM</button>}
                     <button type="button" className="dial-chip ghost" onClick={() => undo(r)} title="Voltar para “Para ligar”"><RotateCcw size={12} /> Desfazer</button>
                   </div>
@@ -194,20 +197,27 @@ export function DialerView() {
       <div ref={sentinel} className="dial-sentinel">{loadingMore ? "Carregando mais…" : hasMore && rows?.length ? "" : rows?.length ? "Fim da lista" : ""}</div>
 
       {importing && <DialImportModal defaultList={list ?? "Farmácias"} onClose={() => setImporting(false)} onDone={(name) => { setImporting(false); setList(name); loadOverview(); loadPage(0).catch(() => undefined); }} />}
-      {noteFor && <OutcomeNoteModal lead={noteFor.lead} outcome={noteFor.outcome} onClose={() => setNoteFor(null)} onSave={(notes) => { const n = noteFor; setNoteFor(null); void setOutcome(n.lead, n.outcome, notes); }} />}
+      {noteFor && <OutcomeNoteModal lead={noteFor.lead} outcome={noteFor.outcome} onClose={() => setNoteFor(null)} onSave={(notes, due, objection) => { const n = noteFor; setNoteFor(null); void setOutcome(n.lead, n.outcome, notes, due, objection); }} />}
     </div>
   );
 }
 
-function OutcomeNoteModal({ lead, outcome, onClose, onSave }: { lead: DialLead; outcome: DialOutcome; onClose: () => void; onSave: (notes: string) => void }) {
+function OutcomeNoteModal({ lead, outcome, onClose, onSave }: { lead: DialLead; outcome: DialOutcome; onClose: () => void; onSave: (notes: string, dueAt: string | null, objection: string | null) => void }) {
   const [notes, setNotes] = useState("");
-  const what = outcome === "meeting" ? "Cria contato e negociação no CRM." : outcome === "callback" ? "Cria contato e uma tarefa para ligar amanhã às 9h." : "Cria o contato no CRM com o histórico da ligação.";
+  const [when, setWhen] = useState("");
+  const [objection, setObjection] = useState("");
+  const what = outcome === "meeting" ? "Cria contato e negociação no CRM (e a reunião na agenda, se informar o horário)." : outcome === "callback" ? "Cria contato e uma tarefa de retorno (amanhã às 9h, se não informar)." : "Cria o contato no CRM com o histórico da ligação.";
+  const save = () => onSave(notes, fromLocalInput(when), objection.trim() || null);
   return (
     <Modal open onClose={onClose} title={`${outcomeLabel[outcome]} — ${lead.name}`} width={460}
-      footer={<><button type="button" className="crm-btn ghost" onClick={onClose}>Cancelar</button><button type="button" className="crm-btn primary" onClick={() => onSave(notes)}>Salvar</button></>}>
+      footer={<><button type="button" className="crm-btn ghost" onClick={onClose}>Cancelar</button><button type="button" className="crm-btn primary" onClick={save}>Salvar</button></>}>
       <p className="crm-muted small">{what}</p>
-      <Field label="Observação (opcional)"><textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Ex.: falar com o dono, reunião quinta 10h" autoFocus
-        onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) onSave(notes); }} /></Field>
+      {(outcome === "meeting" || outcome === "callback") && (
+        <Field label={outcome === "meeting" ? "Data e hora da reunião" : "Quando retornar"}><input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} /></Field>
+      )}
+      <Field label="Observação (opcional)"><textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Ex.: falar com o dono" autoFocus
+        onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) save(); }} /></Field>
+      <Field label="Objeção (opcional)"><input value={objection} onChange={(e) => setObjection(e.target.value)} placeholder="Ex.: achou caro, já tem fornecedor" /></Field>
     </Modal>
   );
 }

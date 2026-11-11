@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  ArrowDownUp, ArrowLeft, Building2, Download, ExternalLink, GitMerge, Mail, MapPin, MessageCircle, Pencil, Phone, Plus, Search, ShieldCheck, Tag, Upload, Users, X,
+  ArrowDownUp, ArrowLeft, Building2, Download, ExternalLink, GitMerge, Mail, MapPin, MessageCircle, Pencil, Phone, Plus, Search, ShieldCheck, Tag, Upload, Users, X, Mic,
 } from "lucide-react";
 import * as api from "./api";
+import { ContactCadences } from "./cadences";
 import { useCrm } from "./context";
 import {
   basisLabels, brl, channelLabel, dateTime, emailName, errorText, lifecycleLabels, phoneLabel, relative, segmentInfo, shortDate, waLink,
@@ -154,7 +155,7 @@ export function ContactsView() {
 type ContactTab = "timeline" | "deals" | "whatsapp" | "tasks" | "purchases" | "ai" | "relationship";
 
 export function ContactPage({ contactId }: { contactId: string }) {
-  const { tenantId, access, members, refreshKey, notify, refresh, navigate, quickCreate, openDeal, memberLabel } = useCrm();
+  const { tenantId, access, members, refreshKey, notify, refresh, navigate, quickCreate, openDeal, memberLabel, openAssistant } = useCrm();
   const [c, setC] = useState<Contact | null | undefined>(undefined);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [tab, setTab] = useState<ContactTab>("timeline");
@@ -216,9 +217,11 @@ export function ContactPage({ contactId }: { contactId: string }) {
             )}
             {c.do_not_contact && <Pill tone="red">Não contatar</Pill>}
           </div>
+          <ContactCadences contactId={c.id} contactName={c.name} />
         </div>
         <div className="crm-record-actions">
           {wa && <a className="crm-btn ghost sm" href={wa} target="_blank" rel="noreferrer"><MessageCircle size={15} /> Abrir WhatsApp</a>}
+          {access.write && <button type="button" className="crm-btn ghost sm" onClick={() => openAssistant({ contactId: c.id, contactName: c.name })}><Mic size={15} /> Registrar</button>}
           {access.write && <button type="button" className="crm-btn ghost sm" onClick={() => quickCreate("task", { contact_id: c.id, owner_id: c.owner_id })}>Agendar atividade</button>}
           {access.write && <button type="button" className="crm-btn primary sm" onClick={() => quickCreate("deal", { contact: { id: c.id, name: c.name, phone: c.phone, company_id: c.company_id } })}><Plus size={14} /> Negociação</button>}
         </div>

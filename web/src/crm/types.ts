@@ -202,6 +202,7 @@ export type Task = {
   outcome: string | null;
   completed_at: string | null;
   automation_rule_id: string | null;
+  cadence_enrollment_id?: string | null;
   created_at: string;
   contact?: { name: string | null; phone: string | null } | null;
   deal?: { title: string } | null;
@@ -453,13 +454,15 @@ export type CrmView =
   | { name: "automations" }
   | { name: "settings" }
   | { name: "import" }
-  | { name: "dialer" };
+  | { name: "dialer" }
+  | { name: "cadences" }
+  | { name: "goals" };
 
 export type DialOutcome = "talked" | "meeting" | "callback" | "no_answer" | "not_interested" | "invalid";
 export type DialLead = {
   id: string; tenant_id: string; list_name: string; name: string; phone: string; phone2: string | null;
   city: string | null; uf: string | null; district: string | null; cnpj: string | null; source: string;
-  status: "pending" | "called"; outcome: DialOutcome | null; called_at: string | null; called_by: string | null;
+  status: "pending" | "called"; outcome: DialOutcome | null; called_at: string | null; called_by: string | null; objection?: string | null;
   call_count: number; notes: string | null; contact_id: string | null; created_at: string;
 };
 export type DialOverview = {
@@ -467,3 +470,45 @@ export type DialOverview = {
   total: number; pending: number; called: number; called_today: number; meetings: number; callbacks: number;
   ufs: { uf: string; total: number; pending: number }[];
 };
+
+// ---------- cadências ----------
+export type CadenceChannel = "call" | "whatsapp" | "email" | "task";
+export type CadenceStep = { id?: string; position: number; wait_days: number; channel: CadenceChannel; title: string | null; template: string | null };
+export type Cadence = {
+  id: string; name: string; description: string | null; active: boolean; stop_on_reply: boolean; stop_on_deal_close: boolean;
+  steps: CadenceStep[]; active_count: number; completed_count: number; replied_count: number; won_count: number;
+};
+export type CadenceEnrollment = {
+  id: string; cadence_id: string; cadence_name: string; contact_id: string; contact_name: string | null; contact_phone: string | null;
+  status: "active" | "completed" | "stopped"; stop_reason: string | null; steps_done: number; steps_total: number;
+  current_step: { channel: CadenceChannel; title: string | null } | null; next_due_at: string | null; owner_id: string | null;
+  enrolled_at: string; finished_at: string | null;
+};
+
+// ---------- metas ----------
+export type GoalMetric = "won_value" | "won_count" | "deals_created" | "meetings" | "calls";
+export type Goal = {
+  id: string; tenant_id: string; name: string; metric: GoalMetric; scope: "company" | "user"; user_id: string | null;
+  period: "week" | "month" | "quarter"; target: number; pipeline_id: string | null; active: boolean;
+};
+export type GoalProgress = Omit<Goal, "tenant_id" | "active"> & {
+  actual: number; pct: number; elapsed_pct: number; period_start: string; period_end: string; by_user: { user_id: string | null; actual: number }[];
+};
+
+// ---------- assistente ----------
+export type AssistantPlan = {
+  source: "voice" | "text"; transcript: string;
+  dial_lead_id: string | null; dial_outcome: DialOutcome | null;
+  contact_id: string | null;
+  contact: { name?: string; phone?: string; company?: string; email?: string; city?: string; uf?: string };
+  deal: { action: "create" | "none"; title?: string | null; value?: number | null; stage_id?: string | null; stage_name?: string | null };
+  task: { type: TaskType; title: string; due_local: string | null; due_at: string | null; notes?: string } | null;
+  objection: string | null; note: string | null; summary: string | null;
+};
+export type AssistantMatch = {
+  id: string; name: string | null; phone: string | null; company: { id: string; name: string } | null;
+  deals: { id: string; title: string; value: number; status: string; stage_name: string }[];
+  tasks: { id: string; title: string; due_at: string | null }[];
+  cadences: { id: string; name: string }[];
+} | null;
+export type AssistantResult = { plan: AssistantPlan; match: AssistantMatch; engine: "ai" | "rules"; ai_error: string | null; warnings: string[]; timezone: string };

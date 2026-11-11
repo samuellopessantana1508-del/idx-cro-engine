@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react";
-import type { CrmAccess, CrmSettings, CrmView, LossReason, Member, Offer, Pipeline, Stage } from "./types";
+import type { AssistantContext } from "./assistant";
+import type { AssistantPlan, CrmAccess, CrmSettings, CrmView, LossReason, Member, Offer, Pipeline, Stage } from "./types";
 
 export type QuickCreateKind = "deal" | "contact" | "task" | "company";
 
@@ -23,6 +24,7 @@ export type CrmCtx = {
   openContact: (id: string) => void;
   quickCreate: (kind: QuickCreateKind, defaults?: Record<string, unknown>) => void;
   memberLabel: (userId: string | null | undefined) => string;
+  openAssistant: (context?: AssistantContext, onApplied?: (r: { plan: AssistantPlan; contact_id: string | null; deal_id: string | null; task_id: string | null }) => void) => void;
 };
 
 export const CrmContext = createContext<CrmCtx | null>(null);

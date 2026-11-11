@@ -46,6 +46,7 @@ import {
   Workflow,
   Wrench,
   Briefcase,
+  Flag, Repeat,
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
 import { CrmWorkspace, crmViewTitles } from "./crm/workspace";
@@ -2850,6 +2851,8 @@ export function App() {
               <NavButton icon={<KanbanSquare />} label="Negociações" active={crmIs("deals")} onClick={() => goToCrm({ name: "deals" })} />
               <NavButton icon={<ContactIcon />} label="Contatos" active={crmIs("contacts", "contact")} onClick={() => goToCrm({ name: "contacts" })} />
               <NavButton icon={<ListTodo />} label="Tarefas e agenda" active={crmIs("tasks")} onClick={() => goToCrm({ name: "tasks" })} />
+              <NavButton icon={<Repeat />} label="Cadências" active={crmIs("cadences")} onClick={() => goToCrm({ name: "cadences" })} />
+              <NavButton icon={<Flag />} label="Metas" active={crmIs("goals")} onClick={() => goToCrm({ name: "goals" })} />
               <div className="nav-group-label">Atendimento</div>
               <NavButton icon={<PhoneCall />} label="Atender" active={active === "sales"} onClick={() => goToSection("sales")} />
               <NavButton icon={<MessageCircle />} label="Atendimentos" active={active === "leads"} onClick={() => goToSection("leads")} />
@@ -2866,6 +2869,7 @@ export function App() {
             <NavButton icon={<ContactIcon />} label="Contatos" active={crmIs("contacts", "contact")} onClick={() => goToCrm({ name: "contacts" })} />
             <NavButton icon={<Building2 />} label="Empresas" active={crmIs("companies")} onClick={() => goToCrm({ name: "companies" })} />
             <NavButton icon={<ListTodo />} label="Tarefas e agenda" active={crmIs("tasks")} onClick={() => goToCrm({ name: "tasks" })} />
+            <NavButton icon={<Repeat />} label="Cadências" active={crmIs("cadences")} onClick={() => goToCrm({ name: "cadences" })} />
             <NavButton icon={<Package />} label="Produtos e serviços" active={crmIs("products")} onClick={() => goToCrm({ name: "products" })} />
             <div className="nav-group-label">Relacionamento</div>
             <NavButton icon={<MessageCircle />} label="WhatsApp" badge={waUnreadTotal} active={active === "whatsapp"} onClick={() => { goToSection("whatsapp"); loadWaInstances(); loadWaKeys(); }} />
@@ -2880,6 +2884,7 @@ export function App() {
             <NavButton icon={<Zap />} label="Google Ads" active={active === "google-ads"} onClick={() => goToSection("google-ads")} />
             <NavButton icon={<LayoutList />} label="Funil de leads rastreados" active={active === "crm"} onClick={() => goToSection("crm")} />
             <div className="nav-group-label">Inteligência</div>
+            <NavButton icon={<Flag />} label="Metas" active={crmIs("goals")} onClick={() => goToCrm({ name: "goals" })} />
             <NavButton icon={<TrendingUp />} label="Vendas IA" active={active === "ai-sales"} onClick={() => goToSection("ai-sales")} />
             <NavButton icon={<LineChart />} label="Indicadores" active={crmIs("reports")} onClick={() => goToCrm({ name: "reports" })} />
             <NavButton icon={<BarChart3 />} label="Inteligência financeira" active={active === "intelligence"} onClick={() => goToSection("intelligence")} />
@@ -5464,6 +5469,8 @@ export function App() {
         <section className="mobile-more-sheet" aria-label="Mais opções">
           <button type="button" onClick={() => goToCrm({ name: "contacts" })} className={crmIs("contacts", "contact") ? "active" : ""}><ContactIcon size={17} /> Contatos</button>
           <button type="button" onClick={() => goToCrm({ name: "tasks" })} className={crmIs("tasks") ? "active" : ""}><ListTodo size={17} /> Tarefas</button>
+          <button type="button" onClick={() => goToCrm({ name: "cadences" })} className={crmIs("cadences") ? "active" : ""}><Repeat size={17} /> Cadências</button>
+          <button type="button" onClick={() => goToCrm({ name: "goals" })} className={crmIs("goals") ? "active" : ""}><Flag size={17} /> Metas</button>
           <button type="button" onClick={() => goToSection("leads")} className={active === "leads" ? "active" : ""}><MessageCircle size={17} /> Atendimentos</button>
           <button type="button" onClick={logout}><LogOut size={17} /> Sair</button>
         </section>
@@ -5475,6 +5482,8 @@ export function App() {
           <button type="button" onClick={() => goToCrm({ name: "home" })} className={crmIs("home") ? "active" : ""}><Briefcase size={17} /> Visão comercial</button>
           <button type="button" onClick={() => goToCrm({ name: "contacts" })} className={crmIs("contacts", "contact") ? "active" : ""}><ContactIcon size={17} /> Contatos</button>
           <button type="button" onClick={() => goToCrm({ name: "tasks" })} className={crmIs("tasks") ? "active" : ""}><ListTodo size={17} /> Tarefas</button>
+          <button type="button" onClick={() => goToCrm({ name: "cadences" })} className={crmIs("cadences") ? "active" : ""}><Repeat size={17} /> Cadências</button>
+          <button type="button" onClick={() => goToCrm({ name: "goals" })} className={crmIs("goals") ? "active" : ""}><Flag size={17} /> Metas</button>
           <button type="button" onClick={() => goToCrm({ name: "rfv" })} className={crmIs("rfv") ? "active" : ""}><HeartPulse size={17} /> Clientes e RFV</button>
           <button type="button" onClick={() => goToCrm({ name: "reports" })} className={crmIs("reports") ? "active" : ""}><LineChart size={17} /> Indicadores</button>
           <button type="button" onClick={() => goToSection("links")} className={active === "links" ? "active" : ""}><Link2 size={17} /> Links</button>

@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><title>WhatsApp (simulado)</title>
+<style>body{margin:0;font-family:sans-serif} #app{height:100vh;background:#efeae2} #main header{background:#f0f2f5;padding:12px;display:flex;gap:8px}</style></head>
+<body><div id="app"><div id="main"><header><img alt=""><div><span dir="auto" title="" id="t"></span></div></header><div style="padding:20px">mensagens…</div></div></div>
+<script>
+const t=document.getElementById('t');
+window.openChat=(title)=>{t.setAttribute('title',title);t.textContent=title;};
+openChat(new URLSearchParams(location.search).get('chat')||'');
+</script></body></html>

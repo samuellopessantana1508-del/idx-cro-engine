@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "IDX CRM no WhatsApp Web",
+  "short_name": "IDX CRM",
+  "version": "1.0.0",
+  "description": "Mostra o cliente do CRM IDX ao lado da conversa no WhatsApp Web: negociação, tarefas, anotações e registro com IA. Não envia mensagens.",
+  "permissions": ["storage"],
+  "host_permissions": ["__SUPABASE_URL__/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["config.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" },
+  "action": { "default_title": "IDX CRM — abra o WhatsApp Web" }
+}

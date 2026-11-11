@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  Bot, CalendarClock, Check, CheckCircle2, CircleDollarSign, ClipboardList, Gift, MessageCircle, MessageSquare, Phone, Plus, RotateCcw,
+  Bot, CalendarClock, Check, CheckCircle2, CircleDollarSign, ClipboardList, Gift, MessageCircle, MessageSquare, Phone, Plus, Repeat, RotateCcw,
   Sparkles, StickyNote, Trophy, Undo2, Users, XCircle, Zap,
 } from "lucide-react";
 import * as api from "./api";
@@ -139,7 +139,9 @@ export function TaskRow({ task, onChanged, showLinks = true }: { task: Task; onC
           <strong>{task.title}</strong>
           {task.priority !== "normal" && task.priority !== "low" && <Pill tone={task.priority === "urgent" ? "red" : "orange"}>{priorityLabels[task.priority]}</Pill>}
           {task.automation_rule_id && <Pill tone="purple" title="Criada por automação"><Zap size={11} /></Pill>}
+          {task.cadence_enrollment_id && <Pill tone="blue" title="Passo de uma cadência"><Repeat size={11} /></Pill>}
         </div>
+        {task.task_type === "whatsapp" && task.description && <p className="crm-task-template">{task.description}</p>}
         <div className="crm-task-meta">
           {task.due_at && <span className={`due ${st}`}><CalendarClock size={12} /> {st === "overdue" ? `Atrasada · ${relative(task.due_at)}` : dateTime(task.due_at)}</span>}
           {showLinks && task.contact && <button type="button" className="crm-link" onClick={(e) => { e.stopPropagation(); if (task.contact_id) openContact(task.contact_id); }}>{task.contact.name ?? task.contact.phone}</button>}
@@ -150,6 +152,13 @@ export function TaskRow({ task, onChanged, showLinks = true }: { task: Task; onC
       </div>
       {!done && access.write && (
         <div className="crm-task-actions">
+          {task.task_type === "whatsapp" && task.contact?.phone && (
+            <a className="crm-btn wa xs" target="_blank" rel="noreferrer" title="Abre o WhatsApp com o texto pronto — você confere e envia"
+              href={`https://wa.me/${task.contact.phone.replace(/\D/g, "")}${task.description ? `?text=${encodeURIComponent(task.description)}` : ""}`}><MessageCircle size={13} /> Abrir WhatsApp</a>
+          )}
+          {(task.task_type === "call" || task.task_type === "callback") && task.contact?.phone && (
+            <a className="crm-btn call xs" href={`tel:+${task.contact.phone.replace(/\D/g, "")}`}><Phone size={13} /> Ligar</a>
+          )}
           <button type="button" className="crm-btn ghost xs" onClick={() => setMenu((m) => !m)}>Reagendar</button>
           {menu && (
             <div className="crm-menu" onMouseLeave={() => setMenu(false)}>

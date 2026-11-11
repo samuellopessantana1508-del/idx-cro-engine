@@ -3,6 +3,8 @@ import {
   AlertTriangle, ArrowRight, CalendarCheck2, CalendarClock, CheckCircle2, CircleDollarSign, Flame, HeartPulse, KanbanSquare, MessageCircle, Sunrise, Target, Trophy,
 } from "lucide-react";
 import * as api from "./api";
+import { GoalsMini } from "./goals";
+import { ExtensionCard } from "./extension-card";
 import { useCrm } from "./context";
 import { brl, channelLabel, dueState, errorText, phoneLabel, relative, segmentInfo, shortDate } from "./format";
 import type { Contact, Deal, KpiResponse, RfvCustomer, Task } from "./types";
@@ -91,6 +93,8 @@ export function HomeView() {
           <Stat label="Sem próxima ação" tone={noNext.length ? "amber" : undefined} value={noNext.length} sub={`${rotting.length} parada(s) além do prazo da etapa`} onClick={() => navigate({ name: "deals" })} />
         </div>
       )}
+
+      <GoalsMini />
 
       <div className="crm-grid-2">
         <section className="crm-panel">
@@ -313,6 +317,7 @@ export function RoutineView() {
             )}
           </section>
           <p className="crm-note"><CheckCircle2 size={14} /> Dica: clique no círculo para concluir; “Reagendar” move a atividade em um clique.</p>
+          <ExtensionCard dismissible />
         </aside>
       </div>
     </div>

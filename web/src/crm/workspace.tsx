@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import "../styles/crm.css";
-import { Bell, Building2, Check, KanbanSquare, ListTodo, PhoneCall, Plus, Search, ShieldAlert, User, UserPlus, X } from "lucide-react";
+import { Bell, Building2, Check, KanbanSquare, ListTodo, Mic, PhoneCall, Plus, Search, ShieldAlert, User, UserPlus, X } from "lucide-react";
 import * as api from "./api";
 import { CrmContext, useCrm, type CrmCtx, type QuickCreateKind } from "./context";
 import { brl, channelLabels, emailName, errorText, parseMoney, phoneLabel, relative } from "./format";
@@ -17,6 +17,10 @@ import { RfvView } from "./rfv";
 import { ReportsView } from "./reports";
 import { AutomationsView, ImportView, SettingsView } from "./admin";
 import { DialerView } from "./dialer";
+import { CadencesView } from "./cadences";
+import { GoalsView } from "./goals";
+import { AssistantModal, type AssistantContext } from "./assistant";
+import type { AssistantPlan } from "./types";
 
 export const crmViewTitles: Record<CrmView["name"], string> = {
   home: "Visão comercial",
@@ -33,6 +37,8 @@ export const crmViewTitles: Record<CrmView["name"], string> = {
   settings: "Configurações do CRM",
   import: "Importar e exportar",
   dialer: "Discador",
+  cadences: "Cadências",
+  goals: "Metas",
 };
 
 type Props = {
@@ -57,6 +63,7 @@ export function CrmWorkspace({ tenantId, tenantName, userId, view, onNavigate, n
   const [dealId, setDealId] = useState<string | null>(null);
   const [quick, setQuick] = useState<{ kind: QuickCreateKind; defaults: Record<string, unknown> } | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [assistant, setAssistant] = useState<{ context?: AssistantContext; onApplied?: (r: { plan: AssistantPlan; contact_id: string | null; deal_id: string | null; task_id: string | null }) => void } | null>(null);
 
   const reloadStructure = useCallback(async () => {
     const acc = await api.myAccess(tenantId);
@@ -96,6 +103,7 @@ export function CrmWorkspace({ tenantId, tenantName, userId, view, onNavigate, n
       if (access?.write && e.key === "n") { e.preventDefault(); setQuick({ kind: "deal", defaults: {} }); }
       if (access?.write && e.key === "t") { e.preventDefault(); setQuick({ kind: "task", defaults: {} }); }
       if (access?.write && e.key === "c") { e.preventDefault(); setQuick({ kind: "contact", defaults: {} }); }
+      if (access?.write && e.key === "v") { e.preventDefault(); setAssistant({}); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -117,6 +125,7 @@ export function CrmWorkspace({ tenantId, tenantName, userId, view, onNavigate, n
     openContact: (id) => { setDealId(null); onNavigate({ name: "contact", id }); },
     quickCreate: (kind, defaults = {}) => setQuick({ kind, defaults }),
     memberLabel,
+    openAssistant: (context, onApplied) => setAssistant({ context, onApplied }),
   } : null, [access, tenantId, tenantName, userId, members, pipelines, stages, lossReasons, settings, offers, refreshKey, notify, refresh, reloadStructure, onNavigate, memberLabel]);
 
   if (error) {
@@ -143,7 +152,8 @@ export function CrmWorkspace({ tenantId, tenantName, userId, view, onNavigate, n
             <Search size={16} /> <span>Buscar contatos, negociações, empresas…</span> <kbd>Ctrl K</kbd>
           </button>
           <div className="crm-commandbar-right">
-            {ctx.access.write && <button type="button" className="crm-btn ghost" onClick={() => setQuick({ kind: "contact", defaults: {} })} title="Atalho: tecla C"><PhoneCall size={16} /> Cliente rápido</button>}
+            {ctx.access.write && <button type="button" className="crm-btn ghost" onClick={() => setAssistant({})} title="Fale ou escreva o que aconteceu — atalho: tecla V"><Mic size={16} /> Registrar</button>}
+            {ctx.access.write && <button type="button" className="crm-btn ghost" onClick={() => setQuick({ kind: "contact", defaults: {} })} title="Cliente rápido — atalho: tecla C" aria-label="Cliente rápido"><PhoneCall size={16} /> <span className="crm-hide-mobile">Cliente rápido</span></button>}
             {ctx.access.write && <QuickCreateMenu onPick={(kind) => setQuick({ kind, defaults: {} })} />}
             <NotificationBell />
           </div>
@@ -155,6 +165,7 @@ export function CrmWorkspace({ tenantId, tenantName, userId, view, onNavigate, n
         {quick?.kind === "company" && <CompanyModal onClose={() => setQuick(null)} onSaved={() => { setQuick(null); refresh(); }} />}
         {quick?.kind === "task" && <TaskModal defaults={quick.defaults as never} onClose={() => setQuick(null)} onSaved={() => { setQuick(null); refresh(); }} />}
         {searchOpen && <GlobalSearch onClose={() => setSearchOpen(false)} />}
+        {assistant && <AssistantModal context={assistant.context} onApplied={assistant.onApplied} onClose={() => setAssistant(null)} />}
       </div>
     </CrmContext.Provider>
   );
@@ -176,6 +187,8 @@ function ViewSwitch({ view }: { view: CrmView }) {
     case "settings": return <SettingsView />;
     case "import": return <ImportView />;
     case "dialer": return <DialerView />;
+    case "cadences": return <CadencesView />;
+    case "goals": return <GoalsView />;
     default: return null;
   }
 }
