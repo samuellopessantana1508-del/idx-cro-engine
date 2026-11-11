@@ -49,7 +49,12 @@ test("outra empresa não vê nem importa na lista", async () => {
   const imp = await other.rpc("crm_dial_import", { p_tenant_id: A, p_list: LIST, p_rows: rows });
   assert.ok(imp.error, "importar em empresa alheia deveria falhar");
   const ov = await other.rpc("crm_dial_overview", { p_tenant_id: A, p_list: LIST });
-  assert.equal(ov.data.total, 0);
+  assert.ok(ov.error, "resumo de empresa alheia deve ser negado");
+  const ls = await other.rpc("crm_dial_list", { p_tenant_id: A, p_list: LIST, p_status: "pending" });
+  assert.ok(ls.error, "listagem de empresa alheia deve ser negada");
+  const mine = await seller.rpc("crm_dial_list", { p_tenant_id: A, p_list: LIST, p_status: "pending", p_search: "central" });
+  assert.equal(mine.error, null, mine.error?.message);
+  assert.deepEqual(mine.data.map((r) => r.name), ["Drogaria Central"]);
 });
 
 test("tocar no número marca como ligado e conta ligações; desfazer volta para a fila", async () => {

@@ -530,16 +530,10 @@ export async function dialOverview(tenantId: string, list?: string | null) {
 }
 
 export async function loadDialLeads(tenantId: string, f: { list?: string | null; status: "pending" | "called"; uf?: string; search?: string; page: number; pageSize: number }) {
-  let q = db().from("crm_dial_leads").select("*").eq("tenant_id", tenantId).eq("status", f.status);
-  if (f.list) q = q.eq("list_name", f.list);
-  if (f.uf) q = q.eq("uf", f.uf);
-  const s = f.search?.replace(/[%,()]/g, " ").trim();
-  if (s) {
-    const digits = s.replace(/\D/g, "");
-    q = q.or([`name.ilike.%${s}%`, `city.ilike.%${s}%`, `district.ilike.%${s}%`, digits.length >= 4 ? `phone.ilike.%${digits}%` : ""].filter(Boolean).join(","));
-  }
-  q = f.status === "pending" ? q.order("uf").order("city").order("name") : q.order("called_at", { ascending: false });
-  return check(await q.range(f.page * f.pageSize, f.page * f.pageSize + f.pageSize - 1)) as DialLead[];
+  return check(await db().rpc("crm_dial_list", {
+    p_tenant_id: tenantId, p_list: f.list ?? null, p_status: f.status, p_uf: f.uf || null, p_search: f.search?.trim() || null,
+    p_limit: f.pageSize, p_offset: f.page * f.pageSize,
+  })) as DialLead[];
 }
 
 export async function dialMarkCalled(id: string) {
