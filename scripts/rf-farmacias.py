@@ -50,7 +50,9 @@ def rows(zpath):
     with zipfile.ZipFile(zpath) as z:
         for name in z.namelist():
             with z.open(name) as fh:
-                for row in csv.reader(io.TextIOWrapper(fh, encoding="latin-1", newline=""), delimiter=";"):
+                text = io.TextIOWrapper(fh, encoding="latin-1", newline="")
+                # alguns arquivos da Receita trazem bytes nulos; o leitor de CSV não aceita
+                for row in csv.reader((line.replace("\0", "") for line in text), delimiter=";"):
                     yield row
 
 
@@ -72,12 +74,20 @@ mun = {r[0]: r[1].title() for r in rows(mz) if len(r) >= 2}
 os.remove(mz)
 log("MUNICIPIOS", len(mun))
 
+import json
 found = {}  # cnpj -> dict
 for i in range(10):
+    cache = os.path.join(OUT, f"estab{i}-{month}.json")
+    if os.path.exists(cache):  # arquivo já processado numa execução anterior
+        part = json.load(open(cache, encoding="utf-8"))
+        found.update(part)
+        log("CACHE", i, len(part), "total", len(found))
+        continue
     z = os.path.join(OUT, f"Estab{i}.zip")
     log("BAIXANDO Estabelecimentos", i)
     download(f"{BASE}/{month}/Estabelecimentos{i}.zip", z)
     n = 0
+    part = {}
     for r in rows(z):
         if len(r) < 28 or r[11] not in CNAES or r[5] != "02":
             continue
@@ -86,12 +96,14 @@ for i in range(10):
         if not tel and not tel2:
             continue
         cnpj = r[0] + r[1] + r[2]
-        found[cnpj] = {
+        part[cnpj] = {
             "base": r[0], "cnpj": cnpj, "nome": (r[4] or "").strip(), "telefone": tel or tel2,
             "telefone2": tel2 if tel else "", "cidade": mun.get(r[20], ""), "uf": r[19], "bairro": (r[17] or "").strip().title(),
         }
         n += 1
     os.remove(z)
+    json.dump(part, open(cache, "w", encoding="utf-8"))
+    found.update(part)
     log("ARQUIVO", i, "farmacias", n, "total", len(found))
 
 # razão social para quem não tem nome fantasia
