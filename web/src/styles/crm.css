@@ -716,3 +716,59 @@ kbd {
   .crm-quick .crm-form-grid { grid-template-columns: minmax(0, 1fr); }
   .crm-commandbar .crm-btn.ghost { padding: 0 10px; }
 }
+
+/* ---------- discador ---------- */
+.dial { gap: 10px; }
+.dial-head { position: sticky; top: 0; z-index: 5; display: grid; gap: 10px; padding: 10px 0 8px; background: var(--soft, #f7f7f8); }
+.dial-stats { display: flex; gap: 8px; }
+.dial-stats span { flex: 1; display: grid; justify-items: center; padding: 8px 4px; border-radius: 12px; background: var(--paper); border: 1px solid var(--line); color: var(--muted); font-size: 0.74rem; font-weight: 600; }
+.dial-stats b { color: var(--ink); font-size: 1.25rem; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.dial-stats .green b { color: #047857; }
+.dial-filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.dial-filters .crm-search { flex: 1 1 200px; min-width: 0; }
+.dial-filters .crm-select { flex: 0 1 auto; }
+.dial-tabs { display: flex; padding: 3px; gap: 3px; border-radius: 12px; background: #eceef2; }
+.dial-tabs button { flex: 1; border: 0; background: transparent; padding: 9px; border-radius: 9px; font-weight: 700; font-size: 0.9rem; color: var(--muted); }
+.dial-tabs button.on { background: var(--paper); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+.dial-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.dial-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 12px;
+  padding: 12px 12px 12px 14px; background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+  transition: background 0.2s, border-color 0.2s;
+}
+.dial-info { display: grid; gap: 2px; min-width: 0; }
+.dial-info strong { font-size: 0.95rem; line-height: 1.25; overflow-wrap: anywhere; }
+.dial-info small { color: var(--muted); font-size: 0.78rem; }
+.dial-call {
+  display: inline-flex; align-items: center; gap: 7px; padding: 12px 14px; border-radius: 12px; text-decoration: none; white-space: nowrap;
+  background: #1d4ed8; color: #fff !important; font-weight: 800; font-size: 1rem; letter-spacing: -0.01em; font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 8px rgba(29, 78, 216, 0.25); transition: transform 0.1s, background 0.2s;
+  -webkit-tap-highlight-color: transparent; min-height: 48px;
+}
+.dial-call:active { transform: scale(0.97); }
+.dial-row.done { background: #f3f4f6; border-color: #e5e7eb; }
+.dial-row.done .dial-info strong { color: #6b7280; }
+.dial-row.done .dial-call { background: #e5e7eb; color: #6b7280 !important; box-shadow: none; font-weight: 700; }
+.dial-row.out-meeting { background: #ecfdf3; border-color: #a7f3d0; }
+.dial-row.out-callback { background: #eff6ff; border-color: #bfdbfe; }
+.dial-done-label { display: inline-flex; align-items: center; gap: 4px; color: #047857 !important; font-weight: 700; }
+.dial-outcomes { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; padding-top: 4px; }
+.dial-chip { display: inline-flex; align-items: center; gap: 4px; min-height: 34px; padding: 0 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font-size: 0.82rem; font-weight: 600; }
+.dial-chip.on.tone-green { background: #059669; border-color: #059669; color: #fff; }
+.dial-chip.on.tone-blue { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+.dial-chip.on.tone-ink { background: var(--black); border-color: var(--black); color: var(--paper); }
+.dial-chip.on.tone-muted { background: #6b7280; border-color: #6b7280; color: #fff; }
+.dial-chip.on.tone-red { background: #dc2626; border-color: #dc2626; color: #fff; }
+.dial-chip.ghost { border-style: dashed; color: var(--muted); }
+.dial-sentinel { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 18px 0 90px; }
+@media (max-width: 720px) {
+  .crm-root:has(.dial) > .crm-commandbar { display: none; }
+  .dial-head { margin: 0 -2px; }
+  .dial-filters .crm-select { flex: 1 1 45%; }
+  .dial-row { padding: 12px; }
+  .dial-call { padding: 12px; font-size: 1.02rem; }
+}
+@media (max-width: 380px) {
+  .dial-row { grid-template-columns: minmax(0, 1fr); }
+  .dial-call { justify-content: center; }
+}

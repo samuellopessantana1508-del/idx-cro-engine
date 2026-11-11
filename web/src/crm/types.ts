@@ -452,4 +452,18 @@ export type CrmView =
   | { name: "reports" }
   | { name: "automations" }
   | { name: "settings" }
-  | { name: "import" };
+  | { name: "import" }
+  | { name: "dialer" };
+
+export type DialOutcome = "talked" | "meeting" | "callback" | "no_answer" | "not_interested" | "invalid";
+export type DialLead = {
+  id: string; tenant_id: string; list_name: string; name: string; phone: string; phone2: string | null;
+  city: string | null; uf: string | null; district: string | null; cnpj: string | null; source: string;
+  status: "pending" | "called"; outcome: DialOutcome | null; called_at: string | null; called_by: string | null;
+  call_count: number; notes: string | null; contact_id: string | null; created_at: string;
+};
+export type DialOverview = {
+  lists: { name: string; total: number; pending: number }[];
+  total: number; pending: number; called: number; called_today: number; meetings: number; callbacks: number;
+  ufs: { uf: string; total: number; pending: number }[];
+};

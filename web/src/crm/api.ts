@@ -2,7 +2,7 @@ import { supabase } from "../lib/supabaseClient";
 import type {
   AutomationRule, AutomationRun, Campaign, CampaignResult, Company, Contact, CrmAccess, CrmNotification, CrmSettings, CustomField,
   Deal, DealItem, KpiResponse, LossReason, Member, Offer, Onboarding, Order, Pipeline, Quote, RfvCustomer, RfvDashboard, Sample, Stage, Task,
-  TimelineItem,
+  TimelineItem, DialLead, DialOutcome, DialOverview,
 } from "./types";
 
 export function db() {
@@ -522,4 +522,50 @@ export async function searchContacts(tenantId: string, term: string) {
 export async function deleteOffer(id: string) {
   // ofertas podem estar ligadas a Smart Links e vendas: arquivamos em vez de apagar
   return check(await db().from("offers").update({ status: "archived" }).eq("id", id).select().single()) as Offer;
+}
+
+// ---------- discador ----------
+export async function dialOverview(tenantId: string, list?: string | null) {
+  return check(await db().rpc("crm_dial_overview", { p_tenant_id: tenantId, p_list: list ?? null })) as DialOverview;
+}
+
+export async function loadDialLeads(tenantId: string, f: { list?: string | null; status: "pending" | "called"; uf?: string; search?: string; page: number; pageSize: number }) {
+  let q = db().from("crm_dial_leads").select("*").eq("tenant_id", tenantId).eq("status", f.status);
+  if (f.list) q = q.eq("list_name", f.list);
+  if (f.uf) q = q.eq("uf", f.uf);
+  const s = f.search?.replace(/[%,()]/g, " ").trim();
+  if (s) {
+    const digits = s.replace(/\D/g, "");
+    q = q.or([`name.ilike.%${s}%`, `city.ilike.%${s}%`, `district.ilike.%${s}%`, digits.length >= 4 ? `phone.ilike.%${digits}%` : ""].filter(Boolean).join(","));
+  }
+  q = f.status === "pending" ? q.order("uf").order("city").order("name") : q.order("called_at", { ascending: false });
+  return check(await q.range(f.page * f.pageSize, f.page * f.pageSize + f.pageSize - 1)) as DialLead[];
+}
+
+export async function dialMarkCalled(id: string) {
+  return check(await db().rpc("crm_dial_mark_called", { p_id: id })) as DialLead;
+}
+export async function dialReset(id: string) {
+  return check(await db().rpc("crm_dial_reset", { p_id: id })) as DialLead;
+}
+export async function dialSetOutcome(id: string, outcome: DialOutcome | null, notes?: string) {
+  return check(await db().rpc("crm_dial_set_outcome", { p_id: id, p_outcome: outcome, p_notes: notes ?? null })) as DialLead;
+}
+export async function dialImport(tenantId: string, list: string, rows: Record<string, string>[], source = "import") {
+  return check(await db().rpc("crm_dial_import", { p_tenant_id: tenantId, p_list: list, p_rows: rows, p_source: source })) as {
+    total: number; inserted: number; duplicates: number; invalid: number;
+  };
+}
+export async function dialExport(tenantId: string, f: { list?: string | null; uf?: string; status?: "pending" | "called" }) {
+  const all: DialLead[] = [];
+  for (let page = 0; page < 200; page++) {
+    let q = db().from("crm_dial_leads").select("*").eq("tenant_id", tenantId);
+    if (f.list) q = q.eq("list_name", f.list);
+    if (f.uf) q = q.eq("uf", f.uf);
+    if (f.status) q = q.eq("status", f.status);
+    const rows = check(await q.order("uf").order("city").order("name").range(page * 1000, page * 1000 + 999)) as DialLead[];
+    all.push(...rows);
+    if (rows.length < 1000) break;
+  }
+  return all;
 }

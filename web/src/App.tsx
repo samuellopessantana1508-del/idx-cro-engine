@@ -2846,6 +2846,7 @@ export function App() {
             <nav className="nav-list">
               <div className="nav-group-label">Meu dia</div>
               <NavButton icon={<Sunrise />} label="Minha rotina" active={crmIs("routine")} onClick={() => goToCrm({ name: "routine" })} />
+              <NavButton icon={<PhoneCall />} label="Discador" active={crmIs("dialer")} onClick={() => goToCrm({ name: "dialer" })} />
               <NavButton icon={<KanbanSquare />} label="Negociações" active={crmIs("deals")} onClick={() => goToCrm({ name: "deals" })} />
               <NavButton icon={<ContactIcon />} label="Contatos" active={crmIs("contacts", "contact")} onClick={() => goToCrm({ name: "contacts" })} />
               <NavButton icon={<ListTodo />} label="Tarefas e agenda" active={crmIs("tasks")} onClick={() => goToCrm({ name: "tasks" })} />
@@ -2860,6 +2861,7 @@ export function App() {
             <NavButton icon={<Briefcase />} label="Visão comercial" active={crmIs("home")} onClick={() => goToCrm({ name: "home" })} />
             <NavButton icon={<Sunrise />} label="Minha rotina" active={crmIs("routine")} onClick={() => goToCrm({ name: "routine" })} />
             <div className="nav-group-label">CRM</div>
+            <NavButton icon={<PhoneCall />} label="Discador" active={crmIs("dialer")} onClick={() => goToCrm({ name: "dialer" })} />
             <NavButton icon={<KanbanSquare />} label="Negociações" active={crmIs("deals")} onClick={() => goToCrm({ name: "deals" })} />
             <NavButton icon={<ContactIcon />} label="Contatos" active={crmIs("contacts", "contact")} onClick={() => goToCrm({ name: "contacts" })} />
             <NavButton icon={<Building2 />} label="Empresas" active={crmIs("companies")} onClick={() => goToCrm({ name: "companies" })} />
@@ -5469,6 +5471,7 @@ export function App() {
 
       {mobileMenuOpen && !isSellerExperience && (
         <section className="mobile-more-sheet" aria-label="Mais opções">
+          <button type="button" onClick={() => goToCrm({ name: "routine" })} className={crmIs("routine") ? "active" : ""}><Sunrise size={17} /> Minha rotina</button>
           <button type="button" onClick={() => goToCrm({ name: "home" })} className={crmIs("home") ? "active" : ""}><Briefcase size={17} /> Visão comercial</button>
           <button type="button" onClick={() => goToCrm({ name: "contacts" })} className={crmIs("contacts", "contact") ? "active" : ""}><ContactIcon size={17} /> Contatos</button>
           <button type="button" onClick={() => goToCrm({ name: "tasks" })} className={crmIs("tasks") ? "active" : ""}><ListTodo size={17} /> Tarefas</button>
@@ -5493,6 +5496,7 @@ export function App() {
 
       {isSellerExperience && (
       <nav className="mobile-tabbar seller-mobile-tabbar" aria-label="Navegação do atendimento">
+        <NavButton icon={<PhoneCall />} label="Discador" active={crmIs("dialer")} onClick={() => goToCrm({ name: "dialer" })} />
         <NavButton icon={<Sunrise />} label="Rotina" active={crmIs("routine")} onClick={() => goToCrm({ name: "routine" })} />
         <NavButton icon={<KanbanSquare />} label="Negócios" active={crmIs("deals")} onClick={() => goToCrm({ name: "deals" })} />
         <NavButton icon={<PhoneCall />} label="Atender" active={active === "sales"} onClick={() => goToSection("sales")} />
@@ -5504,7 +5508,7 @@ export function App() {
       <nav className="mobile-tabbar" aria-label="Navegação principal">
         <NavButton icon={<Gauge />} label="Início" active={active === "dashboard"} onClick={() => goToSection("dashboard")} />
         <NavButton icon={<PhoneCall />} label="Atender" active={active === "sales"} onClick={() => goToSection("sales")} />
-        <NavButton icon={<Sunrise />} label="Rotina" active={crmIs("routine")} onClick={() => goToCrm({ name: "routine" })} />
+        <NavButton icon={<PhoneCall />} label="Discador" active={crmIs("dialer")} onClick={() => goToCrm({ name: "dialer" })} />
         <NavButton icon={<KanbanSquare />} label="CRM" active={crmIs("deals")} onClick={() => goToCrm({ name: "deals" })} />
         <NavButton icon={<MoreHorizontal />} label="Mais" active={moreActive || mobileMenuOpen} onClick={() => setMobileMenuOpen((open) => !open)} />
       </nav>

@@ -16,6 +16,7 @@ import { ProductsView } from "./catalog";
 import { RfvView } from "./rfv";
 import { ReportsView } from "./reports";
 import { AutomationsView, ImportView, SettingsView } from "./admin";
+import { DialerView } from "./dialer";
 
 export const crmViewTitles: Record<CrmView["name"], string> = {
   home: "Visão comercial",
@@ -31,6 +32,7 @@ export const crmViewTitles: Record<CrmView["name"], string> = {
   automations: "Automações",
   settings: "Configurações do CRM",
   import: "Importar e exportar",
+  dialer: "Discador",
 };
 
 type Props = {
@@ -173,6 +175,7 @@ function ViewSwitch({ view }: { view: CrmView }) {
     case "automations": return <AutomationsView />;
     case "settings": return <SettingsView />;
     case "import": return <ImportView />;
+    case "dialer": return <DialerView />;
     default: return null;
   }
 }

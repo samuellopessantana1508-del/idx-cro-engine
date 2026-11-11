@@ -250,6 +250,44 @@ try {
     await m.close();
   });
 
+  await step("discador no celular: importar CSV, tocar no número marca como ligado, reunião vira contato", async () => {
+    const m = await newPage({ width: 390, height: 844 });
+    await login(m, "dono@clinica.local");
+    await m.goto(`${APP}/?section=crm-app&crm=dialer`);
+    await m.locator(".dial-head").waitFor();
+    const csv = `nome;telefone;cidade;uf;bairro\nFarmácia Teste ${stamp};(31) 3${stamp.slice(0, 3)}-${stamp.slice(3)}1;Belo Horizonte;MG;Centro\nDrogaria Teste ${stamp};(31) 9${stamp}2;Contagem;MG;Eldorado\n`;
+    const more = m.getByRole("button", { name: "Mais opções" });
+    if (await more.count()) { await more.click(); await m.getByRole("button", { name: /Importar números/ }).click(); }
+    else await m.getByRole("button", { name: /Importar números/ }).click();
+    const modal = m.locator(".crm-modal");
+    await modal.locator("label", { hasText: "Nome da lista" }).locator("input").fill(`Farmácias E2E ${stamp}`);
+    await modal.locator('input[type="file"]').setInputFiles({ name: "farmacias.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
+    await modal.getByRole("button", { name: /^Importar 2/ }).click();
+    await modal.waitFor({ state: "detached" });
+    const row = m.locator(".dial-row", { hasText: `Farmácia Teste ${stamp}` });
+    await row.waitFor();
+    await m.screenshot({ path: `${SHOTS}/discador-celular.png` });
+    // o link tel: abriria o discador do celular; aqui só confirmamos o destino e o clique
+    assert.match(await row.locator(".dial-call").getAttribute("href"), /^tel:\+5531/);
+    await row.locator(".dial-call").evaluate((a) => a.addEventListener("click", (e) => e.preventDefault(), { once: true }));
+    await row.locator(".dial-call").click();
+    await row.locator(".dial-done-label").waitFor();
+    await m.waitForTimeout(500);
+    assert.equal(sql(`select status || '|' || call_count from crm_dial_leads where name = 'Farmácia Teste ${stamp}'`), "called|1");
+    await row.getByRole("button", { name: "Reunião" }).click();
+    await m.locator(".crm-modal textarea").fill("Reunião sexta 15h");
+    await m.locator(".crm-modal").getByRole("button", { name: "Salvar" }).click();
+    await row.getByRole("button", { name: "Abrir no CRM" }).waitFor();
+    await m.screenshot({ path: `${SHOTS}/discador-reuniao.png` });
+    assert.equal(sql(`select count(*) from crm_deals d join crm_dial_leads l on l.contact_id = d.contact_id where l.name = 'Farmácia Teste ${stamp}'`), "1");
+    await m.reload();
+    await m.locator(".dial-tabs button", { hasText: "Já liguei" }).click();
+    await m.locator(".dial-row.out-meeting", { hasText: `Farmácia Teste ${stamp}` }).waitFor();
+    const overflow = await m.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    assert.ok(overflow <= 2, `rolagem horizontal de ${overflow}px`);
+    await m.close();
+  });
+
   await step("nenhum erro de JavaScript na página durante o teste", async () => {
     assert.deepEqual(pageErrors, []);
   });
