@@ -1,16 +1,24 @@
 #!/usr/bin/env python3
 """Extrai farmácias ativas com telefone da base aberta de CNPJ da Receita Federal.
 
-Fonte: https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj/<AAAA-MM>/
+Fonte: compartilhamento público da Receita (Nextcloud), via WebDAV:
+https://arquivos.receitafederal.gov.br/index.php/s/YggdBLfdninEJX9 (pastas AAAA-MM)
 CNAE 4771-7/01 (comércio varejista de produtos farmacêuticos, sem manipulação) e,
 opcionalmente, 4771-7/02 (com manipulação). Situação cadastral 02 = ativa.
 
 Saída: CSV UTF-8 (separador ;) com: cnpj;nome;telefone;telefone2;cidade;uf;bairro
 Uso: python3 rf-farmacias.py [pasta_saida]
 """
-import csv, io, os, re, sys, urllib.request, zipfile
+import base64, csv, io, os, re, sys, urllib.request, zipfile
 
-BASE = "https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj"
+BASE = "https://arquivos.receitafederal.gov.br/public.php/webdav"
+SHARE = os.environ.get("RF_SHARE", "YggdBLfdninEJX9")  # código público do compartilhamento (não é segredo)
+AUTH = "Basic " + base64.b64encode(f"{SHARE}:".encode()).decode()
+
+
+def req(url, method="GET"):
+    r = urllib.request.Request(url, method=method, headers={"Authorization": AUTH, "Depth": "1", "User-Agent": "Mozilla/5.0"})
+    return urllib.request.urlopen(r, timeout=300)
 OUT = sys.argv[1] if len(sys.argv) > 1 else "/opt/idx/rf"
 CNAES = {"4771701", "4771702"}
 os.makedirs(OUT, exist_ok=True)
@@ -22,14 +30,14 @@ def log(*a):
 
 
 def latest_month():
-    html = urllib.request.urlopen(BASE + "/", timeout=60).read().decode("latin-1")
+    html = req(BASE + "/", "PROPFIND").read().decode("utf-8", "replace")
     months = sorted(set(re.findall(r"20\d{2}-\d{2}", html)))
     return months[-1]
 
 
 def download(url, dest):
     tmp = dest + ".part"
-    with urllib.request.urlopen(url, timeout=300) as r, open(tmp, "wb") as f:
+    with req(url) as r, open(tmp, "wb") as f:
         while True:
             b = r.read(1 << 20)
             if not b:
