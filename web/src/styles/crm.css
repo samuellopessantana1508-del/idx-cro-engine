@@ -968,6 +968,9 @@ kbd {
 .wa-reply { display: flex; gap: 8px; align-items: flex-end; padding: 10px; border-top: 1px solid var(--line); background: var(--paper); }
 .wa-reply textarea { flex: 1; resize: none; min-height: 40px; max-height: 140px; border-radius: 10px; padding: 9px 11px; }
 .wa-reply-note { font-size: 0.74rem; color: var(--muted); padding: 0 12px 8px; }
+.wa-bot-bar { display: flex; align-items: center; gap: 8px; margin: 0 10px 8px; padding: 6px 10px; border-radius: 10px; background: #eff4ff; color: #1d4ed8; font-size: 0.78rem; }
+.wa-bot-bar span { flex: 1; min-width: 0; }
+.wa-bot-bar.human { background: #fff7ed; color: #c2410c; }
 @media (max-width: 720px) {
   .wa-detail-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .wa-conn-actions { width: 100%; }

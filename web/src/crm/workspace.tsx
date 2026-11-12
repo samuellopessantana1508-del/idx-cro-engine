@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import "../styles/crm.css";
 import { Bell, Building2, Check, KanbanSquare, ListTodo, Mic, PhoneCall, Plus, Search, ShieldAlert, User, UserPlus, X } from "lucide-react";
 import * as api from "./api";
@@ -21,6 +21,7 @@ import { CadencesView } from "./cadences";
 import { GoalsView } from "./goals";
 import { DispatchView } from "./dispatch";
 import { McpView } from "./mcp";
+const FlowsView = lazy(() => import("./flows").then((m) => ({ default: m.FlowsView })));
 import { AssistantModal, type AssistantContext } from "./assistant";
 import type { AssistantPlan } from "./types";
 
@@ -42,6 +43,7 @@ export const crmViewTitles: Record<CrmView["name"], string> = {
   cadences: "Cadências",
   goals: "Metas",
   dispatch: "Disparos de WhatsApp",
+  flows: "Automações de WhatsApp",
   mcp: "Conectar ao Claude (MCP)",
 };
 
@@ -194,6 +196,7 @@ function ViewSwitch({ view }: { view: CrmView }) {
     case "cadences": return <CadencesView />;
     case "goals": return <GoalsView />;
     case "dispatch": return <DispatchView />;
+    case "flows": return <Suspense fallback={<div className="crm-page"><p className="crm-muted">Carregando automações…</p></div>}><FlowsView /></Suspense>;
     case "mcp": return <McpView />;
     default: return null;
   }

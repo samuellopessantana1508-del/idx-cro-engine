@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Clock, Send } from "lucide-react";
+import { AlertTriangle, Bot, Clock, Headphones, Send } from "lucide-react";
 import * as api from "./api";
 import { errorText } from "./format";
 import type { WaGatewayInstance } from "./types";
@@ -81,6 +81,7 @@ export function WaReplyBox({ tenantId, conversationId, notify, onOpenConnection,
           ))}
         </div>
       )}
+      <BotBar conversationId={conversationId} notify={notify} />
       {!connected && <div className="wa-reply-note"><AlertTriangle size={12} /> WhatsApp desconectado — a mensagem fica na fila e sai quando reconectar.</div>}
       <div className="wa-reply">
         <textarea ref={ref} rows={1} value={text} placeholder="Escreva uma resposta…" maxLength={4000}
@@ -89,5 +90,45 @@ export function WaReplyBox({ tenantId, conversationId, notify, onOpenConnection,
         <button type="button" className="crm-btn primary" disabled={busy || !text.trim()} onClick={send} title="Enviar (Enter)"><Send size={16} /></button>
       </div>
     </>
+  );
+}
+
+const WAIT_TEXT: Record<string, string> = { response: "aguardando resposta", menu: "aguardando escolha do menu", ask: "aguardando resposta da pergunta", delay: "esperando", business_hours: "esperando o horário" };
+
+/** Robô x atendente nesta conversa (automações de WhatsApp). */
+function BotBar({ conversationId, notify }: { conversationId: string; notify: (m: string) => void }) {
+  const [st, setSt] = useState<Awaited<ReturnType<typeof api.conversationBotState>> | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setSt(null);
+    const load = () => api.conversationBotState(conversationId).then((x) => { if (alive) setSt(x); }).catch(() => {});
+    void load();
+    const t = setInterval(load, 15000);
+    return () => { alive = false; clearInterval(t); };
+  }, [conversationId]);
+  if (!st || (st.mode === "bot" && !st.runs.length)) return null;
+  const act = async (mode: "bot" | "human") => {
+    setBusy(true);
+    try {
+      await api.conversationBot(conversationId, mode);
+      setSt(await api.conversationBotState(conversationId));
+      notify(mode === "human" ? "Você assumiu a conversa — as automações param aqui." : "Conversa devolvida ao robô.");
+    } catch (e) { notify(errorText(e)); } finally { setBusy(false); }
+  };
+  if (st.mode === "human") {
+    return (
+      <div className="wa-bot-bar human">
+        <Headphones size={14} /> <span>Atendimento humano — automações pausadas nesta conversa.</span>
+        <button type="button" className="crm-btn ghost xs" disabled={busy} onClick={() => void act("bot")}>Devolver ao robô</button>
+      </div>
+    );
+  }
+  const r = st.runs[0];
+  return (
+    <div className="wa-bot-bar">
+      <Bot size={14} /> <span>Em automação: <b>{r.wa_flows?.name ?? "automação"}</b>{r.wait_kind ? ` · ${WAIT_TEXT[r.wait_kind] ?? ""}` : ""}{r.is_test ? " (teste)" : ""}</span>
+      <button type="button" className="crm-btn ghost xs" disabled={busy} onClick={() => void act("human")}>Assumir conversa</button>
+    </div>
   );
 }

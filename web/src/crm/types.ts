@@ -458,6 +458,7 @@ export type CrmView =
   | { name: "cadences" }
   | { name: "goals" }
   | { name: "dispatch" }
+  | { name: "flows" }
   | { name: "mcp" };
 
 export type DialOutcome = "talked" | "meeting" | "callback" | "no_answer" | "not_interested" | "invalid";
@@ -558,4 +559,27 @@ export type LeadSourceRunResult = {
 export type MapsPlace = {
   place_id: string; name: string; phone: string | null; address: string | null; city: string | null; uf: string | null;
   district: string | null; rating: number | null; reviews: number | null; rank: number; maps_url: string | null; already: boolean;
+};
+
+// ---------- Automações de WhatsApp (fluxos) ----------
+export type FlowStatus = "draft" | "active" | "paused" | "archived";
+export type FlowListItem = {
+  id: string; name: string; description: string | null; status: FlowStatus; trigger_kind: string | null; trigger_config: Record<string, any>;
+  reentry: "once" | "cooldown" | "always"; cooldown_hours: number; priority: number; nodes: number; updated_at: string; activated_at: string | null;
+  runs_total: number; runs_open: number; runs_done: number; runs_7d: number; sent_7d: number;
+};
+export type FlowRow = {
+  id: string; tenant_id: string; name: string; description: string | null; status: FlowStatus; graph: { nodes: any[]; edges: any[] };
+  trigger_kind: string | null; reentry: "once" | "cooldown" | "always"; cooldown_hours: number; priority: number; version: number; updated_at: string;
+};
+export type FlowStats = {
+  nodes: Record<string, Record<string, number>>;
+  waiting: Record<string, number>;
+  runs: { total: number; open: number; completed: number; failed: number; cancelled: number };
+};
+export type FlowRunItem = {
+  id: string; phone: string; status: "running" | "waiting" | "completed" | "cancelled" | "failed"; wait_kind: string | null; current_node: string | null;
+  resume_at: string | null; started_at: string; finished_at: string | null; last_error: string | null; is_test: boolean; trigger_kind: string | null;
+  name: string | null; contact_id: string | null; conversation_id: string | null;
+  path: { node: string | null; event: string; at: string; detail: any }[];
 };

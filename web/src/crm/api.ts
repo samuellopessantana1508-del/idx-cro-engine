@@ -4,7 +4,7 @@ import type {
   Deal, DealItem, KpiResponse, LossReason, Member, Offer, Onboarding, Order, Pipeline, Quote, RfvCustomer, RfvDashboard, Sample, Stage, Task,
   TimelineItem, DialLead, DialOutcome, DialOverview, Cadence, CadenceEnrollment, CadenceStep, Goal, GoalProgress, AssistantPlan, AssistantResult,
   WaGatewayInstance, WaCampaign, WaRecipient, WaRecipientStatus, WaAddResult, WaOutboxItem,
-  MapsStatus, LeadSource, LeadSourceRunResult, MapsPlace,
+  MapsStatus, LeadSource, LeadSourceRunResult, MapsPlace, FlowListItem, FlowRow, FlowStats, FlowRunItem,
 } from "./types";
 
 export function db() {
@@ -751,4 +751,50 @@ export async function saveLeadSource(tenantId: string, id: string | null, s: {
 }
 export async function deleteLeadSource(id: string) {
   check(await db().rpc("lead_source_delete", { p_id: id }));
+}
+
+// ---------- Automações de WhatsApp ----------
+export async function flowList(tenantId: string) {
+  return (check(await db().rpc("wa_flow_list", { p_tenant_id: tenantId })) ?? []) as FlowListItem[];
+}
+export async function flowGet(id: string) {
+  return check(await db().from("wa_flows").select("id, tenant_id, name, description, status, graph, trigger_kind, reentry, cooldown_hours, priority, version, updated_at").eq("id", id).maybeSingle()) as FlowRow | null;
+}
+export async function flowSave(tenantId: string, id: string | null, input: { name: string; graph: unknown; description?: string | null; reentry?: string; cooldown_hours?: number; priority?: number }) {
+  return check(await db().rpc("wa_flow_save", {
+    p_tenant_id: tenantId, p_id: id, p_name: input.name, p_graph: input.graph, p_description: input.description ?? null,
+    p_reentry: input.reentry ?? null, p_cooldown_hours: input.cooldown_hours ?? null, p_priority: input.priority ?? null,
+  })) as FlowRow;
+}
+export async function flowSetStatus(id: string, status: "active" | "paused" | "draft" | "archived") {
+  return check(await db().rpc("wa_flow_set_status", { p_flow_id: id, p_status: status })) as FlowRow;
+}
+export async function flowDuplicate(id: string) {
+  return check(await db().rpc("wa_flow_duplicate", { p_flow_id: id })) as FlowRow;
+}
+export async function flowStats(id: string) {
+  return check(await db().rpc("wa_flow_stats", { p_flow_id: id })) as FlowStats;
+}
+export async function flowRuns(id: string, limit = 50) {
+  return (check(await db().rpc("wa_flow_runs_list", { p_flow_id: id, p_limit: limit })) ?? []) as FlowRunItem[];
+}
+export async function flowStart(id: string, opts: { contactIds?: string[]; phones?: string[]; test?: boolean }) {
+  return check(await db().rpc("wa_flow_start", { p_flow_id: id, p_contact_ids: opts.contactIds ?? null, p_phones: opts.phones ?? null, p_test: opts.test ?? false })) as
+    { queued: number; skipped_optout: number; spread_minutes: number };
+}
+export async function flowCancelRun(runId: string) {
+  check(await db().rpc("wa_flow_cancel_run", { p_run_id: runId }));
+}
+export async function conversationBot(conversationId: string, mode: "bot" | "human") {
+  check(await db().rpc("wa_conversation_bot", { p_conversation_id: conversationId, p_mode: mode }));
+}
+export async function flowTagSuggestions(tenantId: string) {
+  const rows = check(await db().from("crm_contacts").select("tags").eq("tenant_id", tenantId).not("tags", "eq", "{}").limit(500)) as { tags: string[] }[];
+  return [...new Set(rows.flatMap((r) => r.tags ?? []))].sort((a, b) => a.localeCompare(b, "pt-BR")).slice(0, 200);
+}
+export async function conversationBotState(conversationId: string) {
+  const conv = check(await db().from("whatsapp_conversations").select("bot_mode").eq("id", conversationId).maybeSingle()) as { bot_mode: "bot" | "human" } | null;
+  const runs = check(await db().from("wa_flow_runs").select("id, status, wait_kind, is_test, wa_flows(name)")
+    .eq("conversation_id", conversationId).in("status", ["running", "waiting"]).limit(3)) as unknown as { id: string; status: string; wait_kind: string | null; is_test: boolean; wa_flows: { name: string } | null }[];
+  return { mode: conv?.bot_mode ?? "bot", runs };
 }
