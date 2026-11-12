@@ -40,6 +40,9 @@ function cleanText(v: unknown): string {
 
 async function authenticate(req: Request) {
   const bearer = req.headers.get("Authorization")?.replace("Bearer ", "");
+  // chamada interna (leitura de conversas pela IA): antes era recusada e a venda não seguia
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (bearer && serviceKey && bearer === serviceKey) return { internal: true, isWebhook: true, webhookTenantId: null as string | null };
   if (bearer) {
     const { data, error } = await supa.auth.getUser(bearer);
     if (!error && data.user) return { user: data.user, isWebhook: false };
@@ -340,7 +343,7 @@ Deno.serve(async (req: Request) => {
     )
       return json({ error: "forbidden" }, 403);
   } else {
-    if (auth.webhookTenantId !== tenantId)
+    if (!("internal" in auth && auth.internal) && auth.webhookTenantId !== tenantId)
       return json({ error: "forbidden" }, 403);
   }
 

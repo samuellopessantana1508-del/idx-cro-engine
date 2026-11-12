@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, CheckCircle2, Clock, LogOut, MessageCircle, Pause, Pencil, Play, Plus, QrCode, RefreshCw, Search, Send, ShieldCheck,
   Smartphone, Trash2, Upload, Users, X, XCircle,
 } from "lucide-react";
 import * as api from "./api";
-import { useCrm } from "./context";
+import { CrmContext, useCrm } from "./context";
 import { parseCsv } from "./csv";
 import { dateTime, errorText, phoneLabel, relative, timeOnly } from "./format";
 import type { WaAddResult, WaCampaign, WaCampaignStatus, WaGatewayInstance, WaRecipient, WaRecipientStatus } from "./types";
@@ -56,8 +56,9 @@ function nextSendLabel(c: WaCampaign) {
 // ---------------------------------------------------------------------------
 // Conexão (QR)
 // ---------------------------------------------------------------------------
-export function useWaInstance() {
-  const { tenantId } = useCrm();
+export function useWaInstance(tenantIdArg?: string) {
+  const ctx = useContext(CrmContext);
+  const tenantId = tenantIdArg ?? ctx?.tenantId ?? "";
   const [inst, setInst] = useState<WaGatewayInstance | null | undefined>(undefined);
   const load = useCallback(async () => {
     try { setInst(await api.waInstance(tenantId)); } catch { setInst(null); }
@@ -74,7 +75,13 @@ export function useWaInstance() {
 
 export function ConnectionCard({ compact }: { compact?: boolean }) {
   const { tenantId, access, notify } = useCrm();
-  const { inst, reload, setInst } = useWaInstance();
+  return <ConnectionPanel tenantId={tenantId} canConfigure={access.configure} notify={notify} compact={compact} />;
+}
+
+/** A conexão única do WhatsApp (QR do próprio CRO). Usada em Disparos e na tela WhatsApp. */
+export function ConnectionPanel({ tenantId, canConfigure, notify, compact }: { tenantId: string; canConfigure: boolean; notify: (m: string) => void; compact?: boolean }) {
+  const access = { configure: canConfigure };
+  const { inst, reload, setInst } = useWaInstance(tenantId);
   const [busy, setBusy] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
 
@@ -102,7 +109,7 @@ export function ConnectionCard({ compact }: { compact?: boolean }) {
               : "WhatsApp desconectado"}
           </strong>
           <span className="crm-muted">
-            {connected ? "Caixa de entrada, CRM, cadências e disparos usam esta mesma conexão."
+            {connected ? "Conexão única: caixa de entrada, respostas, disparos, automações, cadências e a leitura de vendas pela IA."
               : waiting ? "WhatsApp → Aparelhos conectados → Conectar um aparelho. O QR muda a cada 20 segundos."
               : "Conecte o número da empresa para enviar e receber mensagens pelo CRO."}
           </span>

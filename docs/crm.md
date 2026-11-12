@@ -176,3 +176,11 @@ Testes: `tests/crm/wa-dispatch.test.mjs` (regras no banco), `services/wa-gateway
 3. Quando a mensagem chega, o motor (gateway) também chama `/go/confirm` com o código lido do texto — o Lead vai mesmo se o navegador não avisou.
 4. O gatilho `trg_wa_link_tracking_ref` (migração `20261121120000_audit_fixes.sql`) lê o código da mensagem recebida e liga conversa, contato (origem `known`, UTMs, primeira sessão) e negócio aberto à campanha — sem criar negócio duplicado — e grava o telefone na sessão.
 5. Venda confirmada por telefone (`convert`, `n8n-webhook`) aceita o número em qualquer formato (com/sem 55, com/sem o 9º dígito — `_shared/phone-variants.ts`). Falha do Meta ao atualizar públicos nunca derruba a confirmação da venda.
+
+
+## Conexão única do WhatsApp
+
+Uma conexão por empresa (QR Code do próprio CRO, motor `wa-gateway`) atende tudo: caixa de entrada e respostas, disparos, automações, cadências e a leitura das conversas pela IA.
+- Todas as escolhas de conexão (conectar, enviar, criar/iniciar disparo, automações, saúde) usam a mesma ordem: conectada e ligada primeiro.
+- A leitura pela IA que antes só acontecia pelo fluxo antigo (Evolution + n8n) agora roda para a conexão do CRO: `cro-flows` pega as conversas com mensagens novas do cliente (`wa_ai_claim`, janela de 8 s, últimos 2 dias), chama `ai-analyze` e, se houver sinal de venda, `sale-confirm` (`auto_process`). Chamadas internas usam a chave de serviço (nunca no navegador).
+- Evolution API, n8n e chaves de webhook ficaram em "Integrações avançadas" na tela WhatsApp → Conexão (só para quem já usa).

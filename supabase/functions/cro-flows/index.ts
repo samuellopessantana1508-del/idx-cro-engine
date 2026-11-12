@@ -565,6 +565,45 @@ async function handleHook(req: Request, flowId: string, secret: string) {
   return new Response(JSON.stringify(r), { status: r.ok ? 200 : r.status ?? 400, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
+// ---------------------------------------------------------------------------
+// Leitura das conversas pela IA (detecta interesse, negociação e vendas) para as
+// mensagens que chegam pela conexão do CRO. Mesmo caminho do fluxo antigo do n8n:
+// ai-analyze → se houver sinal de venda, sale-confirm (auto_process).
+// Roda em segundo plano para não atrasar as respostas das automações.
+// ---------------------------------------------------------------------------
+async function internalCall(fn: string, body: Record<string, unknown>) {
+  const res = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/${fn}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(90_000),
+  });
+  return await res.json().catch(() => ({})) as Record<string, unknown>;
+}
+
+async function processAiReading() {
+  const { data, error } = await svc.rpc("wa_ai_claim", { p_limit: 3 });
+  if (error) { console.error("wa_ai_claim", error.message); return 0; }
+  let done = 0;
+  for (const row of (data ?? []) as { conversation_id: string; tenant_id: string }[]) {
+    try {
+      const r = await internalCall("ai-analyze", { action: "analyze_conversation", tenant_id: row.tenant_id, conversation_id: row.conversation_id });
+      if (Number(r.sale_signals_created ?? 0) > 0) {
+        await internalCall("sale-confirm", { action: "auto_process", tenant_id: row.tenant_id, conversation_id: row.conversation_id });
+      }
+      done++;
+    } catch (e) {
+      console.error("leitura IA", row.conversation_id, (e as Error).message);
+    }
+  }
+  return done;
+}
+
+function inBackground(p: Promise<unknown>) {
+  const rt = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime;
+  if (rt?.waitUntil) rt.waitUntil(p); else void p;
+}
+
 Deno.serve(async (req) => {
   const path = new URL(req.url).pathname;
   const hook = path.match(/\/hook\/([0-9a-f-]{36})\/([0-9a-f]{32,64})\/?$/i);
@@ -579,6 +618,7 @@ Deno.serve(async (req) => {
   try {
     const queue = await processQueue(deadline);
     const due = await processDue(deadline);
+    inBackground(processAiReading().catch((e) => console.error("leitura IA", (e as Error).message)));
     return json({ ok: true, queue, due });
   } catch (e) {
     console.error("cro-flows", (e as Error).message);

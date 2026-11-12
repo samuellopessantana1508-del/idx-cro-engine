@@ -42,11 +42,15 @@ const LEGACY_TYPE_MAP: Record<string, string> = {
 
 type AuthResult =
   | { ok: true; isWebhook: false; userId: string; userEmail: string | null }
-  | { ok: true; isWebhook: true; tenantId: string }
+  | { ok: true; isWebhook: true; tenantId: string; internal?: false }
+  | { ok: true; isWebhook: true; tenantId: null; internal: true }
   | { ok: false; error: string };
 
 async function authenticate(req: Request): Promise<AuthResult> {
   const jwt = req.headers.get("Authorization")?.replace("Bearer ", "");
+  // chamada interna (automações do CRO lendo conversas da conexão do WhatsApp)
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (jwt && serviceKey && jwt === serviceKey) return { ok: true, isWebhook: true, tenantId: null, internal: true };
   if (jwt) {
     const { data, error } = await supa.auth.getUser(jwt);
     if (!error && data.user) {
@@ -643,7 +647,7 @@ Deno.serve(async (req: Request) => {
   if (!conversationId) return json({ error: "missing_conversation_id" }, 400);
 
   if (auth.isWebhook) {
-    if (auth.tenantId !== tenantId) {
+    if (!auth.internal && auth.tenantId !== tenantId) {
       return json({ error: "tenant_mismatch" }, 403);
     }
   } else {

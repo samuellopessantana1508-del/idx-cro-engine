@@ -54,6 +54,7 @@ import {
 import { supabase } from "./lib/supabaseClient";
 import { CrmWorkspace, crmViewTitles } from "./crm/workspace";
 import { WaReplyBox } from "./crm/wa-reply";
+import { ConnectionPanel } from "./crm/dispatch";
 import type { CrmView } from "./crm/types";
 import type { AiPatterns, CampaignMetric, CapiEvent, CapiHealth, ConversationInsight, CrmActivity, CustomerProfile, FinancialSummary, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, MonthlyPoint, Offer, SaleSignal, SaleSignalCapiStatus, SmartLink, Tenant, TenantUser, WebhookKey, WhatsAppContact, WhatsAppConversation, WhatsAppInstance, WhatsAppMessage } from "./lib/types";
 import { envConfigured, formatDate, formatMoney, linkCode, slugify, smartLinkUrl, timeAgo } from "./lib/utils";
@@ -567,7 +568,8 @@ export function App() {
   const [waNewKeyLabel, setWaNewKeyLabel] = useState("");
   const [waGeneratedKey, setWaGeneratedKey] = useState("");
   const [waBusy, setWaBusy] = useState(false);
-  const [waTab, setWaTab] = useState<"conversations" | "instances" | "config">("conversations");
+  const [waTab, setWaTab] = useState<"conversations" | "instances">("conversations");
+  const [waShowAdvanced, setWaShowAdvanced] = useState(false);
   const [waConversations, setWaConversations] = useState<WhatsAppConversation[]>([]);
   const [waInboxFilter, setWaInboxFilter] = useState<"open" | "mine" | "none" | "closed">("open");
   const [waMessages, setWaMessages] = useState<WhatsAppMessage[]>([]);
@@ -3963,10 +3965,7 @@ export function App() {
                 <MessageCircle size={15} style={{ verticalAlign: "middle", marginRight: 4 }} /> Conversas
               </button>
               <button className={waTab === "instances" ? "active" : ""} onClick={() => setWaTab("instances")}>
-                <Wifi size={15} style={{ verticalAlign: "middle", marginRight: 4 }} /> Instâncias
-              </button>
-              <button className={waTab === "config" ? "active" : ""} onClick={() => setWaTab("config")}>
-                <SlidersHorizontal size={15} style={{ verticalAlign: "middle", marginRight: 4 }} /> Config
+                <Wifi size={15} style={{ verticalAlign: "middle", marginRight: 4 }} /> Conexão
               </button>
             </div>
 
@@ -4268,8 +4267,24 @@ export function App() {
                 <section className="panel">
                   <div className="panel-head">
                     <div>
-                      <h2>Instâncias WhatsApp</h2>
-                      <p>Conexões externas pela Evolution API (opcional). O jeito recomendado é o QR Code do próprio CRO, em <button type="button" className="crm-link" onClick={() => goToCrm({ name: "dispatch" })}>Disparos → Conexão</button> — uma única conexão por número, usada pela caixa de entrada, CRM e disparos.</p>
+                      <h2>Conexão do WhatsApp</h2>
+                      <p>Uma única conexão para tudo: caixa de entrada, respostas, disparos, automações, cadências e a leitura das conversas pela IA que detecta vendas.</p>
+                    </div>
+                    <Wifi size={18} />
+                  </div>
+                  <div className="crm-root"><ConnectionPanel tenantId={tenant.id} canConfigure={canAdminTenant} notify={setToast} /></div>
+                </section>
+                {canAdminTenant && (
+                  <button type="button" className="ghost-dark-button" onClick={() => setWaShowAdvanced((v) => !v)} style={{ alignSelf: "flex-start" }}>
+                    <SlidersHorizontal size={13} style={{ marginRight: 4 }} /> {waShowAdvanced ? "Esconder integrações avançadas" : "Integrações avançadas (Evolution API, n8n e chaves de webhook)"}
+                  </button>
+                )}
+                {waShowAdvanced && (<>
+                <section className="panel">
+                  <div className="panel-head">
+                    <div>
+                      <h2>Instâncias externas (Evolution API)</h2>
+                      <p>Só para quem já usa uma Evolution API própria. Não é necessário: a conexão acima já cobre tudo.</p>
                     </div>
                     <MessageCircle size={18} />
                   </div>
@@ -4291,11 +4306,11 @@ export function App() {
                     />
                   </div>
 
-                  {waInstances.length === 0 && !waBusy && (
-                    <p style={{ opacity: 0.6, marginTop: "0.75rem" }}>Nenhuma instância cadastrada.</p>
+                  {waInstances.filter((i) => i.provider !== "gateway").length === 0 && !waBusy && (
+                    <p style={{ opacity: 0.6, marginTop: "0.75rem" }}>Nenhuma instância externa cadastrada.</p>
                   )}
 
-                  {waInstances.map((inst) => (
+                  {waInstances.filter((i) => i.provider !== "gateway").map((inst) => (
                     <div key={inst.id} className="panel" style={{ marginTop: "0.75rem", padding: "1rem", border: "1px solid var(--line)", borderRadius: 10 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
                         <div>
@@ -4428,10 +4443,11 @@ export function App() {
                     </div>
                   )}
                 </section>
+                </>)}
               </section>
             )}
 
-            {waTab === "config" && (
+            {waTab === "instances" && waShowAdvanced && (
               <section className="stack">
                 <section className="panel">
                   <div className="panel-head">

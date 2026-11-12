@@ -137,7 +137,7 @@ export type WhatsAppInstance = {
   tenant_id: string;
   instance_name: string;
   phone_number?: string | null;
-  provider: "evolution" | "cloud_api";
+  provider: "evolution" | "cloud_api" | "gateway";
   status: "disconnected" | "connecting" | "connected" | "banned";
   mode?: "test" | "production";
   api_url?: string | null;
