@@ -65,3 +65,6 @@ verify_jwt = false
 
 [functions.cro-flows]
 verify_jwt = false
+
+[functions.wa-cloud]
+verify_jwt = false   # webhook da Meta não manda JWT; a tela é validada pela própria função

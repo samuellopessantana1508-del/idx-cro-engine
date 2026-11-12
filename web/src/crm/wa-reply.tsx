@@ -4,6 +4,7 @@ import * as api from "./api";
 import { errorText } from "./format";
 import type { Member, WaGatewayInstance } from "./types";
 import { Modal } from "./ui";
+import { CloudWindowNote, TemplateSendBox } from "./wa-channel";
 
 type Pending = { id: string; body: string; status: string; error: string | null };
 
@@ -16,6 +17,8 @@ export function WaReplyBox({ tenantId, conversationId, notify, onOpenConnection,
   tenantId: string; conversationId: string; notify: (m: string) => void; onOpenConnection: () => void; onDelivered?: () => void;
 }) {
   const [inst, setInst] = useState<WaGatewayInstance | null | undefined>(undefined);
+  const [channel, setChannel] = useState<api.WaChannel | null | undefined>(undefined);
+  const [win, setWin] = useState<{ provider: string; open: boolean; last_inbound_at: string | null } | null>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<Pending[]>([]);
@@ -23,13 +26,26 @@ export function WaReplyBox({ tenantId, conversationId, notify, onOpenConnection,
 
   useEffect(() => {
     let alive = true;
-    const load = () => api.waInstance(tenantId).then((i) => { if (alive) setInst(i); }).catch(() => { if (alive) setInst(null); });
+    const load = () => {
+      api.waInstance(tenantId).then((i) => { if (alive) setInst(i); }).catch(() => { if (alive) setInst(null); });
+      api.waChannel(tenantId).then((c) => { if (alive) setChannel(c); }).catch(() => { if (alive) setChannel(null); });
+    };
     void load();
     const t = setInterval(load, 30000);
     return () => { alive = false; clearInterval(t); };
   }, [tenantId]);
 
   useEffect(() => { setPending([]); setText(""); }, [conversationId]);
+
+  // API oficial: janela de 24 h desde a última mensagem do cliente
+  useEffect(() => {
+    if (channel?.active !== "cloud_api") { setWin(null); return; }
+    let alive = true;
+    const load = () => api.waConversationWindow(conversationId).then((w) => { if (alive) setWin(w); }).catch(() => {});
+    void load();
+    const t = setInterval(load, 30000);
+    return () => { alive = false; clearInterval(t); };
+  }, [conversationId, channel?.active]);
 
   // acompanha os envios desta conversa até sair
   useEffect(() => {
@@ -59,16 +75,18 @@ export function WaReplyBox({ tenantId, conversationId, notify, onOpenConnection,
     } catch (e) { notify(errorText(e)); } finally { setBusy(false); }
   }
 
-  if (inst === undefined) return null;
-  if (!inst) {
+  if (inst === undefined || channel === undefined) return null;
+  const official = channel?.active === "cloud_api";
+  if (official ? !channel?.cloud : !inst) {
     return (
       <div className="wa-readonly-bar">
         Para responder por aqui, conecte o WhatsApp do CRO.{" "}
-        <button type="button" className="crm-link" onClick={onOpenConnection}>Conectar em Disparos</button>
+        <button type="button" className="crm-link" onClick={onOpenConnection}>Ver conexão</button>
       </div>
     );
   }
-  const connected = inst.status === "connected";
+  const connected = official ? channel?.cloud?.status === "connected" : inst?.status === "connected";
+  const closedWindow = official && win !== null && !win.open;
   return (
     <>
       {pending.length > 0 && (
@@ -84,6 +102,12 @@ export function WaReplyBox({ tenantId, conversationId, notify, onOpenConnection,
       )}
       <ConversationBar tenantId={tenantId} conversationId={conversationId} notify={notify} />
       {!connected && <div className="wa-reply-note"><AlertTriangle size={12} /> WhatsApp desconectado — a mensagem fica na fila e sai quando reconectar.</div>}
+      {closedWindow ? (
+        <div className="wa-reply-tpl">
+          <CloudWindowNote lastInboundAt={win!.last_inbound_at} />
+          <TemplateSendBox tenantId={tenantId} target={{ conversationId }} notify={notify} onSent={() => onDelivered?.()} />
+        </div>
+      ) : (
       <div className="wa-reply">
         <QuickReplies tenantId={tenantId} text={text} notify={notify} onPick={(b) => { setText(b); ref.current?.focus(); }} />
         <textarea ref={ref} rows={1} value={text} placeholder="Escreva uma resposta…" maxLength={4000}
@@ -91,6 +115,7 @@ export function WaReplyBox({ tenantId, conversationId, notify, onOpenConnection,
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} />
         <button type="button" className="crm-btn primary" disabled={busy || !text.trim()} onClick={send} title="Enviar (Enter)"><Send size={16} /></button>
       </div>
+      )}
     </>
   );
 }

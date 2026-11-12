@@ -54,7 +54,7 @@ import {
 import { supabase } from "./lib/supabaseClient";
 import { CrmWorkspace, crmViewTitles } from "./crm/workspace";
 import { WaReplyBox } from "./crm/wa-reply";
-import { ConnectionPanel } from "./crm/dispatch";
+import { WaChannelPanel } from "./crm/wa-channel";
 import type { CrmView } from "./crm/types";
 import type { AiPatterns, CampaignMetric, CapiEvent, CapiHealth, ConversationInsight, CrmActivity, CustomerProfile, FinancialSummary, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, MonthlyPoint, Offer, SaleSignal, SaleSignalCapiStatus, SmartLink, Tenant, TenantUser, WebhookKey, WhatsAppContact, WhatsAppConversation, WhatsAppInstance, WhatsAppMessage } from "./lib/types";
 import { envConfigured, formatDate, formatMoney, linkCode, slugify, smartLinkUrl, timeAgo } from "./lib/utils";
@@ -4268,11 +4268,11 @@ export function App() {
                   <div className="panel-head">
                     <div>
                       <h2>Conexão do WhatsApp</h2>
-                      <p>Uma única conexão para tudo: caixa de entrada, respostas, disparos, automações, cadências e a leitura das conversas pela IA que detecta vendas.</p>
+                      <p>Escolha como o CRO se conecta: pelo QR Code ou pela API oficial da Meta. A conexão em uso atende tudo — caixa de entrada, respostas, disparos, automações, cadências e a leitura de vendas pela IA.</p>
                     </div>
                     <Wifi size={18} />
                   </div>
-                  <div className="crm-root"><ConnectionPanel tenantId={tenant.id} canConfigure={canAdminTenant} notify={setToast} /></div>
+                  <div className="crm-root"><WaChannelPanel tenantId={tenant.id} canConfigure={canAdminTenant} notify={setToast} /></div>
                 </section>
                 {canAdminTenant && (
                   <button type="button" className="ghost-dark-button" onClick={() => setWaShowAdvanced((v) => !v)} style={{ alignSelf: "flex-start" }}>

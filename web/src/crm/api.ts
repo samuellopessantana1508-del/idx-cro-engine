@@ -638,9 +638,76 @@ export async function waConnect(tenantId: string, action: "connect" | "disconnec
   return check(await db().rpc("wa_gateway_connect", { p_tenant_id: tenantId, p_action: action })) as WaGatewayInstance;
 }
 export async function waSend(tenantId: string, body: string, target: { phone?: string | null; conversationId?: string | null }) {
-  return check(await db().rpc("wa_send_message", {
+  const id = check(await db().rpc("wa_send_message", {
     p_tenant_id: tenantId, p_body: body, p_phone: target.phone ?? null, p_conversation_id: target.conversationId ?? null,
   })) as string;
+  kickCloud(tenantId);
+  return id;
+}
+
+// ---------- Conexão: QR Code x API oficial (Meta Cloud API) ----------
+export type WaChannel = {
+  active: "gateway" | "cloud_api";
+  gateway: { id: string; status: string; desired_status: string; phone: string | null } | null;
+  cloud: {
+    id: string; status: string; phone: string | null; phone_number_id: string | null; waba_id: string | null;
+    verified_name: string | null; quality: string | null; last_error: string | null; checked_at: string | null;
+    webhook_seen_at: string | null; token_hint: string | null; has_app_secret: boolean; verify_token: string | null; templates: number;
+  } | null;
+};
+export type WaTemplate = { id: string; name: string; language: string; status: string; category: string | null; body_text: string | null; header_text: string | null; param_count: number; components: { type: string; format?: string }[] };
+export type WaTemplateChoice = { name: string; language: string; params: string[] };
+
+export async function waChannel(tenantId: string) {
+  return check(await db().rpc("wa_channel_get", { p_tenant_id: tenantId })) as WaChannel;
+}
+export async function waChannelSet(tenantId: string, provider: "gateway" | "cloud_api") {
+  return check(await db().rpc("wa_channel_set", { p_tenant_id: tenantId, p_provider: provider })) as WaChannel;
+}
+async function cloudFn<T>(body: Record<string, unknown>): Promise<T> {
+  const { data } = await db().auth.getSession();
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/wa-cloud`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${data.session?.access_token}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok && !json.channel) throw new Error(json.error || `Falha ${res.status} na API oficial`);
+  return json as T;
+}
+export type CloudSaveResult = { ok: boolean; error?: string; warning?: string | null; channel: WaChannel };
+export const waCloudSave = (tenantId: string, input: { phone_number_id: string; waba_id: string; access_token?: string; app_secret?: string }) =>
+  cloudFn<CloudSaveResult>({ action: "save", tenant_id: tenantId, ...input });
+export const waCloudTest = (tenantId: string) => cloudFn<CloudSaveResult>({ action: "test", tenant_id: tenantId });
+export const waCloudRemove = (tenantId: string) => cloudFn<{ ok: boolean; channel: WaChannel }>({ action: "remove", tenant_id: tenantId });
+export const waCloudSyncTemplates = (tenantId: string) => cloudFn<{ ok: boolean; total: number; approved: number }>({ action: "sync_templates", tenant_id: tenantId });
+/** API oficial: pede o envio imediato do que entrou na fila (sem esperar a rotina de 30 s). */
+export function kickCloud(tenantId: string) {
+  void cloudFn({ action: "flush", tenant_id: tenantId }).catch(() => {});
+}
+export async function waTemplates(tenantId: string) {
+  return check(await db().from("wa_templates").select("id, name, language, status, category, body_text, header_text, param_count, components")
+    .eq("tenant_id", tenantId).eq("status", "APPROVED").order("name")) as WaTemplate[];
+}
+/** Modelos que o CRO consegue enviar (sem cabeçalho de imagem/vídeo/documento, que pedem arquivo). */
+export const sendableTemplate = (t: WaTemplate) =>
+  !(t.components ?? []).some((c) => String(c.type).toUpperCase() === "HEADER" && String(c.format ?? "TEXT").toUpperCase() !== "TEXT");
+export async function waSendTemplate(tenantId: string, template: WaTemplateChoice, target: { phone?: string | null; conversationId?: string | null }) {
+  const id = check(await db().rpc("wa_send_template", {
+    p_tenant_id: tenantId, p_template: template, p_phone: target.phone ?? null, p_conversation_id: target.conversationId ?? null,
+  })) as string;
+  kickCloud(tenantId);
+  return id;
+}
+export async function waConversationWindow(conversationId: string) {
+  return check(await db().rpc("wa_conversation_window", { p_conversation_id: conversationId })) as { provider: "gateway" | "cloud_api"; last_inbound_at: string | null; open: boolean };
+}
+export async function waCampaignTemplate(campaignId: string) {
+  const r = check(await db().from("wa_campaigns").select("template").eq("id", campaignId).maybeSingle()) as { template: WaTemplateChoice | null } | null;
+  return r?.template ?? null;
+}
+export async function waCampaignSetTemplate(campaignId: string, template: WaTemplateChoice | null) {
+  check(await db().rpc("wa_campaign_set_template", { p_campaign_id: campaignId, p_template: template }));
 }
 export async function waCancelOutbox(id: string) {
   check(await db().rpc("wa_cancel_outbox", { p_id: id }));

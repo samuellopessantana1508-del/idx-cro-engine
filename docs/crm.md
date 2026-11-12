@@ -184,3 +184,19 @@ Uma conexão por empresa (QR Code do próprio CRO, motor `wa-gateway`) atende tu
 - Todas as escolhas de conexão (conectar, enviar, criar/iniciar disparo, automações, saúde) usam a mesma ordem: conectada e ligada primeiro.
 - A leitura pela IA que antes só acontecia pelo fluxo antigo (Evolution + n8n) agora roda para a conexão do CRO: `cro-flows` pega as conversas com mensagens novas do cliente (`wa_ai_claim`, janela de 8 s, últimos 2 dias), chama `ai-analyze` e, se houver sinal de venda, `sale-confirm` (`auto_process`). Chamadas internas usam a chave de serviço (nunca no navegador).
 - Evolution API, n8n e chaves de webhook ficaram em "Integrações avançadas" na tela WhatsApp → Conexão (só para quem já usa).
+
+
+## Duas conexões do WhatsApp: QR Code ou API oficial da Meta
+
+Cada empresa escolhe em **WhatsApp → Conexão** qual conexão usa para enviar (`wa_channel_settings.active_provider`):
+- **QR Code** (`gateway`): motor do CRO na VPS (Baileys). Lê grupos e extrai contatos; não é oficial.
+- **API oficial** (`cloud_api`): Meta WhatsApp Cloud API, função `wa-cloud`.
+
+Tudo que envia (respostas, disparos, automações, cadências) usa a conexão ativa (`idx_private.wa_active_instance`). As duas recebem mensagens na mesma caixa de entrada, com automações, IA de vendas e atribuição (`Ref:`).
+
+API oficial (`supabase/functions/wa-cloud`, regras puras em `_shared/wa-cloud-core.ts`):
+- Configuração: Phone Number ID, WABA ID, token permanente e (recomendado) a chave secreta do app. Token e chave ficam criptografados (`wa_cloud_credentials`, sem acesso pelo navegador). "Salvar e testar" confere o número na Meta, liga o app à conta (`subscribed_apps`) e baixa os modelos aprovados (`wa_templates`).
+- Webhook: `/functions/v1/wa-cloud/webhook/<id>` com o token de verificação mostrado na tela; assinatura `X-Hub-Signature-256` conferida quando há chave secreta. Mensagens entram por `wa_gw_ingest`; status (entregue/lido/falhou) por `wa_cloud_status`.
+- Envio: a fila `wa_outbox` é enviada por `wa-cloud` (logo após cada envio pela tela, após mensagens recebidas e a cada rodada de 30 s do motor). Usa `wa_gw_claim`/`wa_gw_result` com a chave de serviço e token nulo — as mesmas regras de horário, limite diário e SAIR.
+- Janela de 24 h: fora dela só modelo aprovado. A caixa de entrada troca a resposta por "Enviar modelo"; disparos exigem um modelo (`wa_campaign_set_template`, variáveis `{nome}`, `{empresa}`…).
+- Erros da Meta viram mensagens claras (janela de 24 h, número sem WhatsApp, limite, token vencido).

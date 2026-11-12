@@ -10,6 +10,7 @@ import { dateTime, errorText, phoneLabel, relative, timeOnly } from "./format";
 import type { WaAddResult, WaCampaign, WaCampaignStatus, WaGatewayInstance, WaRecipient, WaRecipientStatus } from "./types";
 import { Bar, Confirm, Empty, Field, Modal, Pill, Skeleton, Tabs } from "./ui";
 import { MapsSearchView } from "./maps-search";
+import { TemplateFields, TemplateSendBox, WaChannelSummary, useWaChannel } from "./wa-channel";
 
 const statusInfo: Record<WaCampaignStatus, { label: string; tone: string }> = {
   draft: { label: "Rascunho", tone: "muted" },
@@ -166,6 +167,7 @@ export function DispatchView() {
   async function act(c: WaCampaign, a: "start" | "pause" | "resume" | "cancel" | "archive") {
     try {
       await api.waCampaignAction(c.id, a);
+      if (a === "start" || a === "resume") api.kickCloud(tenantId);
       notify({ start: "Disparo iniciado", resume: "Disparo retomado", pause: "Disparo pausado", cancel: "Disparo cancelado", archive: "Rascunho excluído" }[a]);
       void load();
     } catch (e) { notify(errorText(e)); }
@@ -175,7 +177,7 @@ export function DispatchView() {
 
   return (
     <div className="crm-page">
-      <ConnectionCard />
+      <WaChannelSummary tenantId={tenantId} canConfigure={access.configure} notify={notify} />
       <div className="crm-toolbar">
         <div className="crm-toolbar-left">
           <Tabs value={tab} onChange={setTab} tabs={[
@@ -272,6 +274,28 @@ function CampaignEditor({ campaign, onClose, onSaved }: { campaign: WaCampaign |
   const [autoFeed, setAutoFeed] = useState(campaign?.auto_feed ?? false);
   const [busy, setBusy] = useState(false);
   const refs = useRef<(HTMLTextAreaElement | null)[]>([]);
+  // API oficial: o disparo usa um modelo aprovado pela Meta
+  const [official, setOfficial] = useState(false);
+  const [templates, setTemplates] = useState<api.WaTemplate[]>([]);
+  const [tpl, setTpl] = useState<api.WaTemplateChoice | null>(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const ch = await api.waChannel(tenantId);
+        if (!alive || ch.active !== "cloud_api") return;
+        setOfficial(true);
+        setTemplates(await api.waTemplates(tenantId));
+        if (campaign?.id) {
+          const t = await api.waCampaignTemplate(campaign.id);
+          if (alive && t) setTpl({ name: t.name, language: t.language, params: t.params ?? [] });
+        }
+      } catch { /* sem API oficial */ }
+    })();
+    return () => { alive = false; };
+  }, [tenantId, campaign?.id]);
+  const tplBody = templates.find((t) => t.name === tpl?.name && t.language === tpl?.language)?.body_text ?? "";
+  const tplReady = !!tpl && tpl.params.every((p) => p.trim());
 
   function insertVar(i: number, v: string) {
     const el = refs.current[i];
@@ -286,9 +310,10 @@ function CampaignEditor({ campaign, onClose, onSaved }: { campaign: WaCampaign |
     setBusy(true);
     try {
       const id = await api.waSaveCampaign(tenantId, campaign?.id ?? null, {
-        name, messages: msgs, min_delay_sec: minD, max_delay_sec: Math.max(minD, maxD), daily_limit: limit,
-        start_hour: startH, end_hour: endH, opt_out_footer: footer,
+        name, messages: official ? [tplBody || `Modelo ${tpl?.name}`] : msgs, min_delay_sec: minD, max_delay_sec: Math.max(minD, maxD), daily_limit: limit,
+        start_hour: startH, end_hour: endH, opt_out_footer: official ? false : footer,
       });
+      if (official) await api.waCampaignSetTemplate(id, tpl);
       if (autoFeed !== (campaign?.auto_feed ?? false)) await api.waSetAutoFeed(id, autoFeed);
       notify(campaign ? "Disparo atualizado" : "Disparo criado — agora escolha quem vai receber");
       onSaved(id, !campaign);
@@ -300,11 +325,20 @@ function CampaignEditor({ campaign, onClose, onSaved }: { campaign: WaCampaign |
     <Modal open onClose={onClose} title={campaign ? "Editar disparo" : "Novo disparo"} width={720}
       footer={<>
         <button type="button" className="crm-btn ghost" onClick={onClose}>Cancelar</button>
-        <button type="button" className="crm-btn primary" disabled={busy || !name.trim() || !msgs.some((m) => m.trim())} onClick={save}>{campaign ? "Salvar" : "Criar e escolher público"}</button>
+        <button type="button" className="crm-btn primary" disabled={busy || !name.trim() || (official ? !tplReady : !msgs.some((m) => m.trim()))} onClick={save}>{campaign ? "Salvar" : "Criar e escolher público"}</button>
       </>}>
       <div className="crm-form-grid">
         <Field label="Nome do disparo" span={2}><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Farmácias SP — apresentação" /></Field>
       </div>
+      {official ? (
+        <div className="wa-msgs">
+          <p className="crm-muted small"><ShieldCheck size={13} /> A empresa usa a <b>API oficial do WhatsApp</b>: o disparo envia um modelo aprovado pela Meta. Preencha as variáveis com os dados de cada contato.</p>
+          <div className="crm-form-grid">
+            <TemplateFields templates={templates} value={tpl} onChange={setTpl} vars={VARS}
+              sample={(p) => preview(p, { nome: "Drogaria São José", empresa: "Drogaria São José", cidade: "Campinas" }, false)} />
+          </div>
+        </div>
+      ) : (
       <div className="wa-msgs">
         {msgs.map((m, i) => (
           <div key={i} className="wa-msg-edit">
@@ -320,6 +354,7 @@ function CampaignEditor({ campaign, onClose, onSaved }: { campaign: WaCampaign |
         {msgs.length < 5 && <button type="button" className="crm-btn ghost sm" onClick={() => setMsgs([...msgs, ""])}><Plus size={14} /> Adicionar variação</button>}
         <p className="crm-muted small">Cada contato recebe uma variação sorteada. Use <code>{"{Olá|Oi|Bom dia}"}</code> para alternar palavras — mensagens diferentes entre si reduzem o risco de bloqueio.</p>
       </div>
+      )}
 
       <h4 className="wa-sub"><ShieldCheck size={15} /> Proteção do número</h4>
       <div className="crm-form-grid">
@@ -333,16 +368,16 @@ function CampaignEditor({ campaign, onClose, onSaved }: { campaign: WaCampaign |
             <select value={endH} onChange={(e) => setEndH(Number(e.target.value))}>{Array.from({ length: 24 }, (_, h) => h + 1).filter((h) => h > startH).map((h) => <option key={h} value={h}>{h}h</option>)}</select>
           </div>
         </Field>
-        <label className="crm-check" style={{ gridColumn: "1 / -1" }}>
+        {!official && <label className="crm-check" style={{ gridColumn: "1 / -1" }}>
           <input type="checkbox" checked={footer} onChange={(e) => setFooter(e.target.checked)} />
           Incluir “Se não quiser receber mais mensagens, responda SAIR.” (recomendado)
-        </label>
+        </label>}
         <label className="crm-check" style={{ gridColumn: "1 / -1" }}>
           <input type="checkbox" checked={autoFeed} onChange={(e) => setAutoFeed(e.target.checked)} />
           Alimentação automática: continuar ligado recebendo os novos clientes da busca no Google Maps
         </label>
       </div>
-      {risky && <p className="wa-warn"><AlertTriangle size={14} /> Configuração mais agressiva aumenta a chance de o WhatsApp bloquear o número. O padrão (25–60 s, 200/dia, com SAIR) é o mais seguro.</p>}
+      {risky && !official && <p className="wa-warn"><AlertTriangle size={14} /> Configuração mais agressiva aumenta a chance de o WhatsApp bloquear o número. O padrão (25–60 s, 200/dia, com SAIR) é o mais seguro.</p>}
     </Modal>
   );
 }
@@ -596,9 +631,13 @@ export function SendWhatsAppModal({ phone, name, initial, onClose, onSent }: {
 }) {
   const { tenantId, notify } = useCrm();
   const { inst } = useWaInstance();
+  const { channel } = useWaChannel(tenantId);
   const [text, setText] = useState(initial ?? "");
   const [busy, setBusy] = useState(false);
-  const connected = inst?.status === "connected";
+  const official = channel?.active === "cloud_api";
+  const [mode, setMode] = useState<"text" | "template">("text");
+  const connected = official ? channel?.cloud?.status === "connected" : inst?.status === "connected";
+  const hasConnection = official ? !!channel?.cloud : !!inst;
   async function send() {
     setBusy(true);
     try {
@@ -608,15 +647,27 @@ export function SendWhatsAppModal({ phone, name, initial, onClose, onSent }: {
     } catch (e) { notify(errorText(e)); } finally { setBusy(false); }
   }
   return (
-    <Modal open onClose={onClose} title={`WhatsApp para ${name || phoneLabel(phone)}`} width={520}
+    <Modal open onClose={onClose} title={`WhatsApp para ${name || phoneLabel(phone)}`} width={560}
       footer={<>
         <button type="button" className="crm-btn ghost" onClick={onClose}>Cancelar</button>
-        <button type="button" className="crm-btn primary" disabled={busy || !text.trim() || !inst} onClick={send}><Send size={15} /> Enviar pelo CRO</button>
+        {mode === "text" && <button type="button" className="crm-btn primary" disabled={busy || !text.trim() || !hasConnection} onClick={send}><Send size={15} /> Enviar pelo CRO</button>}
       </>}>
-      {!inst && inst !== undefined && <p className="wa-warn"><AlertTriangle size={14} /> Nenhum WhatsApp conectado. Um gestor precisa conectar em Disparos.</p>}
-      {inst && !connected && <p className="wa-warn"><AlertTriangle size={14} /> WhatsApp desconectado agora: a mensagem fica na fila até reconectar.</p>}
-      <textarea rows={6} value={text} onChange={(e) => setText(e.target.value)} maxLength={4000} autoFocus />
-      <p className="crm-muted small">Enviado pelo número conectado ao CRO e salvo na conversa.</p>
+      {channel !== undefined && !hasConnection && <p className="wa-warn"><AlertTriangle size={14} /> Nenhum WhatsApp conectado. Um gestor precisa conectar em WhatsApp → Conexão.</p>}
+      {hasConnection && !connected && <p className="wa-warn"><AlertTriangle size={14} /> WhatsApp desconectado agora: a mensagem fica na fila até reconectar.</p>}
+      {official && (
+        <div className="wa-mode">
+          <button type="button" className={mode === "text" ? "on" : ""} onClick={() => setMode("text")}>Texto (cliente falou nas últimas 24 h)</button>
+          <button type="button" className={mode === "template" ? "on" : ""} onClick={() => setMode("template")}>Modelo aprovado</button>
+        </div>
+      )}
+      {mode === "text" ? (
+        <>
+          <textarea rows={6} value={text} onChange={(e) => setText(e.target.value)} maxLength={4000} autoFocus />
+          <p className="crm-muted small">{official ? "Pela API oficial, texto livre só chega se o cliente mandou mensagem nas últimas 24 horas. Para iniciar a conversa, use um modelo." : "Enviado pelo número conectado ao CRO e salvo na conversa."}</p>
+        </>
+      ) : (
+        <div className="crm-form-grid"><TemplateSendBox tenantId={tenantId} target={{ phone }} notify={notify} onSent={() => { onSent?.(); onClose(); }} /></div>
+      )}
     </Modal>
   );
 }

@@ -56,17 +56,17 @@ async function getFlow(id: string): Promise<Flow | null> {
   return flowCache.get(id)!;
 }
 async function gatewayInstance(tenant: string): Promise<string | null> {
-  // a conexão do CRO em uso (conectada primeiro)
-  const { data } = await svc.from("whatsapp_instances").select("id, status, desired_status, last_seen_at").eq("tenant_id", tenant).eq("provider", "gateway");
-  const list = (data ?? []) as { id: string; status: string; desired_status: string; last_seen_at: string | null }[];
-  const score = (x: { status: string; desired_status: string }) =>
-    (x.status === "connected" && x.desired_status === "connected" ? 4 : 0) + (x.desired_status === "connected" ? 2 : 0);
-  list.sort((a, b) => score(b) - score(a) || String(b.last_seen_at ?? "").localeCompare(String(a.last_seen_at ?? "")));
-  return list[0]?.id ?? null;
+  // a conexão ATIVA da empresa (QR Code do CRO ou API oficial), conectada primeiro
+  const { data } = await svc.rpc("wa_active_instance_id", { p_tenant_id: tenant });
+  return (data as string | null) ?? null;
 }
 async function conversationFor(tenant: string, phone: string, instance: string | null): Promise<{ id: string; bot_mode: string; bot_paused_until: string | null } | null> {
   if (!instance) return null;
-  const { data: wc } = await svc.from("whatsapp_contacts").select("id").eq("tenant_id", tenant).eq("instance_id", instance).eq("phone", phone).limit(1).maybeSingle();
+  let { data: wc } = await svc.from("whatsapp_contacts").select("id").eq("tenant_id", tenant).eq("instance_id", instance).eq("phone", phone).limit(1).maybeSingle();
+  if (!wc) {
+    // a mensagem pode ter chegado pela outra conexão (QR Code x API oficial)
+    ({ data: wc } = await svc.from("whatsapp_contacts").select("id").eq("tenant_id", tenant).eq("phone", phone).order("updated_at", { ascending: false }).limit(1).maybeSingle());
+  }
   if (!wc) return null;
   const { data } = await svc.from("whatsapp_conversations").select("id, bot_mode, bot_paused_until").eq("contact_id", wc.id).limit(1).maybeSingle();
   return data as any;
@@ -611,14 +611,19 @@ Deno.serve(async (req) => {
   if (hook && req.method === "POST") { tzCache.clear(); flowCache.clear(); return await handleHook(req, hook[1], hook[2]); }
   if (req.method !== "POST") return json({ error: "Método não suportado" }, 405);
   const token = req.headers.get("x-gateway-token") ?? "";
-  const { error: authErr } = await svc.rpc("wa_gw_instances", { p_token: token });
-  if (authErr) return json({ error: "unauthorized" }, 401);
+  const internal = (req.headers.get("Authorization") ?? "") === `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`;
+  if (!internal) {
+    const { error: authErr } = await svc.rpc("wa_gw_instances", { p_token: token });
+    if (authErr) return json({ error: "unauthorized" }, 401);
+  }
   tzCache.clear(); flowCache.clear();
   const deadline = Date.now() + TIME_BUDGET_MS;
   try {
     const queue = await processQueue(deadline);
     const due = await processDue(deadline);
     inBackground(processAiReading().catch((e) => console.error("leitura IA", (e as Error).message)));
+    // API oficial: envia o que entrou na fila (respostas das automações, disparos, cadências)
+    if (!internal) inBackground(internalCall("wa-cloud/flush", {}).catch((e) => console.error("api oficial", (e as Error).message)));
     return json({ ok: true, queue, due });
   } catch (e) {
     console.error("cro-flows", (e as Error).message);

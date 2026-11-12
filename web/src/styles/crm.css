@@ -1091,3 +1091,56 @@ kbd {
 .ext-result-nums span { font-size: 0.72rem; color: var(--muted); }
 .ext-result-nums .ok { background: #ecfdf3; }
 .ext-result-nums .ok strong { color: #15803d; }
+
+/* ---------- Conexão: QR Code x API oficial ---------- */
+.wa-channel { display: grid; gap: 14px; }
+.wa-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.wa-opt { display: grid; gap: 10px; align-content: start; text-align: left; border: 1px solid var(--line); background: var(--paper); border-radius: 12px; padding: 14px 16px; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.wa-opt:hover { border-color: #c9ccd3; }
+.wa-opt.open { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink) inset; }
+.wa-opt.active { background: linear-gradient(180deg, var(--green-soft), var(--paper) 70%); }
+.wa-opt:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.wa-opt-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wa-opt-head strong { font-size: 0.95rem; margin-right: auto; }
+.wa-opt-icon { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; background: var(--soft, #f3f4f6); color: var(--ink); flex: none; }
+.wa-opt.active .wa-opt-icon { background: #d1fae5; color: #047857; }
+.wa-opt-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 0.82rem; }
+.wa-opt-list li { position: relative; padding-left: 18px; color: var(--muted); }
+.wa-opt-list li::before { position: absolute; left: 0; top: 0; font-weight: 700; }
+.wa-opt-list li.pro::before { content: "✓"; color: #047857; }
+.wa-opt-list li.con::before { content: "!"; color: #b45309; left: 4px; }
+.wa-opt .crm-btn { justify-self: start; }
+.wa-opt-body { display: grid; gap: 8px; }
+.wa-opt-body .wa-conn { margin-bottom: 0; }
+.wa-cloud { display: grid; gap: 14px; }
+.wa-cloud-form { display: grid; gap: 10px; }
+.wa-cloud-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.wa-cloud-hook { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+.wa-steps { margin: 0; padding-left: 20px; display: grid; gap: 3px; font-size: 0.84rem; color: var(--muted); }
+.wa-copy { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; align-items: center; gap: 8px; font-size: 0.82rem; }
+.wa-copy span { color: var(--muted); }
+.wa-copy code { background: var(--soft, #f3f4f6); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; overflow-x: auto; white-space: nowrap; font-size: 0.78rem; }
+.wa-cloud-tpl { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+.wa-cloud-tpl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.wa-cloud-tpl-head .wa-sub { margin: 0; }
+.wa-tpl-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; max-height: 340px; overflow: auto; }
+.wa-tpl-list li { display: grid; gap: 4px; }
+.wa-tpl-list .wa-bubble { justify-self: start; }
+.wa-bubble.small { font-size: 0.8rem; }
+.wa-tpl-fields { display: contents; }
+.wa-tpl-fields > .wa-bubble { grid-column: 1 / -1; justify-self: start; }
+.wa-tpl-param { display: grid; gap: 4px; }
+.wa-tpl-param .wa-vars { margin-left: 0; }
+.wa-tpl-send { display: contents; }
+.wa-tpl-send > .crm-btn { grid-column: 1 / -1; justify-self: start; }
+.wa-reply-tpl { display: grid; gap: 8px; padding: 8px 12px 12px; }
+.wa-reply-tpl > .wa-tpl-send { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.wa-reply-tpl > .wa-tpl-send .crm-field.span-2 { grid-column: 1 / -1; }
+.wa-reply-tpl .wa-warn { margin: 0; }
+.wa-mode { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-bottom: 10px; }
+.wa-mode button { border: 0; background: var(--paper); padding: 6px 12px; font-size: 0.82rem; cursor: pointer; color: var(--muted); }
+.wa-mode button.on { background: var(--ink); color: var(--paper); }
+@media (max-width: 640px) {
+  .wa-copy { grid-template-columns: minmax(0, 1fr) auto; }
+  .wa-copy span { grid-column: 1 / -1; }
+}
