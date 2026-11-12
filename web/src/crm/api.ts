@@ -734,6 +734,13 @@ export async function mapsSetLimit(tenantId: string, limit: number) {
 }
 export const mapsPreview = (tenantId: string, query: string, location: string) =>
   mapsFn<{ places: MapsPlace[]; closed: number }>({ action: "preview", tenant_id: tenantId, query, location });
+export type AutoExtractResult = {
+  total: number; imported: number; duplicate: number; invalid: number; optout: number; to_dialer: number;
+  tag: string; list_name: string | null; api_calls: number; leads: { name: string; phone: string; address?: string }[];
+};
+/** Extrator automático do FlowZap original (mesmo código de busca). */
+export const mapsAutoExtract = (tenantId: string, input: { ramo: string; cidade: string; tagName?: string; listName?: string }) =>
+  mapsFn<AutoExtractResult>({ action: "auto_extract", tenant_id: tenantId, ramo: input.ramo, cidade: input.cidade, tagName: input.tagName || undefined, list_name: input.listName || undefined });
 export const mapsRunSource = (sourceId: string) => mapsFn<LeadSourceRunResult>({ action: "run", source_id: sourceId });
 export async function leadSources(tenantId: string) {
   return check(await db().from("lead_sources").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false })) as LeadSource[];

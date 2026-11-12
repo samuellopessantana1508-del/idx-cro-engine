@@ -3,10 +3,12 @@
 //   set_key / remove_key {tenant_id, api_key}       (gestor)  — chave guardada criptografada
 //   preview {tenant_id, query, location}             (quem escreve no CRM) — 1 chamada, não grava
 //   run {source_id}                                  (quem escreve no CRM) — roda uma fonte agora
+//   auto_extract {tenant_id, ramo, cidade, tagName?, list_name?} — extrator do FlowZap original (7 buscas × 3 páginas, até 120)
 //   cron  (header x-gateway-token)                   — motor do WhatsApp chama a cada 10 min; roda as fontes vencidas
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { decrypt, encrypt } from "../_shared/encryption.ts";
 import { parsePlaces, PlacesError, searchText, type Place } from "../_shared/places.ts";
+import { collectLeads } from "../_shared/flowzap-auto-extract.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -146,6 +148,33 @@ Deno.serve(async (req) => {
         places: parsed.places.map((p) => ({ ...p, already: p.phone ? have.has(normMap.get(p.phone) ?? "") : false })),
         closed: parsed.closed,
       });
+    }
+
+    if (action === "auto_extract") {
+      const ramo = String(body.ramo ?? "").trim().slice(0, 80);
+      const cidade = String(body.cidade ?? "").trim().slice(0, 80);
+      if (!ramo || !cidade) return json({ error: "Ramo e cidade são obrigatórios" }, 400);
+      const { data: left } = await svc.rpc("maps_budget", { p_tenant: tenantId });
+      if (Number(left) <= 0) return json({ error: "Limite mensal de buscas atingido. Aumente em Configurar ou aguarde o próximo mês." }, 400);
+      const key = await apiKeyFor(tenantId);
+      let budget = Number(left);
+      const { leads, calls, errors } = await collectLeads(key, ramo, cidade, {
+        baseUrl: PLACES_BASE,
+        pageDelayMs: PLACES_BASE ? 10 : 2000,
+        onCall: async () => {
+          if (budget <= 0) return false;
+          budget--;
+          await svc.rpc("maps_count_call", { p_tenant: tenantId, p_run: null });
+          return true;
+        },
+      });
+      if (!leads.length && errors.length) return json({ error: errors[0] }, 400);
+      const { data: saved, error: sErr } = await svc.rpc("flowzap_import_leads", {
+        p_tenant_id: tenantId, p_user: ua.user.id, p_leads: leads, p_ramo: ramo, p_cidade: cidade,
+        p_tag: String(body.tagName ?? "").trim() || null, p_list_name: String(body.list_name ?? "").trim() || null, p_api_calls: calls,
+      });
+      if (sErr) return json({ error: sErr.message }, 500);
+      return json({ ...(saved as Record<string, unknown>), api_calls: calls, leads: leads.slice(0, 50) });
     }
 
     if (action === "run") {

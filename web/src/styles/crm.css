@@ -1082,3 +1082,11 @@ kbd {
 .wa-inbox-filters button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
 .wa-inbox-filters button.on em { color: #cbd5e1; }
 .wa-link-pill.human { background: #fff7ed; color: #c2410c; }
+
+.ext-result { display: grid; gap: 10px; border-top: 1px solid #f1f5f9; padding-top: 12px; }
+.ext-result-nums { display: flex; gap: 8px; flex-wrap: wrap; }
+.ext-result-nums > div { display: grid; min-width: 96px; padding: 8px 12px; border-radius: 10px; background: #f8fafc; }
+.ext-result-nums strong { font-size: 1.2rem; }
+.ext-result-nums span { font-size: 0.72rem; color: var(--muted); }
+.ext-result-nums .ok { background: #ecfdf3; }
+.ext-result-nums .ok strong { color: #15803d; }

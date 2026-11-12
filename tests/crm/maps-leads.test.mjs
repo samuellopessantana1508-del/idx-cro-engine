@@ -220,6 +220,34 @@ test("chave inválida: mensagem clara e a execução registra o erro", async () 
   await fn(await tok(admin), { action: "set_key", tenant_id: A, api_key: KEY });
 });
 
+test("extrator do FlowZap original: 7 buscas, até 3 páginas, contatos com etiqueta e no discador", async () => {
+  const before = calls.length;
+  const cidade = `Campinas ${TAG}`;
+  const r = await fn(await tok(seller), { action: "auto_extract", tenant_id: A, ramo: "farmácia", cidade, list_name: `FZ ${TAG}` });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const queries = calls.slice(before).filter((c) => !c.pageToken).map((c) => c.textQuery);
+  assert.deepEqual(queries, [
+    `farmácia em ${cidade}`, `farmácia ${cidade}`, `melhores farmácia em ${cidade}`, `farmácia perto de ${cidade}`,
+    `farmácia centro ${cidade}`, `farmácia zona sul ${cidade}`, `farmácia zona norte ${cidade}`,
+  ]);
+  assert.ok(calls.slice(before).every((c) => c.languageCode === "pt-BR"));
+  assert.equal(r.body.api_calls, calls.length - before);
+  assert.ok(r.body.total > 0 && r.body.total <= 120);
+  assert.equal(r.body.imported + r.body.duplicate + r.body.invalid + r.body.optout, r.body.total);
+  const tag = `farmácia-campinas-${TAG}`;
+  assert.equal(r.body.tag, tag);
+  assert.equal(Number(sql(`select count(*) from crm_contacts where tenant_id = '${A}' and '${tag}' = any(tags)`)), r.body.imported + r.body.duplicate);
+  assert.match(sql(`select custom->>'endereco' from crm_contacts where tenant_id = '${A}' and '${tag}' = any(tags) and custom ? 'endereco' limit 1`), /Rua/);
+  assert.equal(Number(sql(`select count(*) from crm_dial_leads where tenant_id = '${A}' and list_name = 'FZ ${TAG}'`)), r.body.to_dialer);
+  // de novo: tudo já existe → só duplicados, sem criar contatos repetidos
+  const r2 = await fn(await tok(seller), { action: "auto_extract", tenant_id: A, ramo: "farmácia", cidade });
+  assert.equal(r2.body.imported, 0);
+  assert.equal(r2.body.duplicate, r.body.imported + r.body.duplicate);
+  assert.equal(sql(`select count(*) from lead_extractions where tenant_id = '${A}' and source = 'auto:farmácia:${cidade}'`), "2");
+  const v = await fn(await tok(viewer), { action: "auto_extract", tenant_id: A, ramo: "farmácia", cidade });
+  assert.equal(v.status, 403);
+});
+
 test("isolamento: outra empresa não vê nem roda as buscas", async () => {
   assert.equal((await other.from("lead_sources").select("id").eq("tenant_id", A)).data.length, 0);
   const r = await fn(await tok(other), { action: "run", source_id: src });

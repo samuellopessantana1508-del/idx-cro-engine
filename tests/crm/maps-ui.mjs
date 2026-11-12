@@ -18,7 +18,7 @@ sql(`update lead_sources set active = false, auto = false where tenant_id = '${A
 const mock = http.createServer((req, res) => {
   let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => {
     const body = JSON.parse(b || "{}");
-    const loc = body.textQuery.split(" em ")[1];
+    const loc = body.textQuery.split(" em ")[1] ?? body.textQuery;
     const places = Array.from({ length: 6 }, (_, i) => ({
       id: `ui-${TAG}-${loc}-${i}`, displayName: { text: i === 5 ? "Drogaria São Paulo" : `Farmácia ${loc.split(",")[0]} ${i + 1}` },
       formattedAddress: `Av. ${i}, ${loc}`, nationalPhoneNumber: `(11) 9${String(6000 + (TAG % 3000) + loc.length * 10 + i).slice(-4)}-${String(1000 + i)}`,
@@ -111,22 +111,18 @@ try {
     await page.screenshot({ path: `${SHOTS}/3-disparo.png` });
   });
 
-  await step("busca rápida (como no original): ramo + cidade → várias regiões, discador e contatos com etiqueta", async () => {
+  await step("busca automática = extrator do FlowZap: ramo + cidade → contatos com etiqueta e discador", async () => {
     await page.goto(`${APP}/?section=crm-app&crm=dispatch&tab=maps`);
-    const card = page.locator(".ext-card").filter({ hasText: "Busca rápida" });
+    const card = page.locator(".ext-card").filter({ hasText: "Busca automática" });
     await card.locator("input").nth(0).fill("farmácia");
     await card.locator("input").nth(1).fill(`Campinas ${TAG}`);
-    await card.getByRole("button", { name: /Buscar até 120 clientes/ }).click();
-    const m = page.locator(".crm-modal").filter({ hasText: "Busca rápida concluída" });
-    await m.waitFor({ timeout: 60000 });
-    await m.getByText(/7 busca\(s\)/).waitFor();
-    await m.getByText(/novo\(s\) contato\(s\) no CRM/).waitFor();
-    await page.screenshot({ path: `${SHOTS}/5-busca-rapida.png` });
-    const tag = `farmacia-campinas-${TAG}`;
+    await card.getByRole("button", { name: /Buscar automaticamente/ }).click();
+    await card.locator(".ext-result").waitFor({ timeout: 90000 });
+    await page.screenshot({ path: `${SHOTS}/5-busca-automatica.png` });
+    const tag = `farmácia-campinas-${TAG}`;
     const n = Number(sql(`select count(*) from crm_contacts where tenant_id = '${A}' and '${tag}' = any(tags)`));
     const d = Number(sql(`select count(*) from crm_dial_leads where tenant_id = '${A}' and list_name = 'farmácia — Campinas ${TAG}'`));
-    if (n < 10 || n !== d) throw new Error(`contatos com etiqueta ${n}, discador ${d}`);
-    await m.locator(".crm-btn.ghost").filter({ hasText: "Fechar" }).click();
+    if (n < 5 || d < 5) throw new Error(`contatos com etiqueta ${n}, discador ${d}`);
   });
 
   await step("colar números: acha telefones e nomes no texto e importa com etiqueta", async () => {

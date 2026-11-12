@@ -1,52 +1,36 @@
 // Extratores de clientes como no FlowZap original: busca rápida no Maps, colar texto e grupos do WhatsApp.
 import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, ClipboardPaste, Loader2, MapPin, RefreshCw, ShieldAlert, Tag, Users, Zap } from "lucide-react";
+import { CheckCircle2, ClipboardPaste, Loader2, MapPin, RefreshCw, ShieldAlert, Tag, Users, Zap } from "lucide-react";
 import * as api from "./api";
 import { useCrm } from "./context";
 import { errorText, phoneLabel } from "./format";
-import type { LeadSource, LeadSourceRunResult, WaCampaign } from "./types";
-import { Modal } from "./ui";
+import type { LeadSource, WaCampaign } from "./types";
 
 const slug = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 
-/** Variações da busca (como no original): o mesmo ramo em várias regiões da cidade, até 3 páginas cada. */
-export function quickLocations(cidade: string) {
-  const c = cidade.trim();
-  return [c, `centro de ${c}`, `zona sul de ${c}`, `zona norte de ${c}`, `zona leste de ${c}`, `zona oeste de ${c}`, `região de ${c}`];
-}
 
 // --------------------------------------------------------------------------
-// 1) Busca rápida no Google Maps
+// 1) Busca automática — o extrator do FlowZap original
 // --------------------------------------------------------------------------
-export function QuickMapsSearch({ hasKey, sources, campaigns, onDone }: { hasKey: boolean; sources: LeadSource[]; campaigns: WaCampaign[]; onDone: () => void }) {
+export function QuickMapsSearch({ hasKey, onDone }: { hasKey: boolean; sources?: LeadSource[]; campaigns?: WaCampaign[]; onDone: () => void }) {
   const crm = useCrm();
   const [ramo, setRamo] = useState("");
   const [cidade, setCidade] = useState("");
-  const [qty, setQty] = useState(120);
-  const [tag, setTag] = useState("");
-  const [tagTouched, setTagTouched] = useState(false);
-  const [chains, setChains] = useState(false);
-  const [campaign, setCampaign] = useState("");
+  const [autoTag, setAutoTag] = useState("");
+  const [toDialer, setToDialer] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [res, setRes] = useState<{ r: LeadSourceRunResult; list: string; tagged: api.TagImportResult | null } | null>(null);
-  const autoTag = ramo && cidade ? slug(`${ramo} ${cidade}`) : "";
-  const finalTag = tagTouched ? tag : autoTag;
+  const [res, setRes] = useState<api.AutoExtractResult | null>(null);
   const list = ramo && cidade ? `${ramo.trim()} — ${cidade.trim()}` : "";
+  const defaultTag = `${ramo}-${cidade}`.trim().toLowerCase().replace(/\s+/g, "-");
 
   const go = async () => {
-    setBusy(true);
+    setBusy(true); setRes(null);
     try {
-      const name = `Busca rápida: ${ramo.trim()} em ${cidade.trim()}`;
-      const existing = sources.find((s) => s.name.toLowerCase() === name.toLowerCase());
-      const id = await api.saveLeadSource(crm.tenantId, existing?.id ?? null, {
-        name, query: ramo.trim(), locations: quickLocations(cidade), list_name: list, auto: false, interval_hours: 24, run_hour: 7,
-        locations_per_run: 7, max_new_per_run: qty, exclude_chains: chains, min_rating: null, campaign_id: campaign || null, pages_per_location: 3,
-      });
-      const since = new Date(Date.now() - 5000).toISOString();
-      const r = await api.mapsRunSource(id);
-      let tagged: api.TagImportResult | null = null;
-      if (finalTag && r.inserted > 0) tagged = await api.mapsSourceToContacts(id, since, finalTag);
-      setRes({ r, list, tagged });
+      const r = await api.mapsAutoExtract(crm.tenantId, { ramo: ramo.trim(), cidade: cidade.trim(), tagName: autoTag.trim(), listName: toDialer ? list : undefined });
+      setRes(r);
+      if (r.imported > 0) crm.notify(`${r.imported} leads importados automaticamente!`);
+      else if (r.total === 0) crm.notify("Nenhum lead encontrado. Tente termos diferentes.");
+      else crm.notify(`${r.total} encontrados, ${r.duplicate} já existiam.`);
       onDone();
     } catch (e) { crm.notify(errorText(e)); } finally { setBusy(false); }
   };
@@ -56,54 +40,40 @@ export function QuickMapsSearch({ hasKey, sources, campaigns, onDone }: { hasKey
       <header className="ext-head">
         <span className="ext-icon maps"><Zap size={18} /></span>
         <div>
-          <strong>Busca rápida</strong>
-          <span className="crm-muted small">Diga o ramo e a cidade: o CRO procura em várias regiões da cidade e traz até 120 clientes com telefone de uma vez.</span>
+          <strong>Busca automática (extrator do FlowZap)</strong>
+          <span className="crm-muted small">Digite o ramo e a cidade: faz 7 buscas diferentes no Google Maps, até 3 páginas cada, e importa até 120 clientes com telefone.</span>
         </div>
       </header>
       <div className="ext-grid">
         <label className="ext-field"><span>Ramo</span><input value={ramo} placeholder="farmácia, academia, pet shop…" onChange={(e) => setRamo(e.target.value)} /></label>
         <label className="ext-field"><span>Cidade</span><input value={cidade} placeholder="Campinas SP" onChange={(e) => setCidade(e.target.value)} /></label>
-        <label className="ext-field"><span>Quantidade</span>
-          <select value={qty} onChange={(e) => setQty(Number(e.target.value))}>
-            {[30, 60, 120].map((n) => <option key={n} value={n}>até {n}</option>)}
-          </select>
-        </label>
-        <label className="ext-field"><span><Tag size={12} /> Etiqueta no CRM</span><input value={finalTag} placeholder="opcional" onChange={(e) => { setTagTouched(true); setTag(slug(e.target.value) || e.target.value.toLowerCase()); }} /></label>
-        <label className="ext-field"><span>Colocar num disparo</span>
-          <select value={campaign} onChange={(e) => setCampaign(e.target.value)}>
-            <option value="">Não — só discador e CRM</option>
-            {campaigns.filter((c) => ["draft", "running", "paused"].includes(c.status)).map((c) => <option key={c.id} value={c.id}>{c.name}{c.auto_feed ? "" : " (ative “alimentar automaticamente”)"}</option>)}
-          </select>
-        </label>
-        <label className="crm-check ext-check"><input type="checkbox" checked={chains} onChange={(e) => setChains(e.target.checked)} /> Ignorar redes e franquias</label>
+        <label className="ext-field"><span><Tag size={12} /> Etiqueta</span><input value={autoTag} placeholder={defaultTag && defaultTag !== "-" ? defaultTag : "automática"} onChange={(e) => setAutoTag(e.target.value.slice(0, 40))} /></label>
+        <label className="crm-check ext-check"><input type="checkbox" checked={toDialer} onChange={(e) => setToDialer(e.target.checked)} /> Também colocar no discador{list ? ` (lista “${list}”)` : ""}</label>
       </div>
       <div className="ext-foot">
-        <span className="crm-muted small">Vai para o discador na lista <b>{list || "…"}</b>{finalTag ? <> e para Contatos com a etiqueta <b>{finalTag}</b></> : null}. Usa até 21 buscas da sua cota do Google.</span>
+        <span className="crm-muted small">Os clientes entram em Contatos com a etiqueta — use em Disparos → “Contatos com etiqueta” ou em automações. Quem já existe só ganha a etiqueta.</span>
         <button type="button" className="crm-btn primary" disabled={!hasKey || busy || !ramo.trim() || !cidade.trim() || !crm.access.write} onClick={() => void go()}
           title={!hasKey ? "Conecte o Google Maps primeiro" : undefined}>
-          {busy ? <><Loader2 size={15} className="spin" /> Buscando… (até 1 min)</> : <><MapPin size={15} /> Buscar até {qty} clientes</>}
+          {busy ? <><Loader2 size={15} className="spin" /> Buscando… (até 1 min)</> : <><MapPin size={15} /> Buscar automaticamente</>}
         </button>
       </div>
       {res && (
-        <Modal open onClose={() => setRes(null)} title="Busca rápida concluída" width={500}
-          footer={<>
-            <button type="button" className="crm-btn ghost" onClick={() => setRes(null)}>Fechar</button>
-            {res.r.inserted > 0 && <button type="button" className="crm-btn primary" onClick={() => { setRes(null); crm.navigate({ name: "dialer" }); }}>Abrir no discador</button>}
-          </>}>
-          <div className="wa-result">
-            {res.r.error ? <AlertTriangle size={28} className="tone-red" /> : <CheckCircle2 size={28} className="tone-green" />}
-            {res.r.error && <p className="tone-red">{res.r.error}</p>}
-            <p><b>{res.r.inserted}</b> cliente(s) novo(s) na lista “{res.list}”{res.r.to_campaign ? <> · <b>{res.r.to_campaign}</b> no disparo</> : null}</p>
-            {res.tagged && <p>{res.tagged.created} novo(s) contato(s) no CRM e {res.tagged.existing} já existente(s) com a etiqueta <b>{res.tagged.tag}</b></p>}
-            <ul className="crm-muted small">
-              <li>{res.r.found} lugares encontrados em {res.r.api_calls} busca(s)</li>
-              {res.r.duplicates > 0 && <li>{res.r.duplicates} já estavam no discador</li>}
-              {res.r.no_phone > 0 && <li>{res.r.no_phone} sem telefone</li>}
-              {res.r.chains > 0 && <li>{res.r.chains} redes/franquias ignoradas</li>}
-              {res.r.opted_out > 0 && <li>{res.r.opted_out} tinham pedido SAIR</li>}
-            </ul>
+        <div className="ext-result">
+          <div className="ext-result-nums">
+            <div><strong>{res.total}</strong><span>encontrados</span></div>
+            <div className="ok"><strong>{res.imported}</strong><span>importados</span></div>
+            <div><strong>{res.duplicate}</strong><span>já existiam</span></div>
+            <div><strong>{res.invalid + res.optout}</strong><span>inválidos / SAIR</span></div>
+            {res.list_name && <div><strong>{res.to_dialer}</strong><span>no discador</span></div>}
           </div>
-        </Modal>
+          <p className="crm-muted small">Etiqueta <b>{res.tag}</b> · {res.api_calls} busca(s) no Google</p>
+          {res.leads.length > 0 && (
+            <div className="ext-member-list">
+              {res.leads.map((l) => <div key={l.phone}><span>{l.name || "—"}{l.address ? <span className="crm-muted"> · {l.address}</span> : null}</span><span className="crm-muted">{phoneLabel(l.phone.replace(/^\+/, ""))}</span></div>)}
+            </div>
+          )}
+          {res.list_name && res.to_dialer > 0 && <button type="button" className="crm-btn ghost sm self-start" onClick={() => crm.navigate({ name: "dialer" })}>Abrir no discador</button>}
+        </div>
       )}
     </section>
   );
