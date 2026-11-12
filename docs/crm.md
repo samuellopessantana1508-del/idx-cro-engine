@@ -136,3 +136,18 @@ Testes: `tests/crm/wa-dispatch.test.mjs` (regras no banco), `services/wa-gateway
 - Conexão: Claude.ai → Conectores → personalizado com `…/functions/v1/cro-mcp/<token>`; Claude Code
   `claude mcp add --transport http cro <url> --header "Authorization: Bearer <token>"`; outros clientes via cabeçalho.
 - Testes: `tests/crm/mcp.test.mjs` (SDK oficial), `tests/crm/mcp-ui.mjs`.
+
+## Rotinas automáticas e saúde do sistema
+
+- O projeto não tem `pg_cron`; antes, as automações agendadas do CRM só rodavam quando alguém abria o CRM.
+  Agora o motor (`idx-wa-gateway`, sempre ligado) chama:
+  - a cada 10 min `maps-leads {action:"cron"}` (buscas no Google Maps vencidas);
+  - de hora em hora `cro-cron`: `crm_run_scheduled_all()` (negociação parada, tarefas, RFV), `cro_ops_notifications()`
+    (aviso aos donos/admins: acesso da Meta vencendo em ≤14 dias ou vencido, Meta/Google com erro, WhatsApp do CRO
+    desconectado há >30 min) e sincronização diária dos gastos da Meta (7 dias, empresas conectadas, ~1x/20 h).
+- Sincronização da Meta extraída para `_shared/meta-sync.ts` e agora lê **todas as páginas** (antes parava em 500 linhas)
+  e não grava o token no `last_error`.
+- `cro_jobs` guarda a última execução de cada rotina; **Configurações do CRM → Saúde do sistema** mostra motor,
+  rotinas, WhatsApp, Meta (com dias até vencer), Google Ads, Google Maps e processos ligados.
+- O painel lembra a última empresa escolhida no navegador.
+- Testes: `tests/crm/cro-cron.test.mjs` (Meta simulada), `tests/crm/health-ui.mjs`.

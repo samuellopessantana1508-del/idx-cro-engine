@@ -314,6 +314,12 @@ begin
 
     when 'criar_tarefa' then
       if coalesce(trim(a->>'titulo'), '') = '' then raise exception 'Informe o título da tarefa'; end if;
+      if coalesce(nullif(a->>'tipo', ''), 'task') not in ('call', 'meeting', 'follow_up', 'callback', 'task', 'proposal', 'email', 'whatsapp', 'visit', 'other') then
+        raise exception 'Tipo de tarefa inválido. Use: call, whatsapp, meeting, follow_up, task, visit, email ou proposal';
+      end if;
+      if coalesce(nullif(a->>'prioridade', ''), 'normal') not in ('low', 'normal', 'high', 'urgent') then
+        raise exception 'Prioridade inválida. Use: low, normal, high ou urgent';
+      end if;
       if (a->>'contato_id') is not null and not exists (select 1 from public.crm_contacts where id = (a->>'contato_id')::uuid and tenant_id = tid) then
         raise exception 'Contato não encontrado';
       end if;

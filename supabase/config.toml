@@ -25,7 +25,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.crm]
-verify_jwt = true
+verify_jwt = false   # a função valida o usuário por conta própria (igual à produção)
 
 [functions.meta-audiences]
 verify_jwt = true
@@ -58,4 +58,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.cro-mcp]
+verify_jwt = false
+
+[functions.cro-cron]
 verify_jwt = false

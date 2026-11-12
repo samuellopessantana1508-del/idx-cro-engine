@@ -631,6 +631,11 @@ export function App() {
   const [googleDevTokenOk, setGoogleDevTokenOk] = useState(true);
 
   const tenant = tenants.find((item) => item.id === tenantId) ?? tenants[0];
+  // lembra a última empresa escolhida neste navegador
+  useEffect(() => {
+    if (!tenantId) return;
+    try { window.localStorage.setItem("idx:last-tenant", tenantId); } catch { /* ignore */ }
+  }, [tenantId]);
   const isPlatformUser = Boolean(platformRole);
   const canCreateClients = ["owner", "admin", "support"].includes(String(platformRole)) || tenantSetupRequired;
   const tenantLinks = links.filter((item) => item.tenant_id === tenant?.id);
@@ -1225,7 +1230,10 @@ export function App() {
     } else {
       setTenantRouteWarning("");
     }
-    const currentTenant = routeTenant ?? loadedTenants.find((item) => item.id === tenantId) ?? loadedTenants[0];
+    let rememberedTenant: string | null = null;
+    try { rememberedTenant = window.localStorage.getItem("idx:last-tenant"); } catch { /* navegador sem storage */ }
+    const currentTenant = routeTenant ?? loadedTenants.find((item) => item.id === tenantId)
+      ?? loadedTenants.find((item) => item.id === rememberedTenant) ?? loadedTenants[0];
     setTenantId(currentTenant.id);
     await loadTenantData(currentTenant.id);
     setLoading(false);

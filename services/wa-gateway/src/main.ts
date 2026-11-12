@@ -89,6 +89,24 @@ export async function runLeadSearch(url: string, anon: string, token: string, lo
   }
 }
 
+/** Rotinas de hora em hora do CRO (função cro-cron). */
+export async function runCroCron(url: string, anon: string, token: string, log: Logger) {
+  try {
+    const res = await fetch(`${url}/functions/v1/cro-cron`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: anon, Authorization: `Bearer ${anon}`, "x-gateway-token": token },
+      body: "{}",
+      signal: AbortSignal.timeout(140_000),
+    });
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; results?: { job: string; ok: boolean; error?: string }[] };
+    const failed = (body.results ?? []).filter((r) => !r.ok);
+    if (!res.ok || failed.length) log.warn("[rotinas] falha: %s", failed.map((f) => `${f.job}: ${f.error}`).join("; ") || res.status);
+    else log.info("[rotinas] ok (%d)", body.results?.length ?? 0);
+  } catch (e) {
+    log.warn("[rotinas] falhou: %s", (e as Error).message);
+  }
+}
+
 /** Baileys de verdade */
 export const baileysFactory: SocketFactory = async (authDir, _log) => {
   const baileys: any = await import("@whiskeysockets/baileys");
@@ -132,6 +150,10 @@ if (isMain) {
   const tick = () => runLeadSearch(url, anon, token, log);
   setTimeout(tick, 60_000);
   setInterval(tick, 10 * 60_000);
+  // Rotinas do CRO (automações agendadas, avisos, gastos da Meta): de hora em hora
+  const hourly = () => runCroCron(url, anon, token, log);
+  setTimeout(hourly, 2 * 60_000);
+  setInterval(hourly, 60 * 60_000);
   log.info("[gateway] motor de WhatsApp do IDX iniciado");
   const shutdown = async () => { log.info("[gateway] encerrando…"); await gw.stop(); process.exit(0); };
   process.on("SIGTERM", shutdown);

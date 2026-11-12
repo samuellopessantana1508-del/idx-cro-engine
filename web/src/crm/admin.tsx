@@ -4,6 +4,7 @@ import {
 } from "lucide-react";
 import * as api from "./api";
 import { ExtensionCard } from "./extension-card";
+import { HealthView } from "./health";
 import { useCrm } from "./context";
 import { brl, channelLabel, channelLabels, dateTime, emailName, errorText, lifecycleLabels, relative, roleLabels, segmentInfo, segmentOrder, taskTypeLabels } from "./format";
 import type { AutomationRule, AutomationRun, CustomField, Pipeline, RfvSegment, ScoringRule, Stage, TaskType } from "./types";
@@ -211,17 +212,18 @@ function RuleModal({ rule, onClose, onSaved }: { rule: Partial<AutomationRule>; 
 // ---------------------------------------------------------------------------
 // Configurações
 // ---------------------------------------------------------------------------
-type STab = "pipelines" | "loss" | "team" | "general" | "qualification" | "fields" | "extension";
+type STab = "pipelines" | "loss" | "team" | "general" | "qualification" | "fields" | "extension" | "health";
 
 export function SettingsView() {
   const { access } = useCrm();
-  const [tab, setTab] = useState<STab>("pipelines");
+  const [tab, setTab] = useState<STab>(() => (new URLSearchParams(window.location.search).get("tab") === "health" ? "health" : "pipelines"));
   if (!access.configure) return <div className="crm-page"><NoPermission text="Somente administradores da empresa e gestores alteram as configurações do CRM." /></div>;
   return (
     <div className="crm-page">
       <Tabs value={tab} onChange={setTab} tabs={[
         { value: "pipelines", label: "Funis e etapas" }, { value: "loss", label: "Motivos de perda" }, { value: "team", label: "Equipe e permissões" },
         { value: "general", label: "Geral" }, { value: "qualification", label: "Qualificação (ICP e score)" }, { value: "fields", label: "Campos personalizados" }, { value: "extension", label: "Extensão WhatsApp" },
+        { value: "health", label: "Saúde do sistema" },
       ]} />
       {tab === "pipelines" && <PipelinesSettings />}
       {tab === "loss" && <LossReasonsSettings />}
@@ -230,6 +232,7 @@ export function SettingsView() {
       {tab === "qualification" && <QualificationSettings />}
       {tab === "fields" && <FieldsSettings />}
       {tab === "extension" && <ExtensionCard />}
+      {tab === "health" && <HealthView />}
     </div>
   );
 }

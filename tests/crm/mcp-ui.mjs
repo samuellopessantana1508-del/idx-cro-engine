@@ -8,16 +8,19 @@ const APP = process.env.APP_URL ?? "http://127.0.0.1:5173";
 const SHOTS = "/tmp/mcp-ui"; mkdirSync(SHOTS, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? "/usr/bin/google-chrome", args: ["--no-sandbox"] });
 const errors = []; let failed = 0, passed = 0;
-async function step(name, fn) { try { await fn(); passed++; console.log("ok   -", name); } catch (e) { failed++; console.log("FAIL -", name, "\n      ", e.message.split("\n").slice(0, 3).join("\n       ")); } }
+let page;
+async function step(name, fn) { try { await fn(); passed++; console.log("ok   -", name); } catch (e) { failed++; await page?.screenshot?.({ path: `${SHOTS}/fail-${passed + failed}.png` }).catch(() => {}); console.log("FAIL -", name, "\n      ", e.message.split("\n").slice(0, 3).join("\n       ")); } }
 try {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, permissions: ["clipboard-read", "clipboard-write"] });
-  const page = await ctx.newPage();
+  page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(APP);
   await page.locator('input[type="email"]').first().fill("ana.vendas@clinica.local");
   await page.locator('input[type="password"]').fill("Teste@12345");
   await page.getByRole("button", { name: /Entrar/ }).first().click();
   await page.locator(".sidebar").waitFor();
+  await page.locator(".nav-group-label", { hasText: /Meu dia/i }).waitFor();
+  await page.waitForTimeout(800);
   let url;
   await step("vendedor cria token 'consultar e agir' e recebe as instruções", async () => {
     await page.locator(".sidebar").getByRole("button", { name: "Claude e IA (MCP)" }).first().click();

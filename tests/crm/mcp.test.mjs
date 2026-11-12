@@ -147,6 +147,7 @@ test("ações: criar contato (sem duplicar), tarefa, nota, concluir — tudo em 
   assert.equal(sql(`select status from crm_tasks where id = '${tk.tarefa_id}'`), "done");
   const bad = await call(c, "criar_tarefa", { titulo: "x", tipo: "invalido" });
   assert.equal(bad.isError, true);
+  assert.match(bad.content[0].text, /Tipo de tarefa inválido/);
   assert.equal(sql(`select count(*) from mcp_calls where tool = 'criar_contato' and user_id = '${sellerId}' and ok`) >= "2", true);
   assert.ok(Number(sql(`select count(*) from mcp_calls where tool = 'criar_tarefa' and not ok and error is not null`)) >= 1, "falhas também ficam registradas");
   await c.close();

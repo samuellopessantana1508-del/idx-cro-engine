@@ -1004,3 +1004,15 @@ kbd {
 .mcp-copy code { max-width: 100%; }
 .mcp-details pre { max-width: 100%; white-space: pre; }
 .mcp-details { min-width: 0; max-width: 100%; }
+/* Saúde do sistema */
+.health { display: grid; gap: 8px; }
+.health-row { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--paper); }
+.health-row > div { display: grid; gap: 2px; min-width: 0; }
+.health-row span { font-size: 0.82rem; color: var(--muted); overflow-wrap: anywhere; }
+.health-row.lv-bad { border-color: #fecaca; }
+.health-row.lv-warn { border-color: #fde68a; }
+.health-counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.health-counts div { border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: grid; }
+.health-counts b { font-size: 1.3rem; }
+.health-counts span { font-size: 0.76rem; color: var(--muted); }
+@media (max-width: 720px) { .health-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
