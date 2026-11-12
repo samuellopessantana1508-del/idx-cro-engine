@@ -456,7 +456,8 @@ export type CrmView =
   | { name: "import" }
   | { name: "dialer" }
   | { name: "cadences" }
-  | { name: "goals" };
+  | { name: "goals" }
+  | { name: "dispatch" };
 
 export type DialOutcome = "talked" | "meeting" | "callback" | "no_answer" | "not_interested" | "invalid";
 export type DialLead = {
@@ -512,3 +513,29 @@ export type AssistantMatch = {
   cadences: { id: string; name: string }[];
 } | null;
 export type AssistantResult = { plan: AssistantPlan; match: AssistantMatch; engine: "ai" | "rules"; ai_error: string | null; warnings: string[]; timezone: string };
+
+// ---------- Disparos (WhatsApp) ----------
+export type WaGatewayInstance = {
+  id: string; tenant_id: string; instance_name: string; phone_number: string | null; provider: string;
+  status: "disconnected" | "connecting" | "connected" | "banned"; desired_status: "connected" | "disconnected" | "logout";
+  qr_code_data: string | null; last_seen_at: string | null; metadata: Record<string, unknown> | null; updated_at: string;
+};
+export type WaCampaignStatus = "draft" | "running" | "paused" | "completed" | "canceled";
+export type WaCampaign = {
+  id: string; name: string; status: WaCampaignStatus; messages: string[];
+  min_delay_sec: number; max_delay_sec: number; daily_limit: number; start_hour: number; end_hour: number; opt_out_footer: boolean;
+  next_send_at: string | null; paused_reason: string | null; started_at: string | null; completed_at: string | null; created_at: string;
+  audience: Record<string, unknown>;
+  total: number; pending: number; sent: number; failed: number; invalid: number; opted_out: number; skipped: number; replied: number;
+  sent_today: number;
+};
+export type WaRecipientStatus = "pending" | "queued" | "sent" | "failed" | "invalid" | "opted_out" | "skipped";
+export type WaRecipient = {
+  id: string; campaign_id: string; phone: string; name: string | null; vars: Record<string, string>; status: WaRecipientStatus;
+  error: string | null; sent_at: string | null; replied_at: string | null; crm_contact_id: string | null; dial_lead_id: string | null;
+};
+export type WaAddResult = { added: number; invalid_phone: number; duplicates: number; opted_out: number; total: number };
+export type WaOutboxItem = {
+  id: string; phone: string; body: string; source: "manual" | "campaign"; status: "queued" | "sending" | "sent" | "failed" | "canceled";
+  error: string | null; created_at: string; sent_at: string | null; conversation_id: string | null;
+};

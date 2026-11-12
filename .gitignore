@@ -22,3 +22,4 @@ web/playwright-report/
 
 # extensão gerada no build
 web/public/extensao/
+services/wa-gateway/node_modules/

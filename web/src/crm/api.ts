@@ -3,6 +3,7 @@ import type {
   AutomationRule, AutomationRun, Campaign, CampaignResult, Company, Contact, CrmAccess, CrmNotification, CrmSettings, CustomField,
   Deal, DealItem, KpiResponse, LossReason, Member, Offer, Onboarding, Order, Pipeline, Quote, RfvCustomer, RfvDashboard, Sample, Stage, Task,
   TimelineItem, DialLead, DialOutcome, DialOverview, Cadence, CadenceEnrollment, CadenceStep, Goal, GoalProgress, AssistantPlan, AssistantResult,
+  WaGatewayInstance, WaCampaign, WaRecipient, WaRecipientStatus, WaAddResult, WaOutboxItem,
 } from "./types";
 
 export function db() {
@@ -625,4 +626,83 @@ export async function askAssistant(tenantId: string, text: string, source: "voic
 }
 export async function applyAssistant(tenantId: string, plan: AssistantPlan) {
   return check(await db().rpc("crm_assistant_apply", { p_tenant_id: tenantId, p_plan: plan })) as { contact_id: string | null; deal_id: string | null; task_id: string | null };
+}
+
+// ---------- Disparos / WhatsApp (motor único) ----------
+export async function waInstance(tenantId: string) {
+  const r = check(await db().rpc("wa_gateway_instance", { p_tenant_id: tenantId })) as WaGatewayInstance | null;
+  return r && r.id ? r : null;
+}
+export async function waConnect(tenantId: string, action: "connect" | "disconnect" | "logout") {
+  return check(await db().rpc("wa_gateway_connect", { p_tenant_id: tenantId, p_action: action })) as WaGatewayInstance;
+}
+export async function waSend(tenantId: string, body: string, target: { phone?: string | null; conversationId?: string | null }) {
+  return check(await db().rpc("wa_send_message", {
+    p_tenant_id: tenantId, p_body: body, p_phone: target.phone ?? null, p_conversation_id: target.conversationId ?? null,
+  })) as string;
+}
+export async function waCancelOutbox(id: string) {
+  check(await db().rpc("wa_cancel_outbox", { p_id: id }));
+}
+export async function waOutbox(tenantId: string, limit = 30) {
+  return check(await db().from("wa_outbox").select("id, phone, body, source, status, error, created_at, sent_at, conversation_id")
+    .eq("tenant_id", tenantId).eq("source", "manual").order("created_at", { ascending: false }).limit(limit)) as WaOutboxItem[];
+}
+export async function waCampaigns(tenantId: string) {
+  const rows = check(await db().rpc("wa_campaign_list", { p_tenant_id: tenantId })) as WaCampaign[];
+  return rows.map((r) => ({
+    ...r, total: Number(r.total), pending: Number(r.pending), sent: Number(r.sent), failed: Number(r.failed), invalid: Number(r.invalid),
+    opted_out: Number(r.opted_out), skipped: Number(r.skipped), replied: Number(r.replied), sent_today: Number(r.sent_today),
+  }));
+}
+export async function waSaveCampaign(tenantId: string, id: string | null, c: {
+  name: string; messages: string[]; min_delay_sec: number; max_delay_sec: number; daily_limit: number; start_hour: number; end_hour: number; opt_out_footer: boolean;
+}) {
+  return check(await db().rpc("wa_campaign_save", {
+    p_tenant_id: tenantId, p_id: id, p_name: c.name, p_messages: c.messages, p_min_delay: c.min_delay_sec, p_max_delay: c.max_delay_sec,
+    p_daily_limit: c.daily_limit, p_start_hour: c.start_hour, p_end_hour: c.end_hour, p_opt_out_footer: c.opt_out_footer,
+  })) as string;
+}
+export async function waAddRecipients(campaignId: string, src:
+  | { source: "dial_list"; listName: string; filters?: { uf?: string; city?: string; only_pending?: boolean; skip_not_interested?: boolean } }
+  | { source: "contacts"; contactIds: string[] }
+  | { source: "rows"; rows: Record<string, string>[] }) {
+  return check(await db().rpc("wa_campaign_add_recipients", {
+    p_campaign_id: campaignId, p_source: src.source,
+    p_list_name: src.source === "dial_list" ? src.listName : null,
+    p_contact_ids: src.source === "contacts" ? src.contactIds : null,
+    p_rows: src.source === "rows" ? src.rows : null,
+    p_filters: src.source === "dial_list" ? (src.filters ?? {}) : {},
+  })) as WaAddResult;
+}
+export async function waClearRecipients(campaignId: string) {
+  check(await db().rpc("wa_campaign_clear_recipients", { p_campaign_id: campaignId }));
+}
+export async function waCampaignAction(campaignId: string, action: "start" | "pause" | "resume" | "cancel" | "archive") {
+  check(await db().rpc("wa_campaign_action", { p_campaign_id: campaignId, p_action: action }));
+}
+export async function waRecipients(campaignId: string, f: { status?: WaRecipientStatus | "replied" | "all"; search?: string; page: number; pageSize: number }) {
+  let q = db().from("wa_campaign_recipients").select("id, campaign_id, phone, name, vars, status, error, sent_at, replied_at, crm_contact_id, dial_lead_id", { count: "exact" })
+    .eq("campaign_id", campaignId);
+  if (f.status === "replied") q = q.not("replied_at", "is", null);
+  else if (f.status && f.status !== "all") q = q.eq("status", f.status);
+  const s = f.search?.trim();
+  if (s) {
+    const digits = s.replace(/\D/g, "");
+    q = digits.length >= 4 ? q.ilike("phone", `%${digits}%`) : q.ilike("name", `%${s.replace(/[%,()]/g, " ")}%`);
+  }
+  const r = await q.order("sent_at", { ascending: false, nullsFirst: false }).order("created_at").range(f.page * f.pageSize, f.page * f.pageSize + f.pageSize - 1);
+  if (r.error) throw r.error;
+  return { rows: (r.data ?? []) as WaRecipient[], count: r.count ?? 0 };
+}
+export async function waOptouts(tenantId: string) {
+  return check(await db().from("wa_optouts").select("phone, source, body, created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(500)) as
+    { phone: string; source: string; body: string | null; created_at: string }[];
+}
+export async function waSetOptout(tenantId: string, phone: string, optout: boolean) {
+  check(await db().rpc("wa_optout_set", { p_tenant_id: tenantId, p_phone: phone, p_optout: optout }));
+}
+export async function waDialLists(tenantId: string) {
+  const o = await dialOverview(tenantId, null);
+  return o.lists;
 }

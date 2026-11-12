@@ -74,3 +74,30 @@ o build recusa chave service role/secret. Instalação: Configurações do CRM �
 
 Testes: `tests/crm/cadences-goals.test.mjs`, `tests/crm/assistant-fn.test.mjs`, `tests/fn/assistant-rules.test.ts` (Deno),
 `tests/crm/revops-ui.mjs`, `tests/ext/extension-ui.mjs`.
+
+## Disparos de WhatsApp (FlowZap dentro do CRO)
+
+O antigo FlowZap (sistema separado, Next.js + SQLite) virou um módulo do CRO:
+
+- **Motor único de WhatsApp** (`services/wa-gateway`, Baileys — mesma base do FlowZap): conexão por QR, envio,
+  recebimento e status de leitura. Grava em `whatsapp_contacts / conversations / messages`, então **Caixa de entrada,
+  CRM, cadências (param quando o cliente responde) e Disparos usam a mesma conexão** — não há duas sessões brigando
+  pelo mesmo número. Roda na VPS como container sem porta exposta; usa a chave pública + `GATEWAY_TOKEN`
+  (no banco só o sha256, em `wa_gateway_tokens`). Não usa service role.
+- **Fila única** `wa_outbox`: respostas manuais (caixa de entrada, "Enviar pelo CRO" em tarefas/contatos) e mensagens
+  de campanha. Manuais têm prioridade. Nada sai sem clique de uma pessoa.
+- **Disparos** (`wa_campaigns`, `wa_campaign_recipients`): público da lista do discador (com filtros; ignora
+  "sem interesse"/"inválido"), CSV/colar ou contatos do CRM; até 5 variações + `{a|b}`; variáveis
+  `{nome} {primeiro_nome} {empresa} {cidade}` e colunas extras.
+- **Proteções no banco** (`wa_gw_claim`, não dá para pular pela tela): intervalo aleatório (mín. 15 s, padrão 25–60 s),
+  limite diário por número (padrão 200, máx. 500), janela de horário no fuso da empresa (padrão 8h–20h), rodapé
+  "responda SAIR", descadastro automático por SAIR/PARAR/STOP (`wa_optouts`) respeitado em tudo, envio interrompido
+  nunca é reenviado sozinho (evita duplicar), número inexistente vira "Sem WhatsApp" (checa com e sem o 9º dígito).
+- Resposta a um disparo: marca "respondeu" e avisa quem iniciou (sino).
+
+Correções em relação ao FlowZap original: reconexão não desiste após 3 tentativas; checagem do número antes de enviar
+(9º dígito); mensagens enviadas pelo celular entram no histórico; conversas com ID oculto (`@lid`) usam o número
+alternativo; intervalo fixo de 10 s substituído por aleatório + limites; retomada segura após reinício.
+
+Testes: `tests/crm/wa-dispatch.test.mjs` (regras no banco), `services/wa-gateway/test` (motor com WhatsApp simulado),
+`tests/crm/dispatch-ui.mjs` (telas).

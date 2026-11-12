@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  Bot, CalendarClock, Check, CheckCircle2, CircleDollarSign, ClipboardList, Gift, MessageCircle, MessageSquare, Phone, Plus, Repeat, RotateCcw,
-  Sparkles, StickyNote, Trophy, Undo2, Users, XCircle, Zap,
-} from "lucide-react";
+import { Bot, CalendarClock, Check, CheckCircle2, CircleDollarSign, ClipboardList, Gift, MessageCircle, MessageSquare, Phone, Plus, Repeat, RotateCcw, Sparkles, StickyNote, Trophy, Undo2, Users, XCircle, Zap, Send } from "lucide-react";
 import * as api from "./api";
 import { useCrm } from "./context";
+import { SendWhatsAppModal } from "./dispatch";
 import {
   brl, dateTime, dueState, errorText, evidenceLabels, fromLocalInput, orderStatusLabels, parseMoney, priorityLabels, relative, taskTypeLabels, toLocalInput,
 } from "./format";
@@ -112,6 +110,7 @@ export function TaskRow({ task, onChanged, showLinks = true }: { task: Task; onC
   const [menu, setMenu] = useState(false);
   const [done, setDone] = useState(task.status === "done");
   const [edit, setEdit] = useState(false);
+  const [waSend, setWaSend] = useState(false);
   const st = task.status === "open" ? dueState(task.due_at) : "none";
 
   async function complete() {
@@ -155,6 +154,12 @@ export function TaskRow({ task, onChanged, showLinks = true }: { task: Task; onC
           {task.task_type === "whatsapp" && task.contact?.phone && (
             <a className="crm-btn wa xs" target="_blank" rel="noreferrer" title="Abre o WhatsApp com o texto pronto — você confere e envia"
               href={`https://wa.me/${task.contact.phone.replace(/\D/g, "")}${task.description ? `?text=${encodeURIComponent(task.description)}` : ""}`}><MessageCircle size={13} /> Abrir WhatsApp</a>
+          )}
+          {task.task_type === "whatsapp" && task.contact?.phone && (
+            <button type="button" className="crm-btn ghost xs" title="Envia pelo WhatsApp conectado ao CRO e salva na conversa" onClick={() => setWaSend(true)}><Send size={13} /> Enviar pelo CRO</button>
+          )}
+          {waSend && task.contact?.phone && (
+            <SendWhatsAppModal phone={task.contact.phone} name={task.contact.name} initial={task.description ?? ""} onClose={() => setWaSend(false)} />
           )}
           {(task.task_type === "call" || task.task_type === "callback") && task.contact?.phone && (
             <a className="crm-btn call xs" href={`tel:+${task.contact.phone.replace(/\D/g, "")}`}><Phone size={13} /> Ligar</a>

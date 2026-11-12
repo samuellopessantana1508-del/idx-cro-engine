@@ -47,9 +47,11 @@ import {
   Wrench,
   Briefcase,
   Flag, Repeat,
+  Send as SendIcon,
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
 import { CrmWorkspace, crmViewTitles } from "./crm/workspace";
+import { WaReplyBox } from "./crm/wa-reply";
 import type { CrmView } from "./crm/types";
 import type { AiPatterns, CampaignMetric, CapiEvent, CapiHealth, ConversationInsight, CrmActivity, CustomerProfile, FinancialSummary, Lead, LeadStatus, MetaAudienceStatus, MetaCampaignRoi, MonthlyPoint, Offer, SaleSignal, SaleSignalCapiStatus, SmartLink, Tenant, TenantUser, WebhookKey, WhatsAppContact, WhatsAppConversation, WhatsAppInstance, WhatsAppMessage } from "./lib/types";
 import { envConfigured, formatDate, formatMoney, linkCode, slugify, smartLinkUrl, timeAgo } from "./lib/utils";
@@ -2852,6 +2854,7 @@ export function App() {
               <NavButton icon={<ContactIcon />} label="Contatos" active={crmIs("contacts", "contact")} onClick={() => goToCrm({ name: "contacts" })} />
               <NavButton icon={<ListTodo />} label="Tarefas e agenda" active={crmIs("tasks")} onClick={() => goToCrm({ name: "tasks" })} />
               <NavButton icon={<Repeat />} label="Cadências" active={crmIs("cadences")} onClick={() => goToCrm({ name: "cadences" })} />
+              <NavButton icon={<SendIcon />} label="Disparos" active={crmIs("dispatch")} onClick={() => goToCrm({ name: "dispatch" })} />
               <NavButton icon={<Flag />} label="Metas" active={crmIs("goals")} onClick={() => goToCrm({ name: "goals" })} />
               <div className="nav-group-label">Atendimento</div>
               <NavButton icon={<PhoneCall />} label="Atender" active={active === "sales"} onClick={() => goToSection("sales")} />
@@ -2870,6 +2873,7 @@ export function App() {
             <NavButton icon={<Building2 />} label="Empresas" active={crmIs("companies")} onClick={() => goToCrm({ name: "companies" })} />
             <NavButton icon={<ListTodo />} label="Tarefas e agenda" active={crmIs("tasks")} onClick={() => goToCrm({ name: "tasks" })} />
             <NavButton icon={<Repeat />} label="Cadências" active={crmIs("cadences")} onClick={() => goToCrm({ name: "cadences" })} />
+              <NavButton icon={<SendIcon />} label="Disparos" active={crmIs("dispatch")} onClick={() => goToCrm({ name: "dispatch" })} />
             <NavButton icon={<Package />} label="Produtos e serviços" active={crmIs("products")} onClick={() => goToCrm({ name: "products" })} />
             <div className="nav-group-label">Relacionamento</div>
             <NavButton icon={<MessageCircle />} label="WhatsApp" badge={waUnreadTotal} active={active === "whatsapp"} onClick={() => { goToSection("whatsapp"); loadWaInstances(); loadWaKeys(); }} />
@@ -4215,9 +4219,10 @@ export function App() {
                       </button>
                     )}
 
-                    <div className="wa-readonly-bar">
-                      Modo leitura — o IDX não envia mensagens pelo WhatsApp
-                    </div>
+                    {tenant && (
+                      <WaReplyBox tenantId={tenant.id} conversationId={waSelectedConvId} notify={setToast}
+                        onOpenConnection={() => goToCrm({ name: "dispatch" })} onDelivered={() => void resyncWhatsapp()} />
+                    )}
                   </div>
                 )}
               </div>
@@ -4229,7 +4234,7 @@ export function App() {
                   <div className="panel-head">
                     <div>
                       <h2>Instâncias WhatsApp</h2>
-                      <p>Gerencie conexões com a Evolution API. Cada empresa pode ter uma ou mais instâncias.</p>
+                      <p>Conexões externas pela Evolution API (opcional). O jeito recomendado é o QR Code do próprio CRO, em <button type="button" className="crm-link" onClick={() => goToCrm({ name: "dispatch" })}>Disparos → Conexão</button> — uma única conexão por número, usada pela caixa de entrada, CRM e disparos.</p>
                     </div>
                     <MessageCircle size={18} />
                   </div>
@@ -5470,6 +5475,7 @@ export function App() {
           <button type="button" onClick={() => goToCrm({ name: "contacts" })} className={crmIs("contacts", "contact") ? "active" : ""}><ContactIcon size={17} /> Contatos</button>
           <button type="button" onClick={() => goToCrm({ name: "tasks" })} className={crmIs("tasks") ? "active" : ""}><ListTodo size={17} /> Tarefas</button>
           <button type="button" onClick={() => goToCrm({ name: "cadences" })} className={crmIs("cadences") ? "active" : ""}><Repeat size={17} /> Cadências</button>
+          <button type="button" onClick={() => goToCrm({ name: "dispatch" })} className={crmIs("dispatch") ? "active" : ""}><SendIcon size={17} /> Disparos</button>
           <button type="button" onClick={() => goToCrm({ name: "goals" })} className={crmIs("goals") ? "active" : ""}><Flag size={17} /> Metas</button>
           <button type="button" onClick={() => goToSection("leads")} className={active === "leads" ? "active" : ""}><MessageCircle size={17} /> Atendimentos</button>
           <button type="button" onClick={logout}><LogOut size={17} /> Sair</button>
@@ -5483,6 +5489,7 @@ export function App() {
           <button type="button" onClick={() => goToCrm({ name: "contacts" })} className={crmIs("contacts", "contact") ? "active" : ""}><ContactIcon size={17} /> Contatos</button>
           <button type="button" onClick={() => goToCrm({ name: "tasks" })} className={crmIs("tasks") ? "active" : ""}><ListTodo size={17} /> Tarefas</button>
           <button type="button" onClick={() => goToCrm({ name: "cadences" })} className={crmIs("cadences") ? "active" : ""}><Repeat size={17} /> Cadências</button>
+          <button type="button" onClick={() => goToCrm({ name: "dispatch" })} className={crmIs("dispatch") ? "active" : ""}><SendIcon size={17} /> Disparos</button>
           <button type="button" onClick={() => goToCrm({ name: "goals" })} className={crmIs("goals") ? "active" : ""}><Flag size={17} /> Metas</button>
           <button type="button" onClick={() => goToCrm({ name: "rfv" })} className={crmIs("rfv") ? "active" : ""}><HeartPulse size={17} /> Clientes e RFV</button>
           <button type="button" onClick={() => goToCrm({ name: "reports" })} className={crmIs("reports") ? "active" : ""}><LineChart size={17} /> Indicadores</button>

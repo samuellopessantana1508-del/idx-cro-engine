@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import {
-  ArrowDownUp, ArrowLeft, Building2, Download, ExternalLink, GitMerge, Mail, MapPin, MessageCircle, Pencil, Phone, Plus, Search, ShieldCheck, Tag, Upload, Users, X, Mic,
-} from "lucide-react";
+import { ArrowDownUp, ArrowLeft, Building2, Download, ExternalLink, GitMerge, Mail, MapPin, MessageCircle, Pencil, Phone, Plus, Search, ShieldCheck, Tag, Upload, Users, X, Mic, Send } from "lucide-react";
 import * as api from "./api";
 import { ContactCadences } from "./cadences";
 import { useCrm } from "./context";
+import { SendWhatsAppModal } from "./dispatch";
 import {
   basisLabels, brl, channelLabel, dateTime, emailName, errorText, lifecycleLabels, phoneLabel, relative, segmentInfo, shortDate, waLink,
 } from "./format";
@@ -160,6 +159,7 @@ export function ContactPage({ contactId }: { contactId: string }) {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [tab, setTab] = useState<ContactTab>("timeline");
   const [editing, setEditing] = useState(false);
+  const [waSend, setWaSend] = useState(false);
   const [dups, setDups] = useState<Awaited<ReturnType<typeof api.findDuplicates>>>([]);
   const [merge, setMerge] = useState<{ id: string; name: string | null } | null>(null);
   const [tagInput, setTagInput] = useState("");
@@ -221,6 +221,8 @@ export function ContactPage({ contactId }: { contactId: string }) {
         </div>
         <div className="crm-record-actions">
           {wa && <a className="crm-btn ghost sm" href={wa} target="_blank" rel="noreferrer"><MessageCircle size={15} /> Abrir WhatsApp</a>}
+          {access.write && (c.whatsapp ?? c.phone) && !c.do_not_contact && <button type="button" className="crm-btn ghost sm" onClick={() => setWaSend(true)}><Send size={15} /> Enviar pelo CRO</button>}
+          {waSend && <SendWhatsAppModal phone={(c.whatsapp ?? c.phone)!} name={c.name} onClose={() => setWaSend(false)} />}
           {access.write && <button type="button" className="crm-btn ghost sm" onClick={() => openAssistant({ contactId: c.id, contactName: c.name })}><Mic size={15} /> Registrar</button>}
           {access.write && <button type="button" className="crm-btn ghost sm" onClick={() => quickCreate("task", { contact_id: c.id, owner_id: c.owner_id })}>Agendar atividade</button>}
           {access.write && <button type="button" className="crm-btn primary sm" onClick={() => quickCreate("deal", { contact: { id: c.id, name: c.name, phone: c.phone, company_id: c.company_id } })}><Plus size={14} /> Negociação</button>}
