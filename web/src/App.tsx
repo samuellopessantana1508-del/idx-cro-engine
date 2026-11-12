@@ -486,6 +486,10 @@ export function App() {
   const [password, setPassword] = useState("");
   const [confirmationEmail, setConfirmationEmail] = useState("");
   const [accessLinkEmail, setAccessLinkEmail] = useState("");
+  const [accessLinkKind, setAccessLinkKind] = useState<"link" | "recovery">("link");
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [accessEmails, setAccessEmails] = useState<Record<string, AccessEmailInfo>>({});
+  const [resendingEmail, setResendingEmail] = useState("");
   const [currentUserId, setCurrentUserId] = useState("");
   const [currentUserEmail, setCurrentUserEmail] = useState("");
   const [active, setActive] = useState<Section>(requestedSection ?? "dashboard");
@@ -973,6 +977,10 @@ export function App() {
     async function boot() {
       const { data } = await supabase!.auth.getSession();
       if (data.session) {
+        // quem entrou por convite ou pediu nova senha cria a senha agora
+        const u = data.session.user;
+        const recovery = new URLSearchParams(window.location.search).get("senha") === "nova" || window.location.hash.includes("type=recovery");
+        if (recovery || (u.invited_at && !u.user_metadata?.password_set)) setNeedsPassword(true);
         setSignedIn(true);
         await loadInitialData();
       } else {
@@ -1055,31 +1063,34 @@ export function App() {
     await loadInitialData();
   }
 
-  async function sendAccessLink() {
-    if (!supabase) return;
+  /** E-mails de acesso (link sem senha / nova senha) pelo Resend, via função auth-email. */
+  async function requestAuthEmail(action: "link" | "recovery", targetEmail: string) {
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+      body: JSON.stringify({ action, email: targetEmail }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Não foi possível enviar o e-mail agora.");
+  }
+
+  async function sendAccessLink(kind: "link" | "recovery" = "link") {
     const normalizedEmail = email.trim().toLowerCase();
     if (!normalizedEmail) {
-      setToast("Informe o email para receber o link de acesso.");
+      setToast(kind === "recovery" ? "Informe o email para criar uma nova senha." : "Informe o email para receber o link de acesso.");
       return;
     }
-
     setLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({
-      email: normalizedEmail,
-      options: {
-        emailRedirectTo: authRedirectTo(),
-        shouldCreateUser: false,
-      },
-    });
-    setLoading(false);
-
-    if (error) {
-      setToast(error.message);
-      return;
+    try {
+      await requestAuthEmail(kind, normalizedEmail);
+      setAccessLinkEmail(normalizedEmail);
+      setAccessLinkKind(kind);
+      setToast(kind === "recovery" ? "Se este email tiver acesso, enviamos o link para criar a nova senha." : "Se este email tiver acesso, enviamos um link seguro para entrar.");
+    } catch (e) {
+      setToast((e as Error).message);
+    } finally {
+      setLoading(false);
     }
-
-    setAccessLinkEmail(normalizedEmail);
-    setToast("Enviamos um link seguro para acessar.");
   }
 
   async function signup() {
@@ -1112,6 +1123,8 @@ export function App() {
       return;
     }
 
+    // confirmação pelo Resend (o envio padrão do Supabase não entrega para fora da equipe do projeto)
+    await requestAuthEmail("link", normalizedEmail).catch(() => {});
     setLoading(false);
     setConfirmationEmail(normalizedEmail);
     setPassword("");
@@ -1128,20 +1141,14 @@ export function App() {
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.resend({
-      type: "signup",
-      email: targetEmail,
-      options: {
-        emailRedirectTo: authRedirectTo(),
-      },
-    });
-    setLoading(false);
-
-    if (error) {
-      setToast(error.message);
+    try {
+      await requestAuthEmail("link", targetEmail);
+    } catch (e) {
+      setLoading(false);
+      setToast((e as Error).message);
       return;
     }
-
+    setLoading(false);
     setConfirmationEmail(targetEmail);
     setToast("Email de confirmação reenviado.");
   }
@@ -1265,6 +1272,14 @@ export function App() {
     if (eventRes.data) setEvents(eventRes.data as CapiEvent[]);
     if (activityRes.data) setCrmActivities(activityRes.data as CrmActivity[]);
     if (userRes.data) setTenantUsers(userRes.data as TenantUser[]);
+    // situação do último e-mail de acesso de cada pessoa (só dono/admin enxergam)
+    const inviteRes = await supabase.from("tenant_invites").select("email, status, email_status, email_error, email_sent_at, created_at")
+      .eq("tenant_id", nextTenantId).order("created_at", { ascending: false }).limit(200);
+    if (inviteRes.data) {
+      const map: Record<string, AccessEmailInfo> = {};
+      for (const r of inviteRes.data as (AccessEmailInfo & { email: string })[]) if (!map[r.email]) map[r.email] = r;
+      setAccessEmails(map);
+    }
     if (healthRes.data) setHealth(healthRes.data as CapiHealth);
     if (metaRoiRes.data) setMetaCampaigns(metaRoiRes.data as MetaCampaignRoi[]);
     if (audienceRes.data) setMetaAudiences(audienceRes.data as MetaAudienceStatus[]);
@@ -1534,6 +1549,18 @@ export function App() {
     await loadTenantData(data.tenant.id);
   }
 
+  async function resendAccess(targetEmail: string) {
+    if (!tenant) return;
+    setResendingEmail(targetEmail);
+    try {
+      const res = await authFetch("tenant-admin", { method: "POST", body: JSON.stringify({ action: "resend_invite", tenant_id: tenant.id, email: targetEmail }) });
+      const data = await res.json();
+      if (!res.ok) setToast(data.error || "Erro ao reenviar o acesso.");
+      else setToast(data.email_sent ? `Email de acesso reenviado para ${targetEmail}.` : `Não foi possível enviar o email: ${data.email_error ?? "erro"}`);
+      await loadTenantData();
+    } finally { setResendingEmail(""); }
+  }
+
   async function inviteUser(options?: { email?: string; role?: InviteDraft["role"]; successMessage?: string }) {
     const email = (options?.email ?? inviteDraft.email).trim();
     const role = options?.role ?? inviteDraft.role;
@@ -1563,7 +1590,11 @@ export function App() {
     if (!res.ok) return setToast(data.error || "Erro ao convidar usuário.");
     if (role === "operator") setSellerInviteEmail("");
     else setInviteDraft(emptyInviteDraft);
-    setToast(data.already_active ? "Este vendedor já tinha acesso ativo. Ele pode entrar por senha ou link no email." : (options?.successMessage ?? "Convite enviado por email."));
+    if (!data.email_sent) {
+      setToast(`Acesso liberado, mas o email não foi enviado: ${data.email_error ?? "erro no envio"}`);
+    } else {
+      setToast(data.already_active ? `${email} já tinha acesso; enviamos um email com o link para entrar.` : (options?.successMessage ?? "Convite enviado por email."));
+    }
     await loadTenantData();
   }
 
@@ -2772,8 +2803,13 @@ export function App() {
               {authMode === "login" ? "Entrar" : "Criar conta"}
             </button>
             {authMode === "login" && (
-              <button className="login-link-button strong" type="button" onClick={sendAccessLink} disabled={loading}>
+              <button className="login-link-button strong" type="button" onClick={() => sendAccessLink("link")} disabled={loading}>
                 Receber link no email
+              </button>
+            )}
+            {authMode === "login" && (
+              <button className="login-link-button" type="button" onClick={() => sendAccessLink("recovery")} disabled={loading}>
+                Esqueci minha senha
               </button>
             )}
             <button className="login-link-button" type="button" onClick={() => setAuthMode(authMode === "login" ? "signup" : "login")} disabled={loading}>
@@ -2792,7 +2828,7 @@ export function App() {
           )}
           {accessLinkEmail && (
             <p className="auth-hint">
-              Link de acesso enviado para <strong>{accessLinkEmail}</strong>. Abra o email neste dispositivo para entrar.
+              {accessLinkKind === "recovery" ? "Link para criar a nova senha" : "Link de acesso"} enviado para <strong>{accessLinkEmail}</strong> (se o email tiver acesso). Abra o email neste dispositivo — vale por 1 hora.
             </p>
           )}
         </form>
@@ -3067,7 +3103,7 @@ export function App() {
                 </div>
                 <Users size={18} />
               </div>
-              <TenantUsersList users={tenantUsers} />
+              <TenantUsersList users={tenantUsers} emails={accessEmails} canResend={canAdminTenant} resending={resendingEmail} onResend={resendAccess} />
             </section>
           </section>
         )}
@@ -4832,7 +4868,7 @@ export function App() {
                 </div>
                 <Users size={18} />
               </div>
-              <TenantUsersList users={tenantUsers} />
+              <TenantUsersList users={tenantUsers} emails={accessEmails} canResend={canAdminTenant} resending={resendingEmail} onResend={resendAccess} />
             </section>
 
             <section className="panel">
@@ -5585,6 +5621,16 @@ export function App() {
       </nav>
       )}
 
+      {needsPassword && supabase && (
+        <SetPasswordModal
+          onDone={(msg) => {
+            setNeedsPassword(false);
+            if (msg) setToast(msg);
+            const url = new URL(window.location.href);
+            if (url.searchParams.has("senha")) { url.searchParams.delete("senha"); window.history.replaceState(null, "", url.toString()); }
+          }}
+        />
+      )}
       {toast && <div className="toast">{toast}</div>}
     </div>
   );
@@ -6320,20 +6366,35 @@ function crmActivityDetail(activity: CrmActivity): string {
   return "";
 }
 
-function TenantUsersList({ users }: { users: TenantUser[] }) {
+type AccessEmailInfo = { status: string; email_status: "sent" | "failed" | "not_configured" | null; email_error: string | null; email_sent_at: string | null; created_at: string };
+
+function TenantUsersList({ users, emails = {}, canResend, resending, onResend }: {
+  users: TenantUser[]; emails?: Record<string, AccessEmailInfo>; canResend?: boolean; resending?: string; onResend?: (email: string) => void;
+}) {
   if (!users.length) return <EmptyState text="Nenhum usuário vinculado ainda." />;
   return (
     <div className="user-list">
-      {users.map((user) => (
-        <article className={`user-row user-row-${user.role}`} key={user.id}>
-          <div>
-            <strong>{user.email || "Usuário sem email"}</strong>
-            <small>{user.created_at ? `Criado em ${formatDate(user.created_at)}` : "Acesso vinculado"}</small>
-          </div>
-          <span>{userRoleLabel(user.role)}</span>
-          <StatusPill text={userStatusLabel(user.status)} tone={user.status === "active" ? "good" : "muted"} />
-        </article>
-      ))}
+      {users.map((user) => {
+        const info = user.email ? emails[user.email.toLowerCase()] : undefined;
+        const mail = info?.email_status === "sent" ? `Email de acesso enviado ${info.email_sent_at ? `em ${formatDate(info.email_sent_at)}` : ""}`
+          : info?.email_status ? `Email não enviado: ${info.email_error ?? "erro"}` : null;
+        return (
+          <article className={`user-row user-row-${user.role}`} key={user.id}>
+            <div>
+              <strong>{user.email || "Usuário sem email"}</strong>
+              <small>{user.created_at ? `Criado em ${formatDate(user.created_at)}` : "Acesso vinculado"}</small>
+              {mail && <small className={info?.email_status === "sent" ? "user-mail-ok" : "user-mail-bad"}>{mail}</small>}
+            </div>
+            <span>{userRoleLabel(user.role)}</span>
+            <StatusPill text={userStatusLabel(user.status)} tone={user.status === "active" ? "good" : "muted"} />
+            {canResend && user.email && onResend && (
+              <button type="button" className="ghost-dark-button user-resend" disabled={resending === user.email} onClick={() => onResend(user.email!)}>
+                {resending === user.email ? "Enviando…" : "Reenviar acesso"}
+              </button>
+            )}
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -7231,6 +7292,40 @@ function MonthlyChart({ data }: { data: MonthlyPoint[] }) {
         <line x1={pad.left + 70} y1={pad.top - 10} x2={pad.left + 86} y2={pad.top - 10} stroke="#ef4444" strokeWidth="2" strokeDasharray="4 3" />
         <text x={pad.left + 92} y={pad.top - 6} fontSize="10" fill="#ef4444" fontWeight="500">Investimento</text>
       </svg>
+    </div>
+  );
+}
+
+
+/** Quem entrou pelo link do convite (ou pediu nova senha) escolhe a senha para os próximos acessos. */
+function SetPasswordModal({ onDone }: { onDone: (message?: string) => void }) {
+  const [pass, setPass] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    if (pass.length < 8) return setError("Use pelo menos 8 caracteres.");
+    if (pass !== confirm) return setError("As duas senhas não são iguais.");
+    setBusy(true);
+    const { error: err } = await supabase!.auth.updateUser({ password: pass, data: { password_set: true } });
+    setBusy(false);
+    if (err) return setError(/different from the old/i.test(err.message) ? "A nova senha precisa ser diferente da anterior." : err.message);
+    onDone("Senha criada. Nos próximos acessos, entre com seu email e esta senha.");
+  }
+  return (
+    <div className="modal-backdrop set-password-backdrop" role="dialog" aria-modal="true" aria-labelledby="set-password-title">
+      <form className="set-password-modal" onSubmit={save}>
+        <h2 id="set-password-title">Crie a sua senha</h2>
+        <p>Você entrou pelo link do email. Escolha uma senha para entrar das próximas vezes.</p>
+        <label>Nova senha<input type="password" autoComplete="new-password" value={pass} onChange={(e) => setPass(e.target.value)} autoFocus /></label>
+        <label>Repita a senha<input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} /></label>
+        {error && <p className="set-password-error">{error}</p>}
+        <div className="set-password-actions">
+          <button type="button" className="ghost-dark-button" onClick={() => onDone()} disabled={busy}>Agora não</button>
+          <button type="submit" className="primary-button" disabled={busy}>{busy ? "Salvando…" : "Salvar senha"}</button>
+        </div>
+      </form>
     </div>
   );
 }

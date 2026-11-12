@@ -200,3 +200,14 @@ API oficial (`supabase/functions/wa-cloud`, regras puras em `_shared/wa-cloud-co
 - Envio: a fila `wa_outbox` é enviada por `wa-cloud` (logo após cada envio pela tela, após mensagens recebidas e a cada rodada de 30 s do motor). Usa `wa_gw_claim`/`wa_gw_result` com a chave de serviço e token nulo — as mesmas regras de horário, limite diário e SAIR.
 - Janela de 24 h: fora dela só modelo aprovado. A caixa de entrada troca a resposta por "Enviar modelo"; disparos exigem um modelo (`wa_campaign_set_template`, variáveis `{nome}`, `{empresa}`…).
 - Erros da Meta viram mensagens claras (janela de 24 h, número sem WhatsApp, limite, token vencido).
+
+
+## E-mails de acesso (Resend)
+
+Convites, "Receber link no email", "Esqueci minha senha" e confirmação do primeiro acesso saem pelo Resend (`_shared/email.ts`). O envio padrão do Supabase só entrega para a equipe do projeto (2 por hora), por isso os convites não chegavam.
+
+- Segredos das Edge Functions: `RESEND_API_KEY`, `RESEND_FROM` (remetente de domínio verificado no Resend, ex.: `IDX CRO <acesso@sanmarfidelize.com>`), opcional `RESEND_REPLY_TO`. `APP_URL` define para onde o link leva.
+- Supabase Auth → URL Configuration: Site URL = endereço do painel e o mesmo endereço em Redirect URLs (senão o link leva para outro lugar).
+- `tenant-admin` `invite_user` / `resend_invite`: cria o acesso (ou acha a conta existente — antes dava erro para quem já tinha conta em outra empresa), vincula à empresa e manda o e-mail com o link (gerado por `auth.admin.generateLink`, sempre `…/auth/v1/verify`). A situação do envio fica em `tenant_invites.email_status/email_error/email_sent_at` e aparece na lista de acessos com o botão "Reenviar acesso".
+- `auth-email` (público): link de acesso e nova senha; só envia para quem tem conta, sempre responde igual (não revela quem tem acesso), limite de 3 pedidos por e-mail e 10 por origem por hora (`auth_email_requests`, só hashes).
+- Quem entra pelo link do convite ou de nova senha vê "Crie a sua senha" (`user_metadata.password_set`).

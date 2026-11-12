@@ -68,3 +68,6 @@ verify_jwt = false
 
 [functions.wa-cloud]
 verify_jwt = false   # webhook da Meta não manda JWT; a tela é validada pela própria função
+
+[functions.auth-email]
+verify_jwt = false   # tela de login (sem sessão); limite de pedidos na própria função

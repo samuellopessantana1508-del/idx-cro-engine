@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { emailConfigured, inviteEmail, sendEmail, verifyUrl } from "../_shared/email.ts";
 
 const supa = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -121,6 +122,75 @@ async function audit(
     target_id: targetId ?? null,
     metadata,
   });
+}
+
+
+// ---------------------------------------------------------------------------
+// Convite por e-mail (Resend): cria/acha o usuário, vincula à empresa e manda o link
+// ---------------------------------------------------------------------------
+function appUrl(): string {
+  return (Deno.env.get("APP_URL") || Deno.env.get("SITE_URL") || "https://cro.sanmarfidelize.com").replace(/\/$/, "");
+}
+
+type Delivery = { user_id: string | null; email_status: "sent" | "failed" | "not_configured"; email_error: string | null; email_id: string | null };
+
+async function deliverAccess(tenantId: string, email: string, role: string, inviter: { id: string; email?: string | null }): Promise<Delivery> {
+  const redirectTo = `${appUrl()}/`;
+  const { data: tenantRow } = await supa.from("tenants").select("name").eq("id", tenantId).maybeSingle();
+  const tenantName = (tenantRow as { name?: string } | null)?.name ?? "sua empresa";
+
+  if (!emailConfigured()) {
+    // sem Resend: usa o envio do Supabase (só entrega com SMTP próprio configurado)
+    const { data, error } = await supa.auth.admin.inviteUserByEmail(email, { redirectTo, data: { tenant_id: tenantId, tenant_role: role } });
+    let userId = data?.user?.id ?? null;
+    if (error && !userId) userId = await findUserId(email);
+    return { user_id: userId, email_status: "not_configured", email_error: "Envio de e-mail não configurado: cadastre RESEND_API_KEY e RESEND_FROM.", email_id: null };
+  }
+
+  // pessoa nova: link de convite (cria a conta); quem já tem conta: link de acesso
+  let linkType = "invite";
+  let link = await supa.auth.admin.generateLink({ type: "invite", email, options: { redirectTo, data: { tenant_id: tenantId, tenant_role: role } } });
+  if (link.error) { linkType = "magiclink"; link = await supa.auth.admin.generateLink({ type: "magiclink", email, options: { redirectTo } }); }
+  const url = verifyUrl(link.data?.properties, linkType, redirectTo);
+  if (link.error || !url) {
+    return { user_id: await findUserId(email), email_status: "failed", email_error: `Não foi possível gerar o link: ${link.error?.message ?? "erro"}`, email_id: null };
+  }
+  const user = link.data.user;
+  const firstAccess = !user?.last_sign_in_at;
+  const msg = inviteEmail({ tenantName, role, inviter: inviter.email ?? null, url, newUser: firstAccess });
+  const sent = await sendEmail({ to: email, ...msg, tags: { tipo: "convite" } });
+  return { user_id: user?.id ?? null, email_status: sent.ok ? "sent" : "failed", email_error: sent.ok ? null : sent.error ?? "Falha no envio", email_id: sent.id ?? null };
+}
+
+async function findUserId(email: string): Promise<string | null> {
+  const { data } = await supa.from("tenant_users").select("user_id").eq("email", email).not("user_id", "is", null).limit(1).maybeSingle();
+  if ((data as { user_id?: string } | null)?.user_id) return (data as { user_id: string }).user_id;
+  for (let page = 1; page <= 20; page++) {
+    const { data: list } = await supa.auth.admin.listUsers({ page, perPage: 200 });
+    const hit = list?.users?.find((u) => (u.email ?? "").toLowerCase() === email);
+    if (hit) return hit.id;
+    if (!list?.users?.length || list.users.length < 200) break;
+  }
+  return null;
+}
+
+async function recordInvite(tenantId: string, email: string, role: string, invitedBy: string, d: Delivery, extraError: string | null = null) {
+  const row = {
+    tenant_id: tenantId, email, role, invited_by: invitedBy,
+    status: extraError ? "failed" : "sent",
+    error_message: extraError ?? (d.email_status === "sent" ? null : d.email_error),
+    email_status: d.email_status, email_error: d.email_error, email_id: d.email_id,
+    email_sent_at: d.email_status === "sent" ? new Date().toISOString() : null,
+    updated_at: new Date().toISOString(),
+  };
+  const { data: prev } = await supa.from("tenant_invites").select("id").eq("tenant_id", tenantId).eq("email", email)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (prev) {
+    const { data } = await supa.from("tenant_invites").update(row).eq("id", (prev as { id: string }).id).select("*").single();
+    return data;
+  }
+  const { data } = await supa.from("tenant_invites").insert(row).select("*").single();
+  return data;
 }
 
 Deno.serve(async (req: Request) => {
@@ -333,10 +403,17 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true });
   }
 
-  if (action === "invite_user") {
+  if (action === "invite_user" || action === "resend_invite") {
     const email = String(body.email ?? "").trim().toLowerCase();
-    const role = String(body.role ?? "operator");
-    if (!email || !["owner", "admin", "operator", "viewer"].includes(role)) {
+    let role = String(body.role ?? "operator");
+    if (action === "resend_invite") {
+      const { data: tu } = await supa.from("tenant_users").select("role").eq("tenant_id", tenantId).eq("email", email).maybeSingle();
+      const { data: inv } = await supa.from("tenant_invites").select("role").eq("tenant_id", tenantId).eq("email", email)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      role = (tu as { role?: string } | null)?.role ?? (inv as { role?: string } | null)?.role ?? "";
+      if (!role) return json({ error: "Este e-mail não tem acesso nesta empresa" }, 404);
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !["owner", "admin", "operator", "viewer"].includes(role)) {
       return json({ error: "invalid_invite" }, 400);
     }
 
@@ -348,99 +425,33 @@ Deno.serve(async (req: Request) => {
       .eq("status", "active")
       .maybeSingle();
 
-    if (existingTenantUser) {
-      if (existingTenantUser.role !== role) {
-        const { error: roleError } = await supa
-          .from("tenant_users")
-          .update({ role })
-          .eq("id", existingTenantUser.id);
-        if (roleError) return json({ error: roleError.message }, 400);
-      }
+    if (existingTenantUser && existingTenantUser.role !== role && action === "invite_user") {
+      const { error: roleError } = await supa.from("tenant_users").update({ role }).eq("id", existingTenantUser.id);
+      if (roleError) return json({ error: roleError.message }, 400);
+    }
 
-      const { data: previousInvite } = await supa
-        .from("tenant_invites")
-        .select("id")
-        .eq("tenant_id", tenantId)
-        .eq("email", email)
-        .eq("role", role)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+    const delivery = await deliverAccess(tenantId, email, role, { id: user.id, email: user.email });
 
-      if (previousInvite) {
-        await supa.from("tenant_invites").update({
-          invited_by: user.id,
-          status: "sent",
-          error_message: null,
-        }).eq("id", previousInvite.id);
+    let linkError: string | null = null;
+    if (!existingTenantUser) {
+      if (!delivery.user_id) {
+        linkError = delivery.email_error ?? "Não foi possível criar o acesso";
       } else {
-        await supa.from("tenant_invites").insert({
-          tenant_id: tenantId,
-          email,
-          role,
-          invited_by: user.id,
-          status: "sent",
-          error_message: null,
-        });
+        const { error: tenantUserError } = await supa.from("tenant_users").upsert({
+          tenant_id: tenantId, user_id: delivery.user_id, email, role, status: "active",
+        }, { onConflict: "tenant_id,user_id" });
+        if (tenantUserError) linkError = tenantUserError.message;
       }
-
-      await audit(user.id, "tenant_user.already_active", tenantId, "tenant_user", existingTenantUser.id, { email, role });
-      return json({ ok: true, already_active: true });
     }
 
-    const inviteRow = {
-      tenant_id: tenantId,
-      email,
-      role,
-      invited_by: user.id,
-      status: "pending",
-    };
-
-    const { data: invite, error: inviteError } = await supa
-      .from("tenant_invites")
-      .insert(inviteRow)
-      .select("*")
-      .single();
-
-    if (inviteError) return json({ error: inviteError.message }, 400);
-
-    const redirectTo = Deno.env.get("APP_URL");
-    const { data: authData, error: authError } = await supa.auth.admin.inviteUserByEmail(email, {
-      redirectTo: redirectTo ? `${redirectTo}/` : undefined,
-      data: { tenant_id: tenantId, tenant_role: role },
+    const invite = await recordInvite(tenantId, email, role, user.id, delivery, linkError);
+    await audit(user.id, linkError ? "tenant_user.link_failed" : action === "resend_invite" ? "tenant_user.invite_resent" : existingTenantUser ? "tenant_user.already_active" : "tenant_user.invited",
+      tenantId, "tenant_invite", (invite as { id?: string } | null)?.id, { email, role, email_status: delivery.email_status });
+    if (linkError) return json({ error: linkError }, 400);
+    return json({
+      ok: true, invite, already_active: !!existingTenantUser,
+      email_sent: delivery.email_status === "sent", email_status: delivery.email_status, email_error: delivery.email_error,
     });
-
-    if (authError) {
-      await supa.from("tenant_invites").update({
-        status: "failed",
-        error_message: authError.message,
-      }).eq("id", invite.id);
-      await audit(user.id, "tenant_user.invite_failed", tenantId, "tenant_invite", invite.id, { email, role, error: authError.message });
-      return json({ error: authError.message }, 400);
-    }
-
-    if (authData.user?.id) {
-      const { error: tenantUserError } = await supa.from("tenant_users").upsert({
-        tenant_id: tenantId,
-        user_id: authData.user.id,
-        email,
-        role,
-        status: "active",
-      }, { onConflict: "tenant_id,user_id" });
-
-      if (tenantUserError) {
-        await supa.from("tenant_invites").update({
-          status: "failed",
-          error_message: tenantUserError.message,
-        }).eq("id", invite.id);
-        await audit(user.id, "tenant_user.link_failed", tenantId, "tenant_invite", invite.id, { email, role, error: tenantUserError.message });
-        return json({ error: tenantUserError.message }, 400);
-      }
-    }
-
-    await supa.from("tenant_invites").update({ status: "sent" }).eq("id", invite.id);
-    await audit(user.id, "tenant_user.invited", tenantId, "tenant_invite", invite.id, { email, role });
-    return json({ ok: true, invite });
   }
 
   if (action === "manage_whatsapp_instance") {

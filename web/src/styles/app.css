@@ -1002,7 +1002,7 @@ td small {
   margin-top: 4px;
 }
 
-.user-row > span {
+.user-row > span:not(.status-pill) {
   font-weight: 500;
   color: var(--muted);
 }
@@ -1012,7 +1012,7 @@ td small {
   box-shadow: inset 0 0 0 1px var(--black);
 }
 
-.user-row-operator > span {
+.user-row-operator > span:not(.status-pill) {
   color: var(--black);
   font-weight: 600;
 }
@@ -3905,4 +3905,25 @@ td small {
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
   z-index: 2;
+}
+
+/* Criar senha (convite / nova senha) */
+.set-password-backdrop { position: fixed; inset: 0; background: rgba(17, 17, 17, .45); display: grid; place-items: center; z-index: 1000; padding: 16px; }
+.set-password-modal { width: min(420px, 100%); background: var(--paper); border-radius: 14px; padding: 22px; display: grid; gap: 12px; box-shadow: 0 20px 50px rgba(0,0,0,.2); }
+.set-password-modal h2 { margin: 0; font-size: 1.2rem; }
+.set-password-modal p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+.set-password-modal label { display: grid; gap: 4px; font-size: 0.85rem; font-weight: 600; }
+.set-password-modal input { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.set-password-error { color: #b91c1c !important; }
+.set-password-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* acessos: situação do email e reenviar */
+.user-row { grid-template-columns: minmax(0, 1fr); grid-auto-flow: column; grid-auto-columns: auto; }
+.user-row > div { display: grid; gap: 2px; }
+.user-row .user-mail-ok { color: #047857; }
+.user-row .user-mail-bad { color: #b45309; }
+.user-row .user-resend { font-size: 0.8rem; white-space: nowrap; }
+@media (max-width: 640px) {
+  .user-row { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr) auto; }
+  .user-row > div { grid-column: 1 / -1; }
 }

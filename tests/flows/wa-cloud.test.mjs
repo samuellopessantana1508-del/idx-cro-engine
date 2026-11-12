@@ -66,7 +66,7 @@ before(async () => {
   assert.equal(s.error, null);
   ownerJwt = s.data.session.access_token;
   seller = createClient(URL_, ANON, { auth: { persistSession: false } });
-  assert.equal((await seller.auth.signInWithPassword({ email: "ana.vendas@clinica.local", password: "Teste@12345" })).error, null);
+  assert.equal((await seller.auth.signInWithPassword({ email: "bruno.vendas@clinica.local", password: "Teste@12345" })).error, null);
   sql(`update wa_flows set status = 'paused' where tenant_id = '${B}' and status = 'active'`);
 });
 after(async () => {
