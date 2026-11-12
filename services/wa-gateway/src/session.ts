@@ -99,7 +99,7 @@ export class Session {
   private async onConnection(sock: SocketLike, u: any) {
     if (sock !== this.sock || this.stopped) return;
     const { connection, lastDisconnect, qr } = u ?? {};
-    if (qr) {
+    if (qr && !this.open) {
       // o WhatsApp troca o QR a cada ~20 s; a tela mostra sempre o mais recente
       const dataUrl = await QRCode.toDataURL(qr, { margin: 1, width: 300 });
       await this.db.updateInstance(this.id, "connecting", { qr: dataUrl }).catch((e) => this.log.error("[%s] qr", this.id, e.message));

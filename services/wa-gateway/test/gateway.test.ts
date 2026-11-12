@@ -54,9 +54,11 @@ class FakeSock extends EventEmitter implements SocketLike {
 let sock: FakeSock;
 let created = 0;
 const factory: SocketFactory = async () => {
-  sock = new FakeSock();
+  const s = new FakeSock();
+  sock = s;
   created++;
-  setTimeout(() => sock.emit("connection.update", { qr: "2@FAKEQRDATA" }), 50);
+  // o QR só aparece enquanto ninguém leu (como no WhatsApp de verdade)
+  setTimeout(() => { if (!s.user) s.emit("connection.update", { qr: "2@FAKEQRDATA" }); }, 50);
   return { sock, saveCreds: async () => {} };
 };
 
@@ -168,7 +170,7 @@ test("automação: mensagem recebida dispara resposta com texto e imagem pelo me
   assert.equal(f.error, null, f.error?.message);
   assert.equal((await admin.rpc("wa_flow_set_status", { p_flow_id: f.data.id, p_status: "active" })).error, null);
   const before = sock.sent.length;
-  const p = ph(7);
+  const p = ph(8); // (final 77 simula número sem 9º dígito no FakeSock; aqui não)
   sock.emit("messages.upsert", { type: "notify", messages: [{ key: { remoteJid: `${p}@s.whatsapp.net`, id: `INF${TAG}`, fromMe: false }, pushName: "Marta Alves", messageTimestamp: Math.floor(Date.now() / 1000), message: { conversation: "me manda o catalogo" } }] });
   await wait(() => sock.sent.length >= before + 3, 20000);
   const out = sock.sent.slice(before);
