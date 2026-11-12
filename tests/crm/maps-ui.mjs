@@ -57,7 +57,7 @@ try {
   await page.locator(".crm-page").first().waitFor();
 
   await step("aba Buscar clientes: conectar Google Maps com a chave", async () => {
-    await page.getByRole("button", { name: "Buscar clientes (Google Maps)" }).click();
+    await page.getByRole("button", { name: "Buscar clientes", exact: true }).click();
     await page.locator(".maps-key").waitFor();
     await page.locator(".maps-key").getByRole("button", { name: /Conectar Google Maps|Configurar/ }).click();
     const m = page.locator(".crm-modal");
@@ -71,7 +71,7 @@ try {
   await step("nova busca: testar mostra a posição, nota e telefone; salvar alimentando um disparo", async () => {
     sql(`insert into wa_campaigns(tenant_id, name, messages, created_by) select '${A}', 'Disparo Maps ${TAG}', '{"Oi {empresa}! Vi a nota {nota} de vocês no Google."}', id from auth.users where email = 'dono@clinica.local'`);
     await page.reload();
-    await page.getByRole("button", { name: "Buscar clientes (Google Maps)" }).click();
+    await page.getByRole("button", { name: "Buscar clientes", exact: true }).click();
     await page.getByRole("button", { name: "Nova busca" }).click();
     const m = page.locator(".crm-modal");
     await m.locator("textarea").fill(`Moema ${TAG}, São Paulo SP\nTatuapé ${TAG}, São Paulo SP`);
@@ -109,6 +109,47 @@ try {
     await card.getByText("Alimentação automática").waitFor();
     await card.getByText(/0 de 10 enviados/).waitFor();
     await page.screenshot({ path: `${SHOTS}/3-disparo.png` });
+  });
+
+  await step("busca rápida (como no original): ramo + cidade → várias regiões, discador e contatos com etiqueta", async () => {
+    await page.goto(`${APP}/?section=crm-app&crm=dispatch&tab=maps`);
+    const card = page.locator(".ext-card").filter({ hasText: "Busca rápida" });
+    await card.locator("input").nth(0).fill("farmácia");
+    await card.locator("input").nth(1).fill(`Campinas ${TAG}`);
+    await card.getByRole("button", { name: /Buscar até 120 clientes/ }).click();
+    const m = page.locator(".crm-modal").filter({ hasText: "Busca rápida concluída" });
+    await m.waitFor({ timeout: 60000 });
+    await m.getByText(/7 busca\(s\)/).waitFor();
+    await m.getByText(/novo\(s\) contato\(s\) no CRM/).waitFor();
+    await page.screenshot({ path: `${SHOTS}/5-busca-rapida.png` });
+    const tag = `farmacia-campinas-${TAG}`;
+    const n = Number(sql(`select count(*) from crm_contacts where tenant_id = '${A}' and '${tag}' = any(tags)`));
+    const d = Number(sql(`select count(*) from crm_dial_leads where tenant_id = '${A}' and list_name = 'farmácia — Campinas ${TAG}'`));
+    if (n < 10 || n !== d) throw new Error(`contatos com etiqueta ${n}, discador ${d}`);
+    await m.locator(".crm-btn.ghost").filter({ hasText: "Fechar" }).click();
+  });
+
+  await step("colar números: acha telefones e nomes no texto e importa com etiqueta", async () => {
+    await page.getByRole("tab", { name: "Colar números" }).click();
+    const t = `Farmácia Vida - (19) 9${String(7000 + (TAG % 2000)).slice(-4)}-1111\nDrogaria Central 19 9${String(7000 + (TAG % 2000)).slice(-4)}-2222\nlixo 123\n(19) 9${String(7000 + (TAG % 2000)).slice(-4)}-1111`;
+    await page.locator(".ext-paste").fill(t);
+    await page.locator(".ext-found").getByText("2").first().waitFor();
+    await page.locator(".ext-found").getByText(/Farmácia Vida/).waitFor();
+    await page.locator(".ext-card").getByRole("textbox").nth(1).fill(`colados-${TAG}`);
+    await page.getByRole("button", { name: /Importar 2 contato/ }).click();
+    await page.getByText(/novo\(s\) e 0 já existente/).waitFor();
+    if (sql(`select string_agg(name, ',' order by name) from crm_contacts where tenant_id = '${A}' and 'colados-${TAG}' = any(tags)`) !== "Drogaria Central,Farmácia Vida") throw new Error("nomes não vieram");
+    await page.screenshot({ path: `${SHOTS}/6-colar.png` });
+  });
+
+  await step("grupos do WhatsApp: aviso de risco antes de qualquer coisa", async () => {
+    await page.getByRole("tab", { name: "Grupos do WhatsApp" }).click();
+    await page.getByText("Use com cuidado — risco de bloqueio do número.").waitFor();
+    if (await page.getByRole("button", { name: /Carregar meus grupos/ }).count()) throw new Error("botão apareceu sem aceitar o aviso");
+    await page.getByText("Entendi os riscos").click();
+    await page.getByRole("button", { name: /Carregar meus grupos/ }).waitFor();
+    await page.screenshot({ path: `${SHOTS}/7-grupos.png` });
+    await page.getByRole("tab", { name: "Google Maps" }).click();
   });
 
   await step("vendedor vê as buscas mas não troca a chave", async () => {

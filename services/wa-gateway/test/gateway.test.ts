@@ -46,6 +46,19 @@ class FakeSock extends EventEmitter implements SocketLike {
     return { key: { id: `FAKE${TAG}-${this.sent.length}` } };
   }
   async sendPresenceUpdate(t: string) { this.presence.push(t); }
+  async groupFetchAllParticipating() {
+    return { "120363000000000001@g.us": { subject: "Farmácias de Campinas", participants: [{ id: "a" }, { id: "b" }, { id: "c" }] },
+             "120363000000000002@g.us": { subject: "Família", participants: [{ id: "a" }] } };
+  }
+  async groupMetadata(jid: string) {
+    if (!jid.endsWith("@g.us")) throw new Error("item-not-found");
+    return { subject: "Farmácias de Campinas", participants: [
+      { id: "5519988887777@s.whatsapp.net", notify: "Drogaria Bom Preço", admin: "admin" },
+      { id: "123456789012345@lid", phoneNumber: "5519977776666@s.whatsapp.net", notify: "Farmácia Vida" },
+      { id: "998877665544332@lid" },
+      { id: `${(this.user?.id ?? "").replace(/:.*$/, "")}@s.whatsapp.net` },
+    ] };
+  }
   async logout() { this.emit("connection.update", { connection: "close", lastDisconnect: { error: { output: { statusCode: 401 } } } }); }
   end() { this.ended = true; }
   scan(phone = "5511900000001") { this.user = { id: `${phone}:3@s.whatsapp.net` }; this.emit("connection.update", { connection: "open" }); }
@@ -70,6 +83,8 @@ before(async () => {
   sql(`insert into wa_gateway_tokens(token_hash, label) values ('${createHash("sha256").update(TOKEN).digest("hex")}', 'gw-test ${TAG}')`);
   sql(`update wa_campaigns set status = 'canceled' where status = 'running'`);
   sql(`update wa_outbox set status = 'canceled' where status in ('queued', 'sending')`);
+  sql(`update wa_flows set status = 'paused' where status = 'active'`);
+  sql(`update wa_flow_runs set status = 'cancelled' where status in ('running', 'waiting')`);
   A = sql(`select id from tenants where slug = 'clinica-sorriso'`);
   const login = async (email: string) => {
     const c = createClient(URL_, ANON, { auth: { persistSession: false } });
@@ -181,6 +196,29 @@ test("automação: mensagem recebida dispara resposta com texto e imagem pelo me
   assert.equal(out[2].content.mimetype, "application/pdf");
   await wait(() => sql(`select count(*) from whatsapp_messages m join whatsapp_conversations c on c.id = m.conversation_id join whatsapp_contacts wc on wc.id = c.contact_id where wc.phone = '${p}' and m.direction = 'outbound'`) === "3");
   await admin.rpc("wa_flow_set_status", { p_flow_id: f.data.id, p_status: "archived" });
+});
+
+test("grupos: lista os grupos e extrai participantes com número (sem quem esconde o número)", async () => {
+  const denied = await seller.rpc("wa_groups_request", { p_tenant_id: A, p_kind: "list" });
+  assert.match(denied.error?.message ?? "", /gestores/);
+  const job = await admin.rpc("wa_groups_request", { p_tenant_id: A, p_kind: "list" });
+  assert.equal(job.error, null, job.error?.message);
+  await wait(() => sql(`select status from wa_group_jobs where id = '${job.data}'`) === "done");
+  const groups = JSON.parse(sql(`select result::text from wa_group_jobs where id = '${job.data}'`)).groups;
+  assert.deepEqual(groups[0], { jid: "120363000000000001@g.us", subject: "Farmácias de Campinas", size: 3 });
+  const job2 = await admin.rpc("wa_groups_request", { p_tenant_id: A, p_kind: "members", p_group_jid: "120363000000000001@g.us" });
+  assert.equal(job2.error, null, job2.error?.message);
+  await wait(() => sql(`select status from wa_group_jobs where id = '${job2.data}'`) === "done");
+  const r = JSON.parse(sql(`select result::text from wa_group_jobs where id = '${job2.data}'`));
+  assert.equal(r.total, 4);
+  assert.equal(r.hidden, 1);
+  assert.deepEqual(r.members.map((m: any) => m.phone), ["5519988887777", "5519977776666"]);
+  assert.equal(r.members[0].admin, true);
+  // importa para o CRM com etiqueta
+  const imp = await admin.rpc("crm_contacts_tag_import", { p_tenant_id: A, p_rows: r.members, p_tag: "grupo-farmacias", p_source: "whatsapp_group" });
+  assert.equal(imp.error, null, imp.error?.message);
+  assert.equal(imp.data.created + imp.data.existing, 2);
+  assert.equal(sql(`select count(*) from crm_contacts where tenant_id = '${A}' and 'grupo-farmacias' = any(tags) and phone in ('5519988887777','5519977776666')`), "2");
 });
 
 test("pausar pelo CRO para tudo; desconectar fecha a sessão; conectar religa", async () => {

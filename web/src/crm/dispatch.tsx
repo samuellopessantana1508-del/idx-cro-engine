@@ -173,7 +173,7 @@ export function DispatchView() {
         <div className="crm-toolbar-left">
           <Tabs value={tab} onChange={setTab} tabs={[
             { value: "campaigns", label: "Disparos", count: items?.length },
-            { value: "maps", label: "Buscar clientes (Google Maps)" },
+            { value: "maps", label: "Buscar clientes" },
             { value: "optouts", label: "Pediram SAIR" },
           ]} />
         </div>

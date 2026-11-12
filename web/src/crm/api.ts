@@ -798,3 +798,19 @@ export async function conversationBotState(conversationId: string) {
     .eq("conversation_id", conversationId).in("status", ["running", "waiting"]).limit(3)) as unknown as { id: string; status: string; wait_kind: string | null; is_test: boolean; wa_flows: { name: string } | null }[];
   return { mode: conv?.bot_mode ?? "bot", runs };
 }
+
+// ---------- Extratores de clientes ----------
+export type TagImportResult = { total: number; created: number; existing: number; invalid: number; optout: number; tag: string | null };
+export async function contactsTagImport(tenantId: string, rows: { phone: string; name?: string | null; city?: string | null }[], tag: string | null, source: string) {
+  return check(await db().rpc("crm_contacts_tag_import", { p_tenant_id: tenantId, p_rows: rows, p_tag: tag, p_source: source })) as TagImportResult;
+}
+export async function mapsSourceToContacts(sourceId: string, since: string, tag: string) {
+  return check(await db().rpc("maps_source_to_contacts", { p_source_id: sourceId, p_since: since, p_tag: tag })) as TagImportResult;
+}
+export async function waGroupsRequest(tenantId: string, kind: "list" | "members", groupJid?: string) {
+  return check(await db().rpc("wa_groups_request", { p_tenant_id: tenantId, p_kind: kind, p_group_jid: groupJid ?? null })) as string;
+}
+export async function waGroupJob(id: string) {
+  return check(await db().from("wa_group_jobs").select("id, status, result, error").eq("id", id).maybeSingle()) as
+    { id: string; status: "pending" | "running" | "done" | "error"; result: any; error: string | null } | null;
+}

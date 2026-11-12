@@ -12,6 +12,8 @@ export interface SocketLike {
   sendPresenceUpdate?(type: string, jid?: string): Promise<void>;
   presenceSubscribe?(jid: string): Promise<void>;
   logout?(): Promise<void>;
+  groupFetchAllParticipating?(): Promise<Record<string, { subject?: string; participants?: any[]; size?: number; announce?: boolean }>>;
+  groupMetadata?(jid: string): Promise<{ subject?: string; participants?: any[] }>;
   end(err?: Error): void;
 }
 
@@ -222,6 +224,32 @@ export class Session {
       await this.db.result(item.id, { ok: false, error: msg, retry: isTransient(e), jid: jid ?? undefined })
         .catch((err) => this.log.error("[%s] result: %s", this.id, err.message));
     }
+  }
+
+  /** Grupos em que este número participa (para extrair contatos). */
+  async listGroups() {
+    if (!this.open || !this.sock?.groupFetchAllParticipating) throw new Error("WhatsApp não conectado");
+    const all = await this.sock.groupFetchAllParticipating();
+    return Object.entries(all ?? {})
+      .map(([jid, g]) => ({ jid, subject: g.subject ?? "Grupo sem nome", size: g.participants?.length ?? g.size ?? 0 }))
+      .sort((a, b) => b.size - a.size);
+  }
+
+  /** Participantes de um grupo com número visível (quem esconde o número aparece só como @lid e fica de fora). */
+  async groupMembers(jid: string) {
+    if (!this.open || !this.sock?.groupMetadata) throw new Error("WhatsApp não conectado");
+    const md = await this.sock.groupMetadata(jid);
+    const me = normalizePhone(this.sock.user?.id ?? null);
+    const members: { phone: string; name: string | null; admin: boolean }[] = [];
+    let hidden = 0;
+    for (const p of md?.participants ?? []) {
+      const raw = [p.phoneNumber, p.jid, p.id].find((x) => typeof x === "string" && x.endsWith("@s.whatsapp.net"));
+      const phone = raw ? normalizePhone(raw) : null;
+      if (!phone) { hidden++; continue; }
+      if (phone === me) continue;
+      members.push({ phone, name: p.notify ?? p.name ?? null, admin: !!p.admin });
+    }
+    return { subject: md?.subject ?? "", total: (md?.participants ?? []).length, hidden, members };
   }
 
   async stop(opts: { logout?: boolean } = {}) {

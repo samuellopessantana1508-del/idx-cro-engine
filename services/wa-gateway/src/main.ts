@@ -49,6 +49,8 @@ export class Gateway {
           await this.db.updateInstance(inst.id, "disconnected").catch(() => {});
         }
       }
+      // pedidos de grupos (extrair contatos) feitos pela tela do CRO
+      for (const [id, s] of this.sessions) if (s.isOpen) await this.groupJobs(id, s);
       // conexão apagada no CRO
       for (const [id, s] of this.sessions) {
         if (!list.some((i) => i.id === id)) { this.sessions.delete(id); await s.stop(); }
@@ -57,6 +59,20 @@ export class Gateway {
       this.log.error("[gateway] sync: %s", (e as Error).message);
     } finally {
       this.busy = false;
+    }
+  }
+
+  private async groupJobs(id: string, s: Session) {
+    let jobs: Awaited<ReturnType<Db["groupJobs"]>> = [];
+    try { jobs = await this.db.groupJobs(id); } catch (e) { this.log.error("[%s] grupos: %s", id, (e as Error).message); return; }
+    for (const j of jobs) {
+      try {
+        const result = j.kind === "list" ? { groups: await s.listGroups() } : await s.groupMembers(String(j.group_jid));
+        await this.db.groupResult(j.id, true, result);
+        this.log.info("[%s] grupos: pedido %s concluído", id, j.kind);
+      } catch (e) {
+        await this.db.groupResult(j.id, false, null, (e as Error).message).catch(() => {});
+      }
     }
   }
 

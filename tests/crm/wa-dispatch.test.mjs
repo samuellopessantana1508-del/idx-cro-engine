@@ -38,6 +38,7 @@ before(async () => {
   // isolamento: cada execução começa sem disparos ativos na conexão de teste
   sql(`update wa_campaigns set status = 'canceled' where status = 'running'`);
   sql(`update wa_outbox set status = 'canceled' where status = 'queued'`);
+  sql(`update wa_flows set status = 'paused' where status = 'active'`);
 });
 
 test("motor sem token (ou com token errado) é recusado", async () => {

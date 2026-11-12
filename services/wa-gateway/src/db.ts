@@ -42,6 +42,12 @@ export class Db {
   ingest(instanceId: string, msg: object) {
     return this.rpc("wa_gw_ingest", { p_instance: instanceId, p_msg: msg });
   }
+  groupJobs(instanceId: string) {
+    return this.rpc<Array<{ id: string; kind: "list" | "members"; group_jid: string | null }>>("wa_gw_group_jobs", { p_instance: instanceId });
+  }
+  groupResult(jobId: string, ok: boolean, result: unknown, error?: string) {
+    return this.rpc("wa_gw_group_result", { p_job: jobId, p_ok: ok, p_result: result ?? null, p_error: error ?? null });
+  }
   status(instanceId: string, waMessageId: string, status: string) {
     return this.rpc("wa_gw_status", { p_instance: instanceId, p_wa_message_id: waMessageId, p_status: status });
   }

@@ -4,7 +4,8 @@ import * as api from "./api";
 import { useCrm } from "./context";
 import { dateTime, errorText, phoneLabel, relative } from "./format";
 import type { LeadSource, LeadSourceRunResult, MapsPlace, MapsStatus, WaCampaign } from "./types";
-import { Bar, Confirm, Empty, Field, Modal, Pill, Skeleton } from "./ui";
+import { Bar, Confirm, Empty, Field, Modal, Pill, Segmented, Skeleton } from "./ui";
+import { GroupsExtractor, PasteExtractor, QuickMapsSearch } from "./extractors";
 
 const intervals = [
   { v: 24, label: "Todo dia" }, { v: 48, label: "A cada 2 dias" }, { v: 72, label: "A cada 3 dias" }, { v: 168, label: "Toda semana" },
@@ -25,6 +26,7 @@ export function MapsSearchView({ campaigns, onCampaignsChanged }: { campaigns: W
   const [result, setResult] = useState<{ source: LeadSource; r: LeadSourceRunResult } | null>(null);
   const [removing, setRemoving] = useState<LeadSource | null>(null);
   const [keyOpen, setKeyOpen] = useState(false);
+  const [mode, setMode] = useState<"maps" | "paste" | "groups">("maps");
 
   const load = useCallback(async () => {
     try {
@@ -47,8 +49,19 @@ export function MapsSearchView({ campaigns, onCampaignsChanged }: { campaigns: W
   const campName = (id: string | null) => campaigns.find((c) => c.id === id)?.name;
   const usagePct = status ? status.calls_this_month / Math.max(1, status.monthly_call_limit) : 0;
 
+  const modes = (
+    <Segmented value={mode} onChange={setMode} options={[
+      { value: "maps", label: <><MapPin size={14} /> Google Maps</> },
+      { value: "paste", label: "Colar números" },
+      { value: "groups", label: "Grupos do WhatsApp" },
+    ]} />
+  );
+  if (mode === "paste") return <div className="maps-view">{modes}<PasteExtractor /></div>;
+  if (mode === "groups") return <div className="maps-view">{modes}<GroupsExtractor /></div>;
+
   return (
     <div className="maps-view">
+      {modes}
       <section className={`crm-card maps-key ${status?.has_key ? "ok" : ""}`}>
         <div className="wa-conn-head">
           <div className="wa-conn-icon"><MapPin size={20} /></div>
@@ -65,8 +78,10 @@ export function MapsSearchView({ campaigns, onCampaignsChanged }: { campaigns: W
         </div>
       </section>
 
+      {access.write && <QuickMapsSearch hasKey={!!status?.has_key} sources={sources ?? []} campaigns={campaigns} onDone={() => { void load(); onCampaignsChanged(); }} />}
+
       <div className="crm-toolbar">
-        <div className="crm-toolbar-left"><p className="crm-muted small" style={{ margin: 0 }}>Os clientes encontrados vão para o <b>Discador</b> (com posição no Google, nota e avaliações) e, se você quiser, direto para um <b>disparo</b>.</p></div>
+        <div className="crm-toolbar-left"><p className="crm-muted small" style={{ margin: 0 }}><b>Buscas salvas</b> — bairros em rodízio, todo dia, sozinhas. Os clientes encontrados vão para o <b>Discador</b> (com posição no Google, nota e avaliações) e, se você quiser, direto para um <b>disparo</b>.</p></div>
         {access.write && <button type="button" className="crm-btn primary" disabled={!status?.has_key} title={!status?.has_key ? "Conecte o Google Maps primeiro" : undefined} onClick={() => setEditing("new")}><Plus size={16} /> Nova busca</button>}
       </div>
 
