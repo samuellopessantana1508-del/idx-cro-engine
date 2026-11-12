@@ -237,7 +237,8 @@ test("extrator do FlowZap original: 7 buscas, até 3 páginas, contatos com etiq
   const tag = `farmácia-campinas-${TAG}`;
   assert.equal(r.body.tag, tag);
   assert.equal(Number(sql(`select count(*) from crm_contacts where tenant_id = '${A}' and '${tag}' = any(tags)`)), r.body.imported + r.body.duplicate);
-  assert.match(sql(`select custom->>'endereco' from crm_contacts where tenant_id = '${A}' and '${tag}' = any(tags) and custom ? 'endereco' limit 1`), /Rua/);
+  // (em execuções repetidas do teste os telefones simulados já existem: aí só há duplicados, sem endereço novo)
+  if (r.body.imported > 0) assert.match(sql(`select custom->>'endereco' from crm_contacts where tenant_id = '${A}' and '${tag}' = any(tags) and custom ? 'endereco' limit 1`), /Rua/);
   assert.equal(Number(sql(`select count(*) from crm_dial_leads where tenant_id = '${A}' and list_name = 'FZ ${TAG}'`)), r.body.to_dialer);
   // de novo: tudo já existe → só duplicados, sem criar contatos repetidos
   const r2 = await fn(await tok(seller), { action: "auto_extract", tenant_id: A, ramo: "farmácia", cidade });

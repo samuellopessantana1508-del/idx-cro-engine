@@ -6,7 +6,7 @@ import { useCrm } from "../context";
 import { useWaInstance } from "../dispatch";
 import { errorText, relative } from "../format";
 import type { FlowListItem } from "../types";
-import { Confirm, Empty, Modal, Skeleton } from "../ui";
+import { Confirm, Modal, Skeleton } from "../ui";
 import { summary } from "./catalog";
 import { FlowEditor } from "./editor";
 import { TEMPLATES, type Template } from "./templates";

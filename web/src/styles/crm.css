@@ -155,7 +155,8 @@ kbd {
 
 /* ---------- página, toolbar ---------- */
 .crm-page { display: grid; gap: 16px; min-width: 0; align-content: start; animation: crm-fade 0.18s ease-out; }
-.crm-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+/* app.css (telas antigas) define .crm-toolbar como grade; dentro do CRM a barra é sempre flexível */
+.crm-toolbar, .crm-root .crm-toolbar, .crm-overlay .crm-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 0; }
 .crm-toolbar > p { margin: 0; max-width: 720px; }
 .crm-toolbar-left, .crm-toolbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .crm-toolbar-left { flex: 1 1 560px; }

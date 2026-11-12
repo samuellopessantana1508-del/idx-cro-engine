@@ -28,7 +28,7 @@ export function QuickMapsSearch({ hasKey, onDone }: { hasKey: boolean; sources?:
     try {
       const r = await api.mapsAutoExtract(crm.tenantId, { ramo: ramo.trim(), cidade: cidade.trim(), tagName: autoTag.trim(), listName: toDialer ? list : undefined });
       setRes(r);
-      if (r.imported > 0) crm.notify(`${r.imported} leads importados automaticamente!`);
+      if (r.imported > 0) crm.notify(`${r.imported} leads importados automaticamente!${r.partial ? " A busca parou antes do fim pelo tempo; rode de novo para buscar mais." : ""}`);
       else if (r.total === 0) crm.notify("Nenhum lead encontrado. Tente termos diferentes.");
       else crm.notify(`${r.total} encontrados, ${r.duplicate} já existiam.`);
       onDone();

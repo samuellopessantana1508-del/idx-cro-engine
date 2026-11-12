@@ -657,6 +657,7 @@ export function App() {
   );
   const currentTenantRole = currentTenantUser?.role ?? (isPlatformUser ? "owner" : null);
   const isSellerExperience = currentTenantRole === "operator" && !isPlatformUser;
+  const canAdminTenant = canCreateClients || currentTenantRole === "owner" || currentTenantRole === "admin";
   const secondaryMobileSections: Section[] = isSellerExperience ? ["leads"] : ["integrations", "whatsapp", "leads", "clients", "users", "reports", "capi", "settings", "follow-ups", "segments", "google-ads"];
   const moreActive = secondaryMobileSections.includes(active);
 
@@ -1919,7 +1920,8 @@ export function App() {
   }
 
   async function loadWaInstances() {
-    if (!tenant) return;
+    // lista de conexões é tela de configuração: só quem administra a empresa (evita 403 para vendedor/leitura)
+    if (!tenant || !canAdminTenant) return;
     setWaBusy(true);
     try {
       const res = await authFetch("tenant-admin", {
@@ -1984,7 +1986,8 @@ export function App() {
   }
 
   async function loadWaKeys() {
-    if (!tenant) return;
+    // chaves de integração são só para quem administra a empresa (evita erro 403 para vendedor/leitura)
+    if (!tenant || !canAdminTenant) return;
     try {
       const res = await authFetch("tenant-admin", {
         method: "POST",
@@ -2624,7 +2627,7 @@ export function App() {
       loadWaConversations();
       loadAiSales();
     }
-  }, [active, tenant?.id]);
+  }, [active, tenant?.id, canAdminTenant]);
 
   useEffect(() => {
     if (active === "ai-sales" && tenant) loadAiSales();
@@ -2924,7 +2927,7 @@ export function App() {
             <NavButton icon={<Wrench />} label="Configurações do CRM" active={crmIs("settings")} onClick={() => goToCrm({ name: "settings" })} />
             <NavButton icon={<LayoutList />} label="Empresas IDX" active={active === "clients"} onClick={() => goToSection("clients")} />
             <NavButton icon={<Users />} label="Usuários" active={active === "users"} onClick={() => goToSection("users")} />
-            <NavButton icon={<Settings />} label="Config" active={active === "settings"} onClick={() => goToSection("settings")} />
+            <NavButton icon={<Settings />} label="Configurações" active={active === "settings"} onClick={() => goToSection("settings")} />
           </nav>
           )}
         </div>
@@ -5534,14 +5537,14 @@ export function App() {
           <button type="button" onClick={() => goToSection("integrations")} className={active === "integrations" ? "active" : ""}><ShieldCheck size={17} /> Meta</button>
           <button type="button" onClick={() => { goToSection("whatsapp"); loadWaInstances(); loadWaKeys(); }} className={active === "whatsapp" ? "active" : ""}><MessageCircle size={17} /> WhatsApp</button>
           <button type="button" onClick={() => goToSection("leads")} className={active === "leads" ? "active" : ""}><MessageCircle size={17} /> Atendimentos</button>
-          <button type="button" onClick={() => goToSection("clients")} className={active === "clients" ? "active" : ""}><LayoutList size={17} /> Clientes</button>
+          <button type="button" onClick={() => goToSection("clients")} className={active === "clients" ? "active" : ""}><LayoutList size={17} /> Empresas IDX</button>
           <button type="button" onClick={() => goToSection("users")} className={active === "users" ? "active" : ""}><Users size={17} /> Usuários</button>
           <button type="button" onClick={() => goToSection("reports")} className={active === "reports" ? "active" : ""}><FileText size={17} /> Relatórios</button>
           <button type="button" onClick={() => goToSection("capi")} className={active === "capi" ? "active" : ""}><Activity size={17} /> CAPI</button>
           <button type="button" onClick={() => goToSection("ai-sales")} className={active === "ai-sales" ? "active" : ""}><TrendingUp size={17} /> Vendas IA</button>
           <button type="button" onClick={() => goToSection("intelligence")} className={active === "intelligence" ? "active" : ""}><BarChart3 size={17} /> Inteligência</button>
           <button type="button" onClick={() => goToSection("google-ads")} className={active === "google-ads" ? "active" : ""}><Zap size={17} /> Google Ads</button>
-          <button type="button" onClick={() => goToSection("settings")} className={active === "settings" ? "active" : ""}><Settings size={17} /> Config</button>
+          <button type="button" onClick={() => goToSection("settings")} className={active === "settings" ? "active" : ""}><Settings size={17} /> Configurações</button>
           <button type="button" onClick={logout}><LogOut size={17} /> Sair</button>
         </section>
       )}
@@ -5796,34 +5799,6 @@ function SalesConsole({
         </section>
       </section>
     </section>
-  );
-}
-
-function OnboardingStep({
-  title,
-  detail,
-  done,
-  action,
-  onClick,
-}: {
-  title: string;
-  detail: string;
-  done: boolean;
-  action: string;
-  onClick: () => void;
-}) {
-  return (
-    <article className={`onboarding-step ${done ? "done" : ""}`}>
-      <div>
-        <strong>{title}</strong>
-        <small>{detail}</small>
-      </div>
-      {done ? (
-        <span className="status-pill status-pill-good">Pronto</span>
-      ) : (
-        <button className="ghost-dark-button" onClick={onClick}>{action}</button>
-      )}
-    </article>
   );
 }
 
@@ -7175,13 +7150,13 @@ function sectionTitle(section: Section): string {
     crm: "CRM",
     integrations: "Integrações",
     whatsapp: "WhatsApp",
-    clients: "Clientes",
+    clients: "Empresas IDX",
     users: "Usuários",
     reports: "Relatórios",
     capi: "CAPI Health",
     "ai-sales": "Vendas IA",
     intelligence: "Inteligência Financeira",
-    settings: "Configuração",
+    settings: "Configurações",
     "follow-ups": "Follow-ups",
     segments: "Segmentação",
     "google-ads": "Google Ads",

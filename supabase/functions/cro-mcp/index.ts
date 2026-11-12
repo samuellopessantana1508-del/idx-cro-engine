@@ -36,7 +36,7 @@ function tokenFrom(req: Request): string | null {
 }
 
 function unauthorized() {
-  return new Response(JSON.stringify(err(null, -32001, "Token do CRO ausente, inválido ou revogado. Crie um em Configurações → IA (MCP).")), {
+  return new Response(JSON.stringify(err(null, -32001, "Token do CRO ausente, inválido ou revogado. Crie um no menu “Claude e IA (MCP)” do CRO e use o “Endereço com token”.")), {
     status: 401,
     headers: { ...cors, "Content-Type": "application/json", "WWW-Authenticate": 'Bearer realm="cro", error="invalid_token"' },
   });

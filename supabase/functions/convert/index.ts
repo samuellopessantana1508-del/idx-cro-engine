@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { phoneVariants } from "../_shared/phone-variants.ts";
 import { canOperateTenantOrPlatform } from "../_shared/access.ts";
 import { syncSessionToMetaAudience } from "../_shared/meta-audiences.ts";
 
@@ -31,6 +32,8 @@ function json(data: unknown, status = 200): Response {
 function cleanDigits(value: string | null | undefined): string {
   return String(value ?? "").replace(/\D/g, "");
 }
+
+// O mesmo telefone pode estar salvo com ou sem 55 e com ou sem o 9º dígito.
 
 function cleanText(value: unknown): string {
   return String(value ?? "").trim();
@@ -136,7 +139,7 @@ Deno.serve(async (req: Request) => {
         .select(select)
         .eq("tenant_id", requestedTenantId)
         .neq("lead_status", "sold")
-        .eq("customer_phone", phone)
+        .in("customer_phone", phoneVariants(phone))
         .order("clicked_at", { ascending: false })
         .limit(3);
       addMatches(data as Record<string, any>[] | null);

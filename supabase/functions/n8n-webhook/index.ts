@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { phoneVariants } from "../_shared/phone-variants.ts";
 import { validateWebhookKey } from "../_shared/webhook-auth.ts";
 import { normalizePhone, extractWaId, isGroupJid } from "../_shared/phone-utils.ts";
 
@@ -151,7 +152,7 @@ async function linkConversationToLead(
     .from("tracking_sessions")
     .select("id")
     .eq("tenant_id", tenantId)
-    .eq("customer_phone", phone)
+    .in("customer_phone", phoneVariants(phone))
     .order("clicked_at", { ascending: false })
     .limit(1)
     .maybeSingle();

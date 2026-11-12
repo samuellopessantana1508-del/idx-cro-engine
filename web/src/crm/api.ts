@@ -736,7 +736,7 @@ export const mapsPreview = (tenantId: string, query: string, location: string) =
   mapsFn<{ places: MapsPlace[]; closed: number }>({ action: "preview", tenant_id: tenantId, query, location });
 export type AutoExtractResult = {
   total: number; imported: number; duplicate: number; invalid: number; optout: number; to_dialer: number;
-  tag: string; list_name: string | null; api_calls: number; leads: { name: string; phone: string; address?: string }[];
+  tag: string; list_name: string | null; api_calls: number; partial?: boolean; leads: { name: string; phone: string; address?: string }[];
 };
 /** Extrator automático do FlowZap original (mesmo código de busca). */
 export const mapsAutoExtract = (tenantId: string, input: { ramo: string; cidade: string; tagName?: string; listName?: string }) =>

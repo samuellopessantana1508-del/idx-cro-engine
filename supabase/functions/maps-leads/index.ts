@@ -158,8 +158,9 @@ Deno.serve(async (req) => {
       if (Number(left) <= 0) return json({ error: "Limite mensal de buscas atingido. Aumente em Configurar ou aguarde o próximo mês." }, 400);
       const key = await apiKeyFor(tenantId);
       let budget = Number(left);
-      const { leads, calls, errors } = await collectLeads(key, ramo, cidade, {
+      const { leads, calls, errors, timedOut } = await collectLeads(key, ramo, cidade, {
         baseUrl: PLACES_BASE,
+        deadlineMs: Date.now() + (Number(Deno.env.get("MAPS_EXTRACT_BUDGET_MS")) || 100_000),
         pageDelayMs: PLACES_BASE ? 10 : 2000,
         onCall: async () => {
           if (budget <= 0) return false;
@@ -174,7 +175,7 @@ Deno.serve(async (req) => {
         p_tag: String(body.tagName ?? "").trim() || null, p_list_name: String(body.list_name ?? "").trim() || null, p_api_calls: calls,
       });
       if (sErr) return json({ error: sErr.message }, 500);
-      return json({ ...(saved as Record<string, unknown>), api_calls: calls, leads: leads.slice(0, 50) });
+      return json({ ...(saved as Record<string, unknown>), api_calls: calls, partial: timedOut, leads: leads.slice(0, 50) });
     }
 
     if (action === "run") {

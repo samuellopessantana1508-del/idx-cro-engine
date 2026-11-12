@@ -40,8 +40,10 @@ export function DialerView() {
   const loadOverview = useCallback(() => {
     api.dialOverview(tenantId, list).then((o) => {
       setOv(o);
-      if (!list && o.lists.length) setList(o.lists[0].name);
-      if (list && o.lists.length && !o.lists.some((l) => l.name === list)) setList(o.lists[0].name);
+      // começa pela lista que ainda tem números para ligar (não por uma lista vazia)
+      const best = o.lists.find((l) => l.pending > 0) ?? o.lists[0];
+      if (!list && best) setList(best.name);
+      if (list && best && !o.lists.some((l) => l.name === list)) setList(best.name);
     }).catch((e) => notify(errorText(e)));
   }, [tenantId, list, notify]);
   useEffect(() => { loadOverview(); }, [loadOverview, refreshKey]);

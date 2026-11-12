@@ -12,6 +12,7 @@ import { createClient } from "@supabase/supabase-js";
 import { Db } from "../src/db.js";
 import { Gateway, FlowTicker, runFlows } from "../src/main.js";
 import type { SocketFactory, SocketLike } from "../src/session.js";
+import { MAX_QR } from "../src/session.js";
 
 const URL_ = process.env.SUPABASE_URL ?? "http://127.0.0.1:54321";
 const ANON = process.env.ANON_KEY!;
@@ -250,4 +251,18 @@ test("sair do número (logout) apaga a sessão salva", async () => {
   await admin.rpc("wa_gateway_connect", { p_tenant_id: A, p_action: "logout" });
   await wait(() => !fs.existsSync(path.join(dir, inst)));
   await wait(() => sql(`select desired_status || '|' || status from whatsapp_instances where id = '${inst}'`) === "disconnected|disconnected");
+});
+
+test("QR não lido: para de gerar QR, avisa e religa quando pedirem de novo", async () => {
+  const n = created;
+  await admin.rpc("wa_gateway_connect", { p_tenant_id: A, p_action: "connect" });
+  await wait(() => created === n + 1);
+  for (let i = 0; i <= MAX_QR; i++) { sock.emit("connection.update", { qr: `qr-${i}` }); await new Promise((r) => setTimeout(r, 30)); }
+  await wait(() => sql(`select desired_status || '|' || status from whatsapp_instances where id = '${inst}'`) === "disconnected|disconnected");
+  assert.match(sql(`select metadata->>'last_error' from whatsapp_instances where id = '${inst}'`), /QR Code expirou/);
+  await wait(() => gw.session(inst) === undefined);
+  await admin.rpc("wa_gateway_connect", { p_tenant_id: A, p_action: "connect" });
+  await wait(() => created === n + 2);
+  sock.scan();
+  await wait(() => sql(`select status from whatsapp_instances where id = '${inst}'`) === "connected");
 });

@@ -49,7 +49,8 @@ const metaConfig = read("supabase/functions/_shared/meta-config.ts");
 const metaCallbackPage = read("web/public/meta-oauth-callback.html");
 const appSource = read("web/src/App.tsx");
 const metaAssets = read("supabase/functions/meta-assets/index.ts");
-const metaInsights = read("supabase/functions/meta-insights/index.ts");
+// a sincronização saiu para _shared/meta-sync.ts (usada também pela rotina automática)
+const metaInsights = read("supabase/functions/meta-insights/index.ts") + read("supabase/functions/_shared/meta-sync.ts");
 const metaAudiences = read("supabase/functions/meta-audiences/index.ts");
 const sharedAccess = read("supabase/functions/_shared/access.ts");
 const sharedMetaAudiences = read("supabase/functions/_shared/meta-audiences.ts");

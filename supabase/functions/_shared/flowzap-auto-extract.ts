@@ -42,6 +42,7 @@ export async function searchPlaces(
   query: string,
   pageToken?: string,
   baseUrl = "https://places.googleapis.com",
+  timeoutMs = 15_000,
 ): Promise<{ places: GooglePlace[]; nextToken?: string; error?: string }> {
   const body: Record<string, unknown> = {
     textQuery: query,
@@ -52,6 +53,7 @@ export async function searchPlaces(
   try {
     const res = await fetch(`${baseUrl}/v1/places:searchText`, {
       method: "POST",
+      signal: AbortSignal.timeout(timeoutMs), // CRO: uma busca travada não segura a extração inteira
       headers: {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": apiKey,
@@ -96,13 +98,16 @@ export function buildQueries(ramo: string, cidade: string): string[] {
 /** O laço de busca do original, sem mudanças. */
 export async function collectLeads(
   apiKey: string, ramo: string, cidade: string,
-  opts: { baseUrl?: string; pageDelayMs?: number; onCall?: () => Promise<boolean> } = {},
-): Promise<{ leads: Lead[]; calls: number; errors: string[] }> {
+  opts: { baseUrl?: string; pageDelayMs?: number; onCall?: () => Promise<boolean>; deadlineMs?: number } = {},
+): Promise<{ leads: Lead[]; calls: number; errors: string[]; timedOut: boolean }> {
+  let timedOut = false;
   const allLeads = new Map<string, Lead>();
   const queries = buildQueries(ramo.trim(), cidade.trim());
   const errors: string[] = [];
   let calls = 0;
   const call = async (q: string, token?: string) => {
+    // CRO: termina com o que já achou antes do limite de tempo da função (sem perder a extração)
+    if (opts.deadlineMs && Date.now() > opts.deadlineMs) { timedOut = true; return null; }
     if (opts.onCall && !(await opts.onCall())) return null; // cota mensal do CRO acabou
     calls++;
     const r = await searchPlaces(apiKey, q, token, opts.baseUrl);
@@ -135,5 +140,5 @@ export async function collectLeads(
     // chave inválida/sem faturamento: para na primeira busca, como mensagem clara
     if (errors.length && allLeads.size === 0 && calls === 1) break;
   }
-  return { leads: Array.from(allLeads.values()), calls, errors };
+  return { leads: Array.from(allLeads.values()), calls, errors, timedOut };
 }

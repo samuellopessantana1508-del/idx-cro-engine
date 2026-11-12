@@ -374,3 +374,37 @@ test("respostas rápidas: cada empresa vê só as suas", async () => {
   assert.equal(theirs.length, 0);
   ok(await seller.rpc("wa_quick_reply_delete", { p_id: id }));
 });
+
+test("contato numa espera de outra automação não entra em uma nova por cima; só a mais recente responde", async () => {
+  main = ok(await admin.rpc("wa_flow_set_status", { p_flow_id: main.id, p_status: "active" }));
+  const promo = ok(await admin.rpc("wa_flow_save", { p_tenant_id: A, p_id: null, p_name: `Promo ${TAG}`, p_graph: {
+    nodes: [N("t", "trigger", { kind: "keyword", keywords: "visita" }), N("a", "send_text", { text: "Promo do dia!" }), N("w", "wait", { amount: 1, unit: "hours" }), N("b", "send_text", { text: "Ainda quer a promo?" })],
+    edges: [E("t", "a"), E("a", "w"), E("w", "b")] } }));
+  ok(await admin.rpc("wa_flow_set_status", { p_flow_id: promo.id, p_status: "active" }));
+  const p = ph(40);
+  await inbound(p, "quero uma visita", "Dora");
+  await tick();
+  assert.equal(outbox(p), "Promo do dia!");
+  await inbound(p, "e o preço?");
+  await tick();
+  assert.equal(outbox(p), "Promo do dia!", "não começa a automação de preço no meio da outra");
+  ok(await admin.rpc("wa_flow_set_status", { p_flow_id: promo.id, p_status: "paused" }));
+  sql(`update wa_flow_runs set status = 'cancelled' where flow_id = '${promo.id}'`);
+  await drain();
+
+  // duas execuções esperando resposta do mesmo contato: só a mais recente segue
+  const q = ph(41);
+  await inbound(q, "preço", "Eva");
+  await tick();
+  const runId = sql(`select id from wa_flow_runs where flow_id = '${main.id}' and phone = '${q}'`);
+  const twin = ok(await admin.rpc("wa_flow_save", { p_tenant_id: A, p_id: null, p_name: `Preço cópia ${TAG}`, p_graph: mainGraph() }));
+  ok(await admin.rpc("wa_flow_set_status", { p_flow_id: twin.id, p_status: "active" }));
+  const old = sql(`insert into wa_flow_runs (tenant_id, flow_id, instance_id, phone, conversation_id, status, current_node, wait_kind, state, updated_at)
+    select tenant_id, '${twin.id}', instance_id, phone, conversation_id, status, current_node, wait_kind, state, now() - interval '1 hour' from wa_flow_runs where id = '${runId}' returning id`).split("\n")[0];
+  await inbound(q, "1");
+  await tick();
+  assert.equal((outbox(q).match(/Catálogo de Eva/g) ?? []).length, 1, "o catálogo vai uma vez só");
+  assert.equal(sql(`select status from wa_flow_runs where id = '${old}'`), "cancelled");
+  ok(await admin.rpc("wa_flow_set_status", { p_flow_id: twin.id, p_status: "paused" }));
+  await drain();
+});

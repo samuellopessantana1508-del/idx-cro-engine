@@ -266,13 +266,23 @@ async function handleConfirm(req: Request, url: URL): Promise<Response> {
 
   // Atomic: only the first confirmation flips whatsapp_opened_at, so the
   // Lead event is sent exactly once per session.
-  const { data: session } = await supa
-    .from("tracking_sessions")
-    .update({ whatsapp_opened_at: new Date().toISOString() })
-    .eq("ref", ref)
-    .is("whatsapp_opened_at", null)
-    .select("*, tenant:tenants(*), offer:offers(*), smart_link:smart_links(*)")
-    .maybeSingle();
+  // O clique é gravado em segundo plano; se a confirmação chegar antes da gravação,
+  // tenta de novo por alguns segundos em vez de perder o Lead.
+  let found: Record<string, any> | null = null;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const { data } = await supa
+      .from("tracking_sessions")
+      .update({ whatsapp_opened_at: new Date().toISOString() })
+      .eq("ref", ref)
+      .is("whatsapp_opened_at", null)
+      .select("*, tenant:tenants(*), offer:offers(*), smart_link:smart_links(*)")
+      .maybeSingle();
+    if (data) { found = data; break; }
+    const { count } = await supa.from("tracking_sessions").select("id", { count: "exact", head: true }).eq("ref", ref);
+    if ((count ?? 0) > 0) break; // já confirmado antes: não envia de novo
+    await new Promise((r) => setTimeout(r, 700));
+  }
+  const session = found;
 
   if (session) {
     // Marca visivel no CRM: o vendedor continua vendo TODOS os leads, e os que

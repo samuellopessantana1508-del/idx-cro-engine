@@ -17,7 +17,7 @@ export class Gateway {
     private factory: SocketFactory,
     private sessionsDir: string,
     private log: Logger,
-    private opts: { syncMs: number; pollMs: number; typing: boolean; onInbound?: () => void } = { syncMs: 5000, pollMs: 3000, typing: true },
+    private opts: { syncMs: number; pollMs: number; typing: boolean; onInbound?: (text?: string) => void } = { syncMs: 5000, pollMs: 3000, typing: true },
   ) {}
 
   session(id: string) { return this.sessions.get(id); }
@@ -31,6 +31,8 @@ export class Gateway {
       for (const inst of list) {
         if (inst.desired_status === "connected") {
           wanted.add(inst.id);
+          const prev = this.sessions.get(inst.id);
+          if (prev?.qrExpired) { this.sessions.delete(inst.id); await prev.stop({ logout: false }).catch(() => {}); }
           if (!this.sessions.has(inst.id)) {
             const s = new Session(inst.id, this.db, this.factory, this.sessionsDir, this.log,
               { pollMs: this.opts.pollMs, typing: this.opts.typing, onInbound: this.opts.onInbound });
@@ -43,6 +45,9 @@ export class Gateway {
           this.sessions.delete(inst.id);
           this.log.info("[gateway] %s conexão %s", inst.desired_status === "logout" ? "saindo da" : "pausando", inst.id);
           await s.stop({ logout: inst.desired_status === "logout" });
+        } else if (inst.desired_status !== "logout" && inst.status === "connected") {
+          // ficou marcada como conectada sem sessão aberta (ex.: o serviço reiniciou): corrige
+          await this.db.updateInstance(inst.id, "disconnected").catch(() => {});
         } else if (inst.desired_status === "logout") {
           // sem sessão aberta: só apaga as credenciais salvas
           fs.rmSync(`${this.sessionsDir}/${inst.id}`, { recursive: true, force: true });
@@ -111,6 +116,32 @@ export class FlowTicker {
       this.running = false;
       if (this.again) { this.again = false; void this.fire(); }
     }
+  }
+}
+
+const REF_RE = /(?:^|[^a-z0-9])([a-z0-9]{4}-[a-z0-9]{4})(?:[^a-z0-9-]|$)/i;
+
+/** Extrai o código de rastreio ("Ref: xxxx-xxxx") de uma mensagem recebida. */
+export function trackingRef(text?: string | null): string | null {
+  if (!text) return null;
+  const m = REF_RE.exec(text);
+  return m ? m[1].toLowerCase() : null;
+}
+
+/**
+ * Lead recebido com o código do link de campanha: confirma a entrada no WhatsApp
+ * (mesma rota da página de redirecionamento). Idempotente — se a página já confirmou,
+ * nada é reenviado ao Meta. Garante o Lead mesmo quando o navegador não avisou.
+ */
+export async function confirmTrackingRef(url: string, anon: string, ref: string, log: Logger) {
+  try {
+    await fetch(`${url}/functions/v1/go/confirm?ref=${encodeURIComponent(ref)}`, {
+      method: "POST",
+      headers: { apikey: anon, Authorization: `Bearer ${anon}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (e) {
+    log.warn("[rastreio] confirmação falhou: %s", (e as Error).message);
   }
 }
 
@@ -204,7 +235,11 @@ if (isMain) {
   };
   const flows = new FlowTicker(() => runFlows(url, anon, token, log));
   const gw = new Gateway(new Db(url, anon, token), baileysFactory, dir, log,
-    { syncMs: 5000, pollMs: 3000, typing: true, onInbound: () => flows.poke() });
+    { syncMs: 5000, pollMs: 3000, typing: true, onInbound: (text) => {
+      flows.poke();
+      const ref = trackingRef(text);
+      if (ref) void confirmTrackingRef(url, anon, ref, log);
+    } });
   gw.start();
   flows.start();
   // Busca automática de clientes (Google Maps): a função só roda as buscas vencidas

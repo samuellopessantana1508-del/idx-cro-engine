@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FlowTicker } from "../src/main.js";
+import { FlowTicker, trackingRef } from "../src/main.js";
 import { messageContent } from "../src/session.js";
 
 test("automações: rajada de mensagens vira uma chamada; nunca duas ao mesmo tempo", async () => {
@@ -23,4 +23,12 @@ test("conteúdo das mensagens: texto, imagem com legenda, áudio, documento com 
   assert.equal(d.fileName, "x.xlsx");
   assert.equal(d.mimetype, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   assert.equal(d.caption, "Segue");
+});
+
+test("rastreio: lê o código do link de campanha na mensagem do lead", () => {
+  assert.equal(trackingRef("Olá, quero saber mais. Ref: ab12-CD34"), "ab12-cd34");
+  assert.equal(trackingRef("ref:k9x2-77aa"), "k9x2-77aa");
+  assert.equal(trackingRef("Oi, tudo bem?"), null);
+  assert.equal(trackingRef("abcde-fghij"), null);
+  assert.equal(trackingRef(undefined), null);
 });

@@ -164,6 +164,15 @@ Testes: `tests/crm/wa-dispatch.test.mjs` (regras no banco), `services/wa-gateway
 
 ## Extratores de clientes e atendimento em equipe
 
-- **Disparos → Buscar clientes**: *Busca rápida* (ramo + cidade → 7 regiões × 3 páginas, até 120, cria uma busca salva e roda), *Colar números* (acha telefones/nomes em qualquer texto) e *Grupos do WhatsApp* (lista os grupos do número conectado e importa participantes com número visível; exige aceitar o aviso de risco; só gestores). Tudo vai para Contatos com etiqueta (`crm_contacts_tag_import`) e, se escolhido, para uma lista do discador. Migração `20261118120000_lead_extractors.sql`; os pedidos de grupos são executados pelo motor (`wa_group_jobs`).
+- **Disparos → Buscar clientes**: *Busca automática* — o mesmo extrator do FlowZap original (`_shared/flowzap-auto-extract.ts`, ação `auto_extract` de `maps-leads`): ramo + cidade → 7 variações de busca × até 3 páginas, até 120 clientes com telefone; para sozinha antes do limite de tempo da função e avisa (`partial`), *Colar números* (acha telefones/nomes em qualquer texto) e *Grupos do WhatsApp* (lista os grupos do número conectado e importa participantes com número visível; exige aceitar o aviso de risco; só gestores). Tudo vai para Contatos com etiqueta (`crm_contacts_tag_import`) e, se escolhido, para uma lista do discador. Migração `20261118120000_lead_extractors.sql`; os pedidos de grupos são executados pelo motor (`wa_group_jobs`).
 - **Disparos → Quem vai receber → Contatos com etiqueta**.
 - **Caixa de entrada**: responsável por conversa (transferir avisa a pessoa), concluir/reabrir (volta sozinha quando o cliente escreve), filtros Abertas/Minhas/Sem responsável/Concluídas, robô x atendente e respostas rápidas (digite `/`). Migração `20261119120000_inbox_team_hooks.sql`.
+
+
+## Atribuição de campanha → WhatsApp → venda
+
+1. O clique em `/go/<código>` grava a sessão (`tracking_sessions`, com `ref` `xxxx-xxxx`, UTMs e IDs de anúncio) e abre o WhatsApp com a mensagem pronta contendo `Ref: xxxx-xxxx`.
+2. A página de redirecionamento confirma a entrada (`/go/confirm`), que é atômica: o Lead (CAPI) vai uma vez só. A confirmação tenta de novo por alguns segundos se o clique ainda não foi gravado.
+3. Quando a mensagem chega, o motor (gateway) também chama `/go/confirm` com o código lido do texto — o Lead vai mesmo se o navegador não avisou.
+4. O gatilho `trg_wa_link_tracking_ref` (migração `20261121120000_audit_fixes.sql`) lê o código da mensagem recebida e liga conversa, contato (origem `known`, UTMs, primeira sessão) e negócio aberto à campanha — sem criar negócio duplicado — e grava o telefone na sessão.
+5. Venda confirmada por telefone (`convert`, `n8n-webhook`) aceita o número em qualquer formato (com/sem 55, com/sem o 9º dígito — `_shared/phone-variants.ts`). Falha do Meta ao atualizar públicos nunca derruba a confirmação da venda.

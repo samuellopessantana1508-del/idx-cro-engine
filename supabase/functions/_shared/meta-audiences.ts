@@ -6,6 +6,8 @@ type SupabaseLike = {
   from: (table: string) => any;
 };
 
+const GRAPH_BASE = Deno.env.get("META_GRAPH_BASE") || "https://graph.facebook.com";
+
 type AudienceResult = {
   ok: boolean;
   audience_key: AudienceKey;
@@ -148,7 +150,7 @@ export async function ensureMetaAudience(
   }
 
   const version = Deno.env.get("META_GRAPH_VERSION") ?? creds.graph_version ?? "v25.0";
-  const endpoint = `https://graph.facebook.com/${version}/${adAccountId}/customaudiences`;
+  const endpoint = `${GRAPH_BASE}/${version}/${adAccountId}/customaudiences`;
   const form = new FormData();
   form.set("name", audienceConfig[audienceKey].name);
   form.set("description", audienceConfig[audienceKey].description);
@@ -156,7 +158,7 @@ export async function ensureMetaAudience(
   form.set("customer_file_source", "USER_PROVIDED_ONLY");
   form.set("access_token", adsToken);
 
-  const response = await fetch(endpoint, { method: "POST", body: form });
+  const response = await fetch(endpoint, { method: "POST", body: form, signal: AbortSignal.timeout(15_000) });
   const payload = await response.json().catch(() => ({}));
   const metaAudienceId = String(payload.id ?? "");
 
@@ -187,7 +189,31 @@ export async function ensureMetaAudience(
   };
 }
 
+/**
+ * Atualiza o público do Meta sem nunca derrubar quem chamou: a venda/etapa já foi gravada,
+ * então uma falha de rede ou do Meta só fica registrada e é devolvida como "failed".
+ */
 export async function syncSessionToMetaAudience(
+  supa: SupabaseLike,
+  session: Record<string, any>,
+  audienceKey: AudienceKey,
+  body: Record<string, any> = {},
+  options: { adAccountId?: string | null } = {},
+): Promise<AudienceResult> {
+  try {
+    return await syncSessionToMetaAudienceUnsafe(supa, session, audienceKey, body, options);
+  } catch (e) {
+    const error = `meta_unreachable: ${String((e as Error)?.message ?? e).slice(0, 200)}`;
+    await markSync(supa, session, audienceKey, {
+      sync_status: "failed",
+      last_error: error,
+      last_synced_at: new Date().toISOString(),
+    }).catch(() => {});
+    return { ok: false, audience_key: audienceKey, status: "failed", error };
+  }
+}
+
+async function syncSessionToMetaAudienceUnsafe(
   supa: SupabaseLike,
   session: Record<string, any>,
   audienceKey: AudienceKey,
@@ -231,7 +257,7 @@ export async function syncSessionToMetaAudience(
     .maybeSingle();
 
   const version = Deno.env.get("META_GRAPH_VERSION") ?? creds?.graph_version ?? "v25.0";
-  const endpoint = `https://graph.facebook.com/${version}/${audience.meta_audience_id}/users`;
+  const endpoint = `${GRAPH_BASE}/${version}/${audience.meta_audience_id}/users`;
   const form = new FormData();
   form.set("payload", JSON.stringify({
     schema: identifiers.schema,
@@ -239,7 +265,7 @@ export async function syncSessionToMetaAudience(
   }));
   form.set("access_token", adsAccessToken(creds) ?? "");
 
-  const response = await fetch(endpoint, { method: "POST", body: form });
+  const response = await fetch(endpoint, { method: "POST", body: form, signal: AbortSignal.timeout(15_000) });
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {

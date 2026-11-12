@@ -155,10 +155,13 @@ function TokenInstructions({ created, onClose }: { created: { token: string; nam
       <CopyBox label="Endereço com token" value={urlWithToken} secret />
       <h4 className="wa-sub">Claude Code (terminal)</h4>
       <CopyBox label="Comando" value={claudeCode} secret />
-      <h4 className="wa-sub">Claude Desktop (arquivo de configuração) e outros clientes MCP</h4>
-      <CopyBox label="Endereço" value={MCP_URL} />
-      <CopyBox label="Cabeçalho" value={`Authorization: Bearer ${created.token}`} secret />
-      <details className="mcp-details"><summary>claude_desktop_config.json</summary><pre>{desktop}</pre></details>
+      <details className="mcp-details">
+        <summary>Avançado: Claude Desktop (arquivo de configuração) e outros clientes MCP</summary>
+        <p className="crm-muted small">Use estes dois juntos. O endereço sozinho, sem o cabeçalho, não funciona — no Claude.ai use o “Endereço com token” acima.</p>
+        <CopyBox label="Endereço (sem token)" value={MCP_URL} />
+        <CopyBox label="Cabeçalho" value={`Authorization: Bearer ${created.token}`} secret />
+        <pre>{desktop}</pre>
+      </details>
     </Modal>
   );
 }

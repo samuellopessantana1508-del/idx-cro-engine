@@ -57,9 +57,11 @@ async function getFlow(id: string): Promise<Flow | null> {
 }
 async function gatewayInstance(tenant: string): Promise<string | null> {
   // a conexão do CRO em uso (conectada primeiro)
-  const { data } = await svc.from("whatsapp_instances").select("id, status, desired_status").eq("tenant_id", tenant).eq("provider", "gateway");
-  const list = (data ?? []) as { id: string; status: string; desired_status: string }[];
-  list.sort((a, b) => Number(b.status === "connected") - Number(a.status === "connected") || Number(b.desired_status === "connected") - Number(a.desired_status === "connected"));
+  const { data } = await svc.from("whatsapp_instances").select("id, status, desired_status, last_seen_at").eq("tenant_id", tenant).eq("provider", "gateway");
+  const list = (data ?? []) as { id: string; status: string; desired_status: string; last_seen_at: string | null }[];
+  const score = (x: { status: string; desired_status: string }) =>
+    (x.status === "connected" && x.desired_status === "connected" ? 4 : 0) + (x.desired_status === "connected" ? 2 : 0);
+  list.sort((a, b) => score(b) - score(a) || String(b.last_seen_at ?? "").localeCompare(String(a.last_seen_at ?? "")));
   return list[0]?.id ?? null;
 }
 async function conversationFor(tenant: string, phone: string, instance: string | null): Promise<{ id: string; bot_mode: string; bot_paused_until: string | null } | null> {
@@ -125,6 +127,12 @@ function makeEffects(run: Run, flow: Flow, contact: { info: ContactInfo; row: an
 
   return {
     async send(msg: OutMsg, nodeId: string) {
+      // a conexão pode ter sido trocada depois que a automação começou: usa a atual
+      const current = await gatewayInstance(run.tenant_id);
+      if (current && current !== run.instance_id) {
+        run.instance_id = current;
+        await svc.from("wa_flow_runs").update({ instance_id: current }).eq("id", run.id);
+      }
       if (!run.instance_id) throw new Error("WhatsApp do CRO não está conectado");
       const row: Record<string, unknown> = {
         tenant_id: run.tenant_id, instance_id: run.instance_id, phone: run.phone, source: "flow", flow_run_id: run.id,
@@ -387,8 +395,14 @@ async function handleMessage(item: QueueItem): Promise<string> {
   // 1) uma execução esperando resposta deste contato consome a mensagem
   const { data: waiting } = await svc.from("wa_flow_runs").select("id").eq("tenant_id", item.tenant_id).eq("phone", phone)
     .eq("status", "waiting").in("wait_kind", [...RESPONSE_WAITS]).order("updated_at", { ascending: false });
+  // só a automação mais recente responde (antes, duas esperando respondiam à mesma mensagem)
   let resumed = 0;
   for (const w of waiting ?? []) {
+    if (resumed) {
+      await svc.from("wa_flow_runs").update({ status: "cancelled", finished_at: new Date().toISOString(), last_error: "Outra automação mais recente assumiu a conversa" })
+        .eq("id", w.id).eq("status", "waiting").eq("is_test", false);
+      continue;
+    }
     const { data: run } = await svc.rpc("wa_flow_lock_run", { p_run_id: w.id });
     const r = (Array.isArray(run) ? run[0] : run) as Run | null;
     if (!r?.id) continue;
@@ -405,7 +419,13 @@ async function handleMessage(item: QueueItem): Promise<string> {
   }
   if (resumed) return `retomou ${resumed}`;
 
-  // 2) nova automação: a mais específica / de maior prioridade que casar
+  // 2) contato já está no meio de outra automação (ex.: esperando um intervalo): não começa outra por cima
+  const { count: busy } = await svc.from("wa_flow_runs").select("id", { count: "exact", head: true }).eq("tenant_id", item.tenant_id)
+    .eq("phone", phone).eq("is_test", false)
+    .or(`status.eq.waiting,and(status.eq.running,updated_at.gt.${new Date(Date.now() - 10 * 60_000).toISOString()})`);
+  if ((busy ?? 0) > 0) return "já está em uma automação";
+
+  // 3) nova automação: a mais específica / de maior prioridade que casar
   const flows = await activeFlows(item.tenant_id, ["message", "first_message", "keyword", "campaign"]);
   if (!flows.length) return "sem automação";
   const tz = await tenantTz(item.tenant_id);

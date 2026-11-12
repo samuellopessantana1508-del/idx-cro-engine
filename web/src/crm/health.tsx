@@ -13,6 +13,7 @@ type Health = {
   google: { status: string | null; sincronizado_em: string | null; conta: string | null; erro: boolean } | null;
   google_maps: { has_key: boolean; calls_this_month: number; monthly_call_limit: number };
   automacoes_ativas: number; cadencias_ativas: number; buscas_automaticas: number; disparos_enviando: number;
+  automacoes_whatsapp?: number; automacoes_whatsapp_em_andamento?: number; automacoes_whatsapp_erros_7d?: number; extracoes_30d?: number;
 };
 type Level = "ok" | "warn" | "bad" | "off";
 
@@ -66,12 +67,20 @@ export function HealthView() {
       <Row level={h.google_maps.has_key ? (h.google_maps.calls_this_month >= h.google_maps.monthly_call_limit ? "warn" : "ok") : "off"} title="Google Maps (busca de clientes)"
         detail={h.google_maps.has_key ? `${h.google_maps.calls_this_month} de ${h.google_maps.monthly_call_limit} buscas no mês` : "Sem chave (Disparos → Buscar clientes → Configurar)"} />
 
+      {(h.automacoes_whatsapp ?? 0) > 0 && (
+        <Row level={(h.automacoes_whatsapp_erros_7d ?? 0) > 0 ? "warn" : h.whatsapp?.status === "connected" ? "ok" : "bad"} title="Automações de WhatsApp"
+          detail={h.whatsapp?.status !== "connected" ? "Ativas, mas o WhatsApp do CRO não está conectado — elas não respondem"
+            : `${h.automacoes_whatsapp_em_andamento ?? 0} conversa(s) em andamento${(h.automacoes_whatsapp_erros_7d ?? 0) > 0 ? ` · ${h.automacoes_whatsapp_erros_7d} erro(s) nos últimos 7 dias (veja em Automações → Execuções)` : " · sem erros nos últimos 7 dias"}`} />
+      )}
+
       <h4 className="wa-sub">Processos ligados</h4>
       <div className="health-counts">
         <div><b>{h.automacoes_ativas}</b><span>automações ativas</span></div>
         <div><b>{h.cadencias_ativas}</b><span>cadências ativas</span></div>
         <div><b>{h.buscas_automaticas}</b><span>buscas automáticas</span></div>
         <div><b>{h.disparos_enviando}</b><span>disparos enviando</span></div>
+        <div><b>{h.automacoes_whatsapp ?? 0}</b><span>automações de WhatsApp</span></div>
+        <div><b>{h.extracoes_30d ?? 0}</b><span>extrações (30 dias)</span></div>
       </div>
     </div>
   );

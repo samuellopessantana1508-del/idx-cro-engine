@@ -4,6 +4,9 @@ import QRCode from "qrcode";
 import type { Db } from "./db.js";
 import { backoffMs, isTransient, mapStatus, normalizePhone, parseMessage, phoneCandidates, typingMs } from "./util.js";
 
+/** QRs exibidos sem leitura antes de pausar (cada um vale ~20 s). */
+export const MAX_QR = 6;
+
 export interface SocketLike {
   ev: { on(event: string, cb: (arg: any) => void): void };
   user?: { id?: string } | null;
@@ -59,6 +62,8 @@ export function messageContent(item: OutItem): Record<string, unknown> {
 export class Session {
   private sock: SocketLike | null = null;
   private open = false;
+  private qrCount = 0;
+  private expired = false;
   private stopped = false;
   private attempt = 0;
   private sending = false;
@@ -72,11 +77,13 @@ export class Session {
     private factory: SocketFactory,
     private sessionsDir: string,
     private log: Logger,
-    private opts: { pollMs: number; typing: boolean; onInbound?: () => void } = { pollMs: 3000, typing: true },
+    private opts: { pollMs: number; typing: boolean; onInbound?: (text?: string) => void } = { pollMs: 3000, typing: true },
   ) {}
 
   get authDir() { return path.join(this.sessionsDir, this.id); }
   get isOpen() { return this.open; }
+  /** Pausou porque ninguém leu o QR: pode ser religada quando pedirem de novo. */
+  get qrExpired() { return this.expired; }
 
   async start() {
     this.stopped = false;
@@ -102,13 +109,24 @@ export class Session {
     if (sock !== this.sock || this.stopped) return;
     const { connection, lastDisconnect, qr } = u ?? {};
     if (qr && !this.open) {
-      // o WhatsApp troca o QR a cada ~20 s; a tela mostra sempre o mais recente
+      // o WhatsApp troca o QR a cada ~20 s; a tela mostra sempre o mais recente.
+      // Ninguém leu depois de vários QRs: para de gerar (senão fica em "conectando" para sempre).
+      if (++this.qrCount > MAX_QR) {
+        this.log.warn("[%s] QR não lido; pausando a conexão", this.id);
+        this.stopped = true;
+        this.expired = true;
+        if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+        try { sock.end?.(undefined); } catch { /* ignora */ }
+        await this.db.updateInstance(this.id, "qr_expired").catch((e) => this.log.error("[%s] qr", this.id, e.message));
+        return;
+      }
       const dataUrl = await QRCode.toDataURL(qr, { margin: 1, width: 300 });
       await this.db.updateInstance(this.id, "connecting", { qr: dataUrl }).catch((e) => this.log.error("[%s] qr", this.id, e.message));
     }
     if (connection === "open") {
       this.open = true;
       this.attempt = 0;
+      this.qrCount = 0;
       this.phone = normalizePhone(sock.user?.id ?? null);
       this.log.info("[%s] conectado", this.id);
       await this.db.updateInstance(this.id, "connected", { phone: this.phone }).catch((e) => this.log.error("[%s] status", this.id, e.message));
@@ -151,7 +169,7 @@ export class Session {
       if (!p) continue;
       const ok = await this.db.ingest(this.id, p).then(() => true, (e) => { this.log.error("[%s] ingest: %s", this.id, e.message); return false; });
       // mensagem recebida: avisa as automações para responderem já
-      if (ok && !(p as { from_me?: boolean }).from_me) this.opts.onInbound?.();
+      if (ok && !(p as { from_me?: boolean }).from_me) this.opts.onInbound?.((p as { body?: string | null }).body ?? undefined);
     }
   }
 
