@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { format } from "node:util";
 import { Db } from "./db.js";
 import { Session, type Logger, type SocketFactory } from "./session.js";
 
@@ -121,9 +122,9 @@ if (isMain) {
   const dir = process.env.SESSIONS_DIR || "/data/sessions";
   fs.mkdirSync(dir, { recursive: true });
   const log: Logger = {
-    info: (...a) => console.log(new Date().toISOString(), ...a),
-    warn: (...a) => console.warn(new Date().toISOString(), ...a),
-    error: (...a) => console.error(new Date().toISOString(), ...a),
+    info: (...a) => console.log(new Date().toISOString(), format(...(a as [unknown, ...unknown[]]))),
+    warn: (...a) => console.warn(new Date().toISOString(), format(...(a as [unknown, ...unknown[]]))),
+    error: (...a) => console.error(new Date().toISOString(), format(...(a as [unknown, ...unknown[]]))),
   };
   const gw = new Gateway(new Db(url, anon, token), baileysFactory, dir, log);
   gw.start();

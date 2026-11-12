@@ -20,6 +20,7 @@ import { DialerView } from "./dialer";
 import { CadencesView } from "./cadences";
 import { GoalsView } from "./goals";
 import { DispatchView } from "./dispatch";
+import { McpView } from "./mcp";
 import { AssistantModal, type AssistantContext } from "./assistant";
 import type { AssistantPlan } from "./types";
 
@@ -41,6 +42,7 @@ export const crmViewTitles: Record<CrmView["name"], string> = {
   cadences: "Cadências",
   goals: "Metas",
   dispatch: "Disparos de WhatsApp",
+  mcp: "Conectar ao Claude (MCP)",
 };
 
 type Props = {
@@ -192,6 +194,7 @@ function ViewSwitch({ view }: { view: CrmView }) {
     case "cadences": return <CadencesView />;
     case "goals": return <GoalsView />;
     case "dispatch": return <DispatchView />;
+    case "mcp": return <McpView />;
     default: return null;
   }
 }

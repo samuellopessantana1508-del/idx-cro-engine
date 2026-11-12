@@ -984,3 +984,23 @@ kbd {
 .maps-preview-bar { margin-top: 10px; }
 .maps-preview { margin-top: 10px; max-height: 360px; overflow: auto; }
 .maps-preview tr.muted td { opacity: 0.55; }
+/* Conector MCP */
+.mcp-hero { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.mcp-hero > div:nth-child(2) { flex: 1 1 320px; }
+.mcp-hero p { margin: 4px 0 0; font-size: 0.86rem; }
+.mcp-copy { display: grid; gap: 4px; margin: 8px 0; }
+.mcp-copy > span { font-size: 0.78rem; color: var(--muted); font-weight: 600; }
+.mcp-copy > div { display: flex; gap: 8px; align-items: center; }
+.mcp-copy code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; background: var(--soft, #f4f4f5); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; font-size: 0.78rem; }
+.mcp-scope { display: grid; gap: 8px; }
+.mcp-scope label { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; border: 1px solid var(--line); border-radius: 10px; padding: 10px; cursor: pointer; }
+.mcp-scope label.on { border-color: var(--ink); }
+.mcp-scope label.disabled { opacity: 0.5; cursor: not-allowed; }
+.mcp-scope input { grid-row: span 2; margin-top: 3px; }
+.mcp-scope span { font-size: 0.8rem; color: var(--muted); }
+.mcp-details pre { background: var(--soft, #f4f4f5); padding: 10px; border-radius: 8px; overflow-x: auto; font-size: 0.76rem; }
+.mcp-copy { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.mcp-copy > div { min-width: 0; }
+.mcp-copy code { max-width: 100%; }
+.mcp-details pre { max-width: 100%; white-space: pre; }
+.mcp-details { min-width: 0; max-width: 100%; }

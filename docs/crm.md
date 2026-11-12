@@ -119,3 +119,20 @@ Testes: `tests/crm/wa-dispatch.test.mjs` (regras no banco), `services/wa-gateway
   e o disparo não “termina” quando a fila zera — espera os próximos. Todas as proteções de envio continuam valendo.
 - **Custo**: limite mensal de chamadas (padrão 900) em `maps_usage`; a execução para ao atingir o limite.
 - Testes: `tests/crm/maps-leads.test.mjs` (Places simulado), `tests/crm/maps-ui.mjs`.
+
+## Conector MCP do CRO (Claude e outras IAs)
+
+- Função `cro-mcp` (Model Context Protocol, transporte Streamable HTTP/JSON; testada com o SDK oficial de cliente).
+- Tokens pessoais `cro_…` criados em **Claude e IA (MCP)** (por usuário e empresa; “somente consultar” ou
+  “consultar e agir”). Só o sha256 fica no banco; revogação imediata; registro de todas as chamadas em `mcp_calls`.
+- Cada ferramenta roda **como o dono do token** (`idx_private.mcp_auth` define `auth.uid()`), então valem as mesmas
+  permissões e o mesmo isolamento por empresa do CRM. Lógica em `public.mcp_call` (service role apenas).
+- Ferramentas de leitura: `resumo_comercial`, `buscar_contatos`, `ver_contato`, `listar_negociacoes`, `listar_tarefas`,
+  `discador`, `listar_disparos`, `ver_disparo`, `conversas_whatsapp`, `buscas_google_maps`.
+- Ações (token “consultar e agir”): `criar_contato`, `criar_tarefa`, `concluir_tarefa`, `adicionar_nota`,
+  `registrar_ligacao`, `enviar_whatsapp`, `controlar_disparo`, `rodar_busca_google_maps` — passam pelas mesmas
+  proteções (SAIR, fila, horário, limites). A IA é instruída a pedir confirmação antes de enviar/alterar.
+- Prompts prontos: `rotina_do_dia`, `analisar_disparos`, `prospectar_farmacias`.
+- Conexão: Claude.ai → Conectores → personalizado com `…/functions/v1/cro-mcp/<token>`; Claude Code
+  `claude mcp add --transport http cro <url> --header "Authorization: Bearer <token>"`; outros clientes via cabeçalho.
+- Testes: `tests/crm/mcp.test.mjs` (SDK oficial), `tests/crm/mcp-ui.mjs`.

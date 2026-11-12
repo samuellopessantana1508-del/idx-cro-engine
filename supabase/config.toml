@@ -56,3 +56,6 @@ verify_jwt = false
 
 [functions.maps-leads]
 verify_jwt = false
+
+[functions.cro-mcp]
+verify_jwt = false

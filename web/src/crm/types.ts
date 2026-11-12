@@ -457,7 +457,8 @@ export type CrmView =
   | { name: "dialer" }
   | { name: "cadences" }
   | { name: "goals" }
-  | { name: "dispatch" };
+  | { name: "dispatch" }
+  | { name: "mcp" };
 
 export type DialOutcome = "talked" | "meeting" | "callback" | "no_answer" | "not_interested" | "invalid";
 export type DialLead = {
