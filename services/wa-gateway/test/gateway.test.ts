@@ -10,7 +10,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { Db } from "../src/db.js";
-import { Gateway } from "../src/main.js";
+import { Gateway, FlowTicker, runFlows } from "../src/main.js";
 import type { SocketFactory, SocketLike } from "../src/session.js";
 
 const URL_ = process.env.SUPABASE_URL ?? "http://127.0.0.1:54321";
@@ -29,7 +29,7 @@ const wait = async (fn: () => boolean | Promise<boolean>, ms = 15000) => {
 class FakeSock extends EventEmitter implements SocketLike {
   ev = { on: (e: string, cb: (a: any) => void) => this.on(e, cb) };
   user: { id: string } | null = null;
-  sent: Array<{ jid: string; text: string }> = [];
+  sent: Array<{ jid: string; text: string; content: Record<string, any> }> = [];
   presence: string[] = [];
   failNext: string | null = null;
   ended = false;
@@ -40,9 +40,9 @@ class FakeSock extends EventEmitter implements SocketLike {
     if (d.endsWith("77") && d.length === 13) return [];
     return [{ exists: true, jid: `${d}@s.whatsapp.net` }];
   }
-  async sendMessage(jid: string, c: { text: string }) {
+  async sendMessage(jid: string, c: Record<string, any>) {
     if (this.failNext) { const m = this.failNext; this.failNext = null; throw new Error(m); }
-    this.sent.push({ jid, text: c.text });
+    this.sent.push({ jid, text: c.text ?? c.caption ?? "", content: c });
     return { key: { id: `FAKE${TAG}-${this.sent.length}` } };
   }
   async sendPresenceUpdate(t: string) { this.presence.push(t); }
@@ -62,7 +62,7 @@ const factory: SocketFactory = async () => {
 
 const silent = { info() {}, warn() {}, error(...a: unknown[]) { console.error(...a); } };
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wa-gw-"));
-let gw: Gateway, A: string, inst: string, admin: any, seller: any;
+let gw: Gateway, flows: FlowTicker, A: string, inst: string, admin: any, seller: any;
 
 before(async () => {
   sql(`insert into wa_gateway_tokens(token_hash, label) values ('${createHash("sha256").update(TOKEN).digest("hex")}', 'gw-test ${TAG}')`);
@@ -82,11 +82,13 @@ before(async () => {
   const r = await admin.rpc("wa_gateway_connect", { p_tenant_id: A, p_action: "connect" });
   assert.equal(r.error, null, r.error?.message);
   inst = r.data.id;
-  gw = new Gateway(new Db(URL_, ANON, TOKEN), factory, dir, silent, { syncMs: 300, pollMs: 200, typing: true });
+  flows = new FlowTicker(() => runFlows(URL_, ANON, TOKEN, silent), { debounceMs: 100, everyMs: 2000 });
+  gw = new Gateway(new Db(URL_, ANON, TOKEN), factory, dir, silent, { syncMs: 300, pollMs: 200, typing: true, onInbound: () => flows.poke() });
   gw.start();
+  flows.start();
 });
 
-after(async () => { await gw.stop(); fs.rmSync(dir, { recursive: true, force: true }); });
+after(async () => { flows.stop(); await gw.stop(); fs.rmSync(dir, { recursive: true, force: true }); });
 
 test("QR aparece no CRO e, depois de ler, fica conectado com o número", async () => {
   await wait(() => sql(`select coalesce(qr_code_data, '') from whatsapp_instances where id = '${inst}'`).startsWith("data:image/png;base64,"));
@@ -100,7 +102,7 @@ test("resposta manual: sai na hora, com 'digitando', e entra no histórico", asy
   const r = await seller.rpc("wa_send_message", { p_tenant_id: A, p_body: "Olá, aqui é da IDX!", p_phone: ph(1) });
   assert.equal(r.error, null, r.error?.message);
   await wait(() => sql(`select status from wa_outbox where id = '${r.data}'`) === "sent");
-  assert.deepEqual(sock.sent.at(-1), { jid: `${ph(1)}@s.whatsapp.net`, text: "Olá, aqui é da IDX!" });
+  assert.deepEqual(sock.sent.at(-1), { jid: `${ph(1)}@s.whatsapp.net`, text: "Olá, aqui é da IDX!", content: { text: "Olá, aqui é da IDX!" } });
   assert.ok(sock.presence.includes("composing"));
   assert.equal(sql(`select direction || '|' || body from whatsapp_messages where wa_message_id = (select wa_message_id from wa_outbox where id = '${r.data}')`), "outbound|Olá, aqui é da IDX!");
 });
@@ -151,6 +153,32 @@ test("disparo: envia um por vez respeitando o intervalo; resposta e SAIR chegam 
   const wid = sql(`select wa_message_id from wa_campaign_recipients where campaign_id = '${c.data}' and phone = '${first}'`);
   sock.emit("messages.update", [{ key: { id: wid, fromMe: true }, update: { status: 4 } }]);
   await wait(() => sql(`select status from whatsapp_messages where wa_message_id = '${wid}'`) === "read");
+});
+
+test("automação: mensagem recebida dispara resposta com texto e imagem pelo mesmo número", async () => {
+  sql(`update wa_flows set status = 'paused' where status = 'active'`);
+  const N = (id: string, type: string, config: any) => ({ id, type, position: { x: 0, y: 0 }, data: { config } });
+  const graph = {
+    nodes: [N("t", "trigger", { kind: "keyword", keywords: "catálogo" }), N("s", "send_text", { text: "Oi {primeiro_nome}, segue:" }),
+      N("i", "send_media", { mediaType: "image", url: "https://exemplo.com/cat.jpg", caption: "Catálogo" }),
+      N("d", "send_media", { mediaType: "document", url: "https://exemplo.com/tabela%20precos.pdf" })],
+    edges: [{ id: "a", source: "t", target: "s" }, { id: "b", source: "s", target: "i" }, { id: "c", source: "i", target: "d" }],
+  };
+  const f = await admin.rpc("wa_flow_save", { p_tenant_id: A, p_id: null, p_name: `GW fluxo ${TAG}`, p_graph: graph });
+  assert.equal(f.error, null, f.error?.message);
+  assert.equal((await admin.rpc("wa_flow_set_status", { p_flow_id: f.data.id, p_status: "active" })).error, null);
+  const before = sock.sent.length;
+  const p = ph(7);
+  sock.emit("messages.upsert", { type: "notify", messages: [{ key: { remoteJid: `${p}@s.whatsapp.net`, id: `INF${TAG}`, fromMe: false }, pushName: "Marta Alves", messageTimestamp: Math.floor(Date.now() / 1000), message: { conversation: "me manda o catalogo" } }] });
+  await wait(() => sock.sent.length >= before + 3, 20000);
+  const out = sock.sent.slice(before);
+  assert.equal(out[0].text, "Oi Marta, segue:");
+  assert.deepEqual(out[1].content, { image: { url: "https://exemplo.com/cat.jpg" }, caption: "Catálogo" });
+  assert.equal(out[2].content.document.url, "https://exemplo.com/tabela%20precos.pdf");
+  assert.equal(out[2].content.fileName, "tabela precos.pdf");
+  assert.equal(out[2].content.mimetype, "application/pdf");
+  await wait(() => sql(`select count(*) from whatsapp_messages m join whatsapp_conversations c on c.id = m.conversation_id join whatsapp_contacts wc on wc.id = c.contact_id where wc.phone = '${p}' and m.direction = 'outbound'`) === "3");
+  await admin.rpc("wa_flow_set_status", { p_flow_id: f.data.id, p_status: "archived" });
 });
 
 test("pausar pelo CRO para tudo; desconectar fecha a sessão; conectar religa", async () => {

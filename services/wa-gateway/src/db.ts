@@ -29,7 +29,8 @@ export class Db {
     return this.rpc<number>("wa_gw_recover", { p_instance: id });
   }
   claim(id: string) {
-    return this.rpc<{ id: string; phone: string; body: string; source: "manual" | "campaign"; campaign_id?: string } | null>(
+    return this.rpc<{ id: string; phone: string; body: string; source: "manual" | "campaign" | "flow"; campaign_id?: string;
+      media_url?: string | null; media_type?: "image" | "video" | "audio" | "document" | null; file_name?: string | null } | null>(
       "wa_gw_claim", { p_instance: id });
   }
   result(outboxId: string, r: { ok: boolean; waMessageId?: string; jid?: string; error?: string; invalid?: boolean; retry?: boolean }) {

@@ -8,7 +8,7 @@ export interface SocketLike {
   ev: { on(event: string, cb: (arg: any) => void): void };
   user?: { id?: string } | null;
   onWhatsApp(...jids: string[]): Promise<Array<{ exists: boolean; jid: string }> | undefined>;
-  sendMessage(jid: string, content: { text: string }): Promise<{ key: { id?: string | null } } | undefined>;
+  sendMessage(jid: string, content: Record<string, unknown>): Promise<{ key: { id?: string | null } } | undefined>;
   sendPresenceUpdate?(type: string, jid?: string): Promise<void>;
   presenceSubscribe?(jid: string): Promise<void>;
   logout?(): Promise<void>;
@@ -21,6 +21,33 @@ export type SocketFactory = (authDir: string, log: Logger) => Promise<{ sock: So
 export interface Logger { info(...a: unknown[]): void; warn(...a: unknown[]): void; error(...a: unknown[]): void }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export type OutItem = {
+  id: string; phone: string; body: string; source: string;
+  media_url?: string | null; media_type?: "image" | "video" | "audio" | "document" | null; file_name?: string | null;
+};
+
+const MIME: Record<string, string> = {
+  pdf: "application/pdf", doc: "application/msword", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint", pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  txt: "text/plain", csv: "text/csv", zip: "application/zip", mp3: "audio/mpeg", ogg: "audio/ogg; codecs=opus", m4a: "audio/mp4",
+};
+
+/** Conteúdo no formato do WhatsApp (texto ou mídia por link; o WhatsApp baixa o arquivo). */
+export function messageContent(item: OutItem): Record<string, unknown> {
+  const caption = item.body?.trim() ? item.body : undefined;
+  if (!item.media_url || !item.media_type) return { text: item.body };
+  const url = { url: item.media_url };
+  const name = item.file_name || decodeURIComponent(item.media_url.split("?")[0].split("/").pop() || "arquivo");
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  switch (item.media_type) {
+    case "image": return { image: url, caption };
+    case "video": return { video: url, caption };
+    case "audio": return { audio: url, mimetype: MIME[ext] ?? "audio/mp4", ptt: ext === "ogg" };
+    default: return { document: url, fileName: name, mimetype: MIME[ext] ?? "application/octet-stream", caption };
+  }
+}
 
 /**
  * Uma conexão de WhatsApp (um número). Mantém a conexão viva (reconecta sempre,
@@ -43,7 +70,7 @@ export class Session {
     private factory: SocketFactory,
     private sessionsDir: string,
     private log: Logger,
-    private opts: { pollMs: number; typing: boolean } = { pollMs: 3000, typing: true },
+    private opts: { pollMs: number; typing: boolean; onInbound?: () => void } = { pollMs: 3000, typing: true },
   ) {}
 
   get authDir() { return path.join(this.sessionsDir, this.id); }
@@ -120,7 +147,9 @@ export class Session {
     for (const raw of m.messages) {
       const p = parseMessage(raw);
       if (!p) continue;
-      await this.db.ingest(this.id, p).catch((e) => this.log.error("[%s] ingest: %s", this.id, e.message));
+      const ok = await this.db.ingest(this.id, p).then(() => true, (e) => { this.log.error("[%s] ingest: %s", this.id, e.message); return false; });
+      // mensagem recebida: avisa as automações para responderem já
+      if (ok && !(p as { from_me?: boolean }).from_me) this.opts.onInbound?.();
     }
   }
 
@@ -170,7 +199,7 @@ export class Session {
     return null;
   }
 
-  private async sendOne(sock: SocketLike, item: { id: string; phone: string; body: string; source: string }) {
+  private async sendOne(sock: SocketLike, item: OutItem) {
     let jid: string | null = null;
     try {
       jid = await this.resolveJid(sock, item.phone);
@@ -181,10 +210,10 @@ export class Session {
       if (this.opts.typing && sock.sendPresenceUpdate) {
         await sock.presenceSubscribe?.(jid).catch(() => {});
         await sock.sendPresenceUpdate("composing", jid).catch(() => {});
-        await sleep(typingMs(item.body));
+        await sleep(typingMs(item.body || "arquivo"));
         await sock.sendPresenceUpdate("paused", jid).catch(() => {});
       }
-      const res = await sock.sendMessage(jid, { text: item.body });
+      const res = await sock.sendMessage(jid, messageContent(item));
       await this.db.result(item.id, { ok: true, waMessageId: res?.key?.id ?? undefined, jid });
       this.log.info("[%s] enviado (%s)", this.id, item.source);
     } catch (e) {

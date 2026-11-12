@@ -17,7 +17,7 @@ export class Gateway {
     private factory: SocketFactory,
     private sessionsDir: string,
     private log: Logger,
-    private opts = { syncMs: 5000, pollMs: 3000, typing: true },
+    private opts: { syncMs: number; pollMs: number; typing: boolean; onInbound?: () => void } = { syncMs: 5000, pollMs: 3000, typing: true },
   ) {}
 
   session(id: string) { return this.sessions.get(id); }
@@ -33,7 +33,7 @@ export class Gateway {
           wanted.add(inst.id);
           if (!this.sessions.has(inst.id)) {
             const s = new Session(inst.id, this.db, this.factory, this.sessionsDir, this.log,
-              { pollMs: this.opts.pollMs, typing: this.opts.typing });
+              { pollMs: this.opts.pollMs, typing: this.opts.typing, onInbound: this.opts.onInbound });
             this.sessions.set(inst.id, s);
             this.log.info("[gateway] iniciando conexão %s", inst.id);
             await s.start();
@@ -69,6 +69,48 @@ export class Gateway {
     if (this.timer) clearInterval(this.timer);
     for (const s of this.sessions.values()) await s.stop();
     this.sessions.clear();
+  }
+}
+
+/**
+ * Automações (função cro-flows): roda logo depois de cada mensagem recebida (agrupando
+ * rajadas) e a cada 30s para retomar esperas vencidas. Nunca roda duas ao mesmo tempo.
+ */
+export class FlowTicker {
+  private running = false;
+  private again = false;
+  private debounce: NodeJS.Timeout | null = null;
+  private timer: NodeJS.Timeout | null = null;
+  constructor(private run: () => Promise<void>, private opts = { debounceMs: 400, everyMs: 30_000 }) {}
+  start() { this.timer = setInterval(() => void this.fire(), this.opts.everyMs); }
+  stop() { if (this.timer) clearInterval(this.timer); if (this.debounce) clearTimeout(this.debounce); }
+  poke() {
+    if (this.debounce) clearTimeout(this.debounce);
+    this.debounce = setTimeout(() => { this.debounce = null; void this.fire(); }, this.opts.debounceMs);
+  }
+  async fire() {
+    if (this.running) { this.again = true; return; }
+    this.running = true;
+    try { await this.run(); } finally {
+      this.running = false;
+      if (this.again) { this.again = false; void this.fire(); }
+    }
+  }
+}
+
+export async function runFlows(url: string, anon: string, token: string, log: Logger) {
+  try {
+    const res = await fetch(`${url}/functions/v1/cro-flows`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: anon, Authorization: `Bearer ${anon}`, "x-gateway-token": token },
+      body: "{}",
+      signal: AbortSignal.timeout(60_000),
+    });
+    const body = (await res.json().catch(() => ({}))) as { queue?: number; due?: number; error?: string };
+    if (!res.ok) log.warn("[automações] %s", body.error ?? res.status);
+    else if (body.queue || body.due) log.info("[automações] %d evento(s), %d espera(s) retomada(s)", body.queue ?? 0, body.due ?? 0);
+  } catch (e) {
+    log.warn("[automações] falhou: %s", (e as Error).message);
   }
 }
 
@@ -144,8 +186,11 @@ if (isMain) {
     warn: (...a) => console.warn(new Date().toISOString(), format(...(a as [unknown, ...unknown[]]))),
     error: (...a) => console.error(new Date().toISOString(), format(...(a as [unknown, ...unknown[]]))),
   };
-  const gw = new Gateway(new Db(url, anon, token), baileysFactory, dir, log);
+  const flows = new FlowTicker(() => runFlows(url, anon, token, log));
+  const gw = new Gateway(new Db(url, anon, token), baileysFactory, dir, log,
+    { syncMs: 5000, pollMs: 3000, typing: true, onInbound: () => flows.poke() });
   gw.start();
+  flows.start();
   // Busca automática de clientes (Google Maps): a função só roda as buscas vencidas
   const tick = () => runLeadSearch(url, anon, token, log);
   setTimeout(tick, 60_000);
@@ -155,7 +200,7 @@ if (isMain) {
   setTimeout(hourly, 2 * 60_000);
   setInterval(hourly, 60 * 60_000);
   log.info("[gateway] motor de WhatsApp do IDX iniciado");
-  const shutdown = async () => { log.info("[gateway] encerrando…"); await gw.stop(); process.exit(0); };
+  const shutdown = async () => { log.info("[gateway] encerrando…"); flows.stop(); await gw.stop(); process.exit(0); };
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
   process.on("unhandledRejection", (e) => log.error("[gateway] unhandledRejection", e));
