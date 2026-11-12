@@ -317,3 +317,60 @@ test("pausar segura as esperas; cancelar execução tira as mensagens da fila", 
   ok(await admin.rpc("wa_flow_set_status", { p_flow_id: f.id, p_status: "archived" }));
   ok(await admin.rpc("wa_flow_set_status", { p_flow_id: main.id, p_status: "paused" }));
 });
+
+test("webhook: outro sistema inicia a automação com dados próprios; endereço errado é recusado", async () => {
+  const g = { nodes: [N("t", "trigger", { kind: "webhook" }), N("s", "send_text", { text: "Oi {primeiro_nome}! Recebemos seu pedido de {var.trigger.produto} 🙌" })], edges: [E("t", "s")] };
+  const f = ok(await admin.rpc("wa_flow_save", { p_tenant_id: A, p_id: null, p_name: `Webhook ${TAG}`, p_graph: g }));
+  ok(await admin.rpc("wa_flow_set_status", { p_flow_id: f.id, p_status: "active" }));
+  const denied = await seller.rpc("wa_flow_hook_secret", { p_flow_id: f.id });
+  assert.ok(denied.error, "vendedor não vê o segredo");
+  const secret = ok(await admin.rpc("wa_flow_hook_secret", { p_flow_id: f.id }));
+  assert.match(secret, /^[0-9a-f]{64}$/);
+  assert.equal(sql(`select count(*) from wa_flow_hooks where flow_id = '${f.id}'`), "1");
+  const leak = await admin.from("wa_flow_hooks").select("*");
+  assert.equal((leak.data ?? []).length, 0, "tabela do segredo não aparece pela API");
+  const p = ph(12);
+  const url = `${URL_}/functions/v1/cro-flows/hook/${f.id}/${secret}`;
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ telefone: p, nome: "Rafaela Lima", produto: "Kit Verão" }) });
+  assert.equal(r.status, 200, await r.clone().text());
+  assert.equal(outbox(p), "Oi Rafaela! Recebemos seu pedido de Kit Verão 🙌");
+  assert.equal(sql(`select name from crm_contacts where tenant_id = '${A}' and phone = '${p}'`), "Rafaela Lima");
+  const bad = await fetch(`${URL_}/functions/v1/cro-flows/hook/${f.id}/${"0".repeat(64)}`, { method: "POST", body: JSON.stringify({ telefone: p }) });
+  assert.equal(bad.status, 404);
+  const noPhone = await fetch(url, { method: "POST", body: JSON.stringify({ nome: "x" }) });
+  assert.equal(noPhone.status, 400);
+  // trocar o endereço invalida o antigo
+  const s2 = ok(await admin.rpc("wa_flow_hook_secret", { p_flow_id: f.id, p_rotate: true }));
+  assert.notEqual(s2, secret);
+  assert.equal((await fetch(url, { method: "POST", body: JSON.stringify({ telefone: p }) })).status, 404);
+  await drain();
+  ok(await admin.rpc("wa_flow_set_status", { p_flow_id: f.id, p_status: "archived" }));
+});
+
+test("atendimento em equipe: transferir conversa avisa a pessoa; concluir e reabrir quando o cliente volta", async () => {
+  const p = ph(13);
+  await inbound(p, "olá, preciso de ajuda", "Sérgio");
+  const conv = sql(`select c.id from whatsapp_conversations c join whatsapp_contacts wc on wc.id = c.contact_id where wc.phone = '${p}'`);
+  const sellerId = sql(`select id from auth.users where email = 'ana.vendas@clinica.local'`);
+  const outsider = sql(`select id from auth.users where email = 'dona@perfumaria.local'`);
+  const bad = await admin.rpc("wa_conversation_assign", { p_conversation_id: conv, p_user_id: outsider });
+  assert.match(bad.error?.message ?? "", /não faz parte/);
+  ok(await admin.rpc("wa_conversation_assign", { p_conversation_id: conv, p_user_id: sellerId }));
+  assert.equal(sql(`select assigned_to from whatsapp_conversations where id = '${conv}'`), sellerId);
+  assert.ok(Number(sql(`select count(*) from crm_notifications where user_id = '${sellerId}' and title like 'Conversa transferida para você: Sérgio%'`)) >= 1);
+  ok(await seller.rpc("wa_conversation_close", { p_conversation_id: conv, p_closed: true }));
+  assert.equal(sql(`select status from whatsapp_conversations where id = '${conv}'`), "archived");
+  await inbound(p, "ainda estou aqui");
+  assert.equal(sql(`select status from whatsapp_conversations where id = '${conv}'`), "active");
+  const other2 = await other.rpc("wa_conversation_close", { p_conversation_id: conv, p_closed: true });
+  assert.ok(other2.error, "outra empresa não mexe");
+});
+
+test("respostas rápidas: cada empresa vê só as suas", async () => {
+  const id = ok(await seller.rpc("wa_quick_reply_save", { p_tenant_id: A, p_id: null, p_title: `Horário ${TAG}`, p_body: "Atendemos de seg a sex, 8h às 18h." }));
+  const mine = ok(await seller.from("wa_quick_replies").select("id").eq("id", id));
+  assert.equal(mine.length, 1);
+  const theirs = ok(await other.from("wa_quick_replies").select("id").eq("id", id));
+  assert.equal(theirs.length, 0);
+  ok(await seller.rpc("wa_quick_reply_delete", { p_id: id }));
+});

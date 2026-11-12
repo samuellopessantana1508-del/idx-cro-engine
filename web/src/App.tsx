@@ -569,6 +569,7 @@ export function App() {
   const [waBusy, setWaBusy] = useState(false);
   const [waTab, setWaTab] = useState<"conversations" | "instances" | "config">("conversations");
   const [waConversations, setWaConversations] = useState<WhatsAppConversation[]>([]);
+  const [waInboxFilter, setWaInboxFilter] = useState<"open" | "mine" | "none" | "closed">("open");
   const [waMessages, setWaMessages] = useState<WhatsAppMessage[]>([]);
   const [waSelectedConvId, setWaSelectedConvId] = useState("");
   const [waConvSearch, setWaConvSearch] = useState("");
@@ -2649,7 +2650,16 @@ export function App() {
 
   const waUnreadTotal = waConversations.reduce((sum, c) => sum + (c.unread_count > 0 ? c.unread_count : 0), 0);
 
+  const waInboxCounts = {
+    open: waConversations.filter((c) => c.status !== "archived").length,
+    mine: waConversations.filter((c) => c.status !== "archived" && c.assigned_to === currentUserId).length,
+    none: waConversations.filter((c) => c.status !== "archived" && !c.assigned_to).length,
+    closed: waConversations.filter((c) => c.status === "archived").length,
+  };
   const filteredConversations = waConversations.filter((conv) => {
+    if (waInboxFilter === "closed" ? conv.status !== "archived" : conv.status === "archived") return false;
+    if (waInboxFilter === "mine" && conv.assigned_to !== currentUserId) return false;
+    if (waInboxFilter === "none" && conv.assigned_to) return false;
     if (!waConvSearch.trim()) return true;
     const q = waConvSearch.toLowerCase();
     const c = conv.contact;
@@ -3967,6 +3977,13 @@ export function App() {
                       {waSyncState === "live" ? "Ao vivo" : waSyncState === "polling" ? "Atualizando a cada 15 s" : waSyncState === "reconnecting" ? "Reconectando…" : "Conectando…"}
                       {waUnreadTotal > 0 && <span className="wa-sync-unread">{waUnreadTotal} não lida{waUnreadTotal > 1 ? "s" : ""}</span>}
                     </div>
+                    <div className="wa-inbox-filters" role="tablist">
+                      {([["open", "Abertas"], ["mine", "Minhas"], ["none", "Sem responsável"], ["closed", "Concluídas"]] as const).map(([k, l]) => (
+                        <button key={k} type="button" role="tab" aria-selected={waInboxFilter === k} className={waInboxFilter === k ? "on" : ""} onClick={() => setWaInboxFilter(k)}>
+                          {l} <em>{waInboxCounts[k]}</em>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   {filteredConversations.length === 0 && (
                     <div style={{ padding: "2rem 1rem", textAlign: "center", color: "var(--muted)" }}>
@@ -3988,6 +4005,7 @@ export function App() {
                         <div className="wa-contact-info">
                           <div className="wa-contact-name">
                             {c?.push_name || c?.phone || c?.wa_id || "Desconhecido"}
+                            {conv.bot_mode === "human" && <span className="wa-link-pill human" style={{ marginLeft: 6 }} title="Atendente assumiu (robôs pausados)">humano</span>}
                             {linkedLead && <span className="wa-link-pill" style={{ marginLeft: 6 }}>CRM</span>}
                             {conv.ai_analyzed_at && sentimentEmoji && (
                               <span className={`wa-sentiment-dot ${conv.ai_sentiment}`} title={`Sentimento: ${conv.ai_sentiment}`}>{sentimentEmoji}</span>

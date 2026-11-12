@@ -29,7 +29,7 @@ type Run = {
   crm_contact_id: string | null; is_test: boolean; state: RunState; status: string; wait_kind: string | null; started_by: string | null;
 };
 type QueueItem = {
-  id: number; tenant_id: string; kind: "message" | "tag" | "stage" | "manual"; phone: string | null; instance_id: string | null;
+  id: number; tenant_id: string; kind: "message" | "tag" | "stage" | "manual" | "webhook"; phone: string | null; instance_id: string | null;
   conversation_id: string | null; message_id: string | null; flow_id: string | null; payload: Record<string, any>; attempts: number;
 };
 
@@ -438,6 +438,18 @@ async function handleOther(item: QueueItem): Promise<string> {
     const id = await startRun(flow, phone, { conversationId: conv?.id ?? null, instanceId: inst, triggerKind: "manual", trigger: {}, isTest: !!item.payload.test, startedBy: item.payload.started_by ?? null });
     return id ? "iniciou" : "já está nesta automação";
   }
+  if (item.kind === "webhook") {
+    const flow = await getFlow(item.flow_id!);
+    if (!flow || flow.status !== "active") return "automação não está ativa";
+    const inst = flow.instance_id ?? (await gatewayInstance(flow.tenant_id));
+    const conv = await conversationFor(flow.tenant_id, phone, inst);
+    if (botBlocked(conv)) return "atendente";
+    const p = item.payload ?? {};
+    const name = String(p.nome ?? p.name ?? "").trim().slice(0, 200) || null;
+    const { data: cid } = await svc.rpc("wa_flow_contact", { p_tenant_id: flow.tenant_id, p_phone: phone, p_name: name });
+    const id = await startRun(flow, phone, { conversationId: conv?.id ?? null, instanceId: inst, triggerKind: "webhook", trigger: p, crmContactId: (cid as string) ?? null });
+    return id ? "iniciou" : "não iniciou (já está na automação ou dentro do intervalo)";
+  }
   const kind = item.kind; // tag | stage
   const flows = await activeFlows(item.tenant_id, [kind]);
   const ev: FlowEvent = kind === "tag" ? { kind: "tag", tag: String(item.payload.tag ?? "") } : { kind: "stage", stageId: String(item.payload.stage_id ?? "") };
@@ -513,7 +525,28 @@ async function processDue(deadline: number) {
   return n;
 }
 
+const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
+
+/** Outro sistema inicia uma automação: POST /cro-flows/hook/<id da automação>/<segredo> {telefone, nome, ...} */
+async function handleHook(req: Request, flowId: string, secret: string) {
+  let body: Record<string, any> = {};
+  try { body = await req.json(); } catch { /* corpo vazio */ }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) body = {};
+  if (JSON.stringify(body).length > 20_000) return new Response(JSON.stringify({ ok: false, error: "Dados grandes demais" }), { status: 413, headers: { ...CORS, "Content-Type": "application/json" } });
+  const phone = String(body.telefone ?? body.phone ?? body.whatsapp ?? body.celular ?? "");
+  const { data, error } = await svc.rpc("wa_flow_hook_enqueue", { p_flow_id: flowId, p_secret: secret, p_phone: phone, p_payload: body });
+  if (error) return new Response(JSON.stringify({ ok: false, error: "Falha ao registrar" }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
+  const r = data as { ok: boolean; status?: number; error?: string; queued?: boolean };
+  // responde rápido e já processa (o motor também pega na próxima volta)
+  if (r.ok && r.queued) { try { await processQueue(Date.now() + 8000); } catch { /* o motor tenta de novo */ } }
+  return new Response(JSON.stringify(r), { status: r.ok ? 200 : r.status ?? 400, headers: { ...CORS, "Content-Type": "application/json" } });
+}
+
 Deno.serve(async (req) => {
+  const path = new URL(req.url).pathname;
+  const hook = path.match(/\/hook\/([0-9a-f-]{36})\/([0-9a-f]{32,64})\/?$/i);
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  if (hook && req.method === "POST") { tzCache.clear(); flowCache.clear(); return await handleHook(req, hook[1], hook[2]); }
   if (req.method !== "POST") return json({ error: "Método não suportado" }, 405);
   const token = req.headers.get("x-gateway-token") ?? "";
   const { error: authErr } = await svc.rpc("wa_gw_instances", { p_token: token });

@@ -968,6 +968,22 @@ kbd {
 .wa-reply { display: flex; gap: 8px; align-items: flex-end; padding: 10px; border-top: 1px solid var(--line); background: var(--paper); }
 .wa-reply textarea { flex: 1; resize: none; min-height: 40px; max-height: 140px; border-radius: 10px; padding: 9px 11px; }
 .wa-reply-note { font-size: 0.74rem; color: var(--muted); padding: 0 12px 8px; }
+.wa-conv-bar { display: grid; gap: 0; }
+.wa-conv-team { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--line); font-size: 0.8rem; color: var(--muted); }
+.wa-conv-team select { width: auto !important; min-height: 28px !important; padding: 2px 8px !important; font-size: 0.8rem !important; border-radius: 8px; }
+.wa-conv-team .crm-btn { margin-left: auto; }
+.wa-reply { position: relative; }
+.wa-qr-btn { align-self: center; }
+.wa-qr-pop { position: absolute; bottom: calc(100% + 4px); left: 10px; z-index: 30; width: min(420px, calc(100% - 20px)); max-height: 320px; overflow-y: auto; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16); padding: 8px; display: grid; gap: 2px; }
+.wa-qr-head { display: flex; justify-content: space-between; align-items: center; padding: 2px 6px 6px; font-size: 0.82rem; }
+.wa-qr-item { display: grid; gap: 1px; text-align: left; border: 0; background: transparent; border-radius: 8px; padding: 6px 8px; color: inherit; }
+.wa-qr-item:hover { background: #f8fafc; }
+.wa-qr-item strong { font-size: 0.82rem; }
+.wa-qr-item span { font-size: 0.78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wa-qr-manage { display: grid; gap: 6px; }
+.wa-qr-manage > div { display: flex; align-items: center; gap: 6px; border: 1px solid #f1f5f9; border-radius: 10px; padding: 8px 10px; }
+.wa-qr-manage > div > div { display: grid; flex: 1; min-width: 0; }
+.wa-qr-manage .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wa-bot-bar { display: flex; align-items: center; gap: 8px; margin: 0 10px 8px; padding: 6px 10px; border-radius: 10px; background: #eff4ff; color: #1d4ed8; font-size: 0.78rem; }
 .wa-bot-bar span { flex: 1; min-width: 0; }
 .wa-bot-bar.human { background: #fff7ed; color: #c2410c; }
@@ -1058,3 +1074,11 @@ kbd {
   .ext-grid, .ext-grid.two, .ext-groups { grid-template-columns: 1fr; }
   .ext-groups-list { border-right: 0; padding-right: 0; max-height: 260px; }
 }
+
+/* filtros da caixa de entrada (atendimento em equipe) */
+.wa-inbox-filters { display: flex; gap: 4px; flex-wrap: wrap; padding-top: 8px; }
+.wa-inbox-filters button { border: 1px solid var(--line); background: var(--paper); color: var(--muted); border-radius: 999px; padding: 3px 10px; font-size: 0.74rem; font-weight: 600; display: inline-flex; gap: 5px; align-items: center; }
+.wa-inbox-filters button em { font-style: normal; color: var(--muted-2); font-weight: 700; }
+.wa-inbox-filters button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+.wa-inbox-filters button.on em { color: #cbd5e1; }
+.wa-link-pill.human { background: #fff7ed; color: #c2410c; }

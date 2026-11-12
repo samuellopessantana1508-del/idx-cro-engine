@@ -793,10 +793,10 @@ export async function flowTagSuggestions(tenantId: string) {
   return [...new Set(rows.flatMap((r) => r.tags ?? []))].sort((a, b) => a.localeCompare(b, "pt-BR")).slice(0, 200);
 }
 export async function conversationBotState(conversationId: string) {
-  const conv = check(await db().from("whatsapp_conversations").select("bot_mode").eq("id", conversationId).maybeSingle()) as { bot_mode: "bot" | "human" } | null;
+  const conv = check(await db().from("whatsapp_conversations").select("bot_mode, assigned_to, status").eq("id", conversationId).maybeSingle()) as { bot_mode: "bot" | "human"; assigned_to: string | null; status: string } | null;
   const runs = check(await db().from("wa_flow_runs").select("id, status, wait_kind, is_test, wa_flows(name)")
     .eq("conversation_id", conversationId).in("status", ["running", "waiting"]).limit(3)) as unknown as { id: string; status: string; wait_kind: string | null; is_test: boolean; wa_flows: { name: string } | null }[];
-  return { mode: conv?.bot_mode ?? "bot", runs };
+  return { mode: conv?.bot_mode ?? "bot", runs, assignedTo: conv?.assigned_to ?? null, closed: conv?.status === "archived" };
 }
 
 // ---------- Extratores de clientes ----------
@@ -813,4 +813,25 @@ export async function waGroupsRequest(tenantId: string, kind: "list" | "members"
 export async function waGroupJob(id: string) {
   return check(await db().from("wa_group_jobs").select("id, status, result, error").eq("id", id).maybeSingle()) as
     { id: string; status: "pending" | "running" | "done" | "error"; result: any; error: string | null } | null;
+}
+
+// ---------- Atendimento em equipe / respostas rápidas / webhook ----------
+export async function flowHookSecret(flowId: string, rotate = false) {
+  return check(await db().rpc("wa_flow_hook_secret", { p_flow_id: flowId, p_rotate: rotate })) as string;
+}
+export async function conversationAssign(conversationId: string, userId: string | null) {
+  check(await db().rpc("wa_conversation_assign", { p_conversation_id: conversationId, p_user_id: userId }));
+}
+export async function conversationClose(conversationId: string, closed: boolean) {
+  check(await db().rpc("wa_conversation_close", { p_conversation_id: conversationId, p_closed: closed }));
+}
+export type QuickReply = { id: string; title: string; body: string };
+export async function quickReplies(tenantId: string) {
+  return check(await db().from("wa_quick_replies").select("id, title, body").eq("tenant_id", tenantId).order("title")) as QuickReply[];
+}
+export async function quickReplySave(tenantId: string, id: string | null, title: string, body: string) {
+  return check(await db().rpc("wa_quick_reply_save", { p_tenant_id: tenantId, p_id: id, p_title: title, p_body: body })) as string;
+}
+export async function quickReplyDelete(id: string) {
+  check(await db().rpc("wa_quick_reply_delete", { p_id: id }));
 }

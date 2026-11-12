@@ -62,3 +62,6 @@ verify_jwt = false
 
 [functions.cro-cron]
 verify_jwt = false
+
+[functions.cro-flows]
+verify_jwt = false

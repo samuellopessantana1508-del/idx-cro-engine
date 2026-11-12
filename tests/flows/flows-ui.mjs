@@ -159,6 +159,49 @@ await step("caixa de entrada: robô na conversa → atendente assume → devolve
   if (sql(`select count(*) from wa_flow_runs where phone = '${p}' and status in ('running','waiting')`) !== "0") throw new Error("execução não foi encerrada");
   await page.locator(".wa-bot-bar").getByRole("button", { name: "Devolver ao robô" }).click();
   await page.locator(".wa-bot-bar").waitFor({ state: "detached" });
+  globalThis.__phone = p;
+});
+
+await step("atendimento em equipe: responsável, concluir e filtro de concluídas", async () => {
+  const sellerId = sql(`select id from auth.users where email = 'ana.vendas@clinica.local'`);
+  await page.locator(".wa-conv-team select").selectOption(sellerId);
+  await page.locator(".toast").filter({ hasText: "Conversa transferida" }).first().waitFor();
+  await page.locator(".wa-conv-team").getByRole("button", { name: /Concluir/ }).click();
+  await page.locator(".wa-conv-team").getByRole("button", { name: /Reabrir/ }).waitFor();
+  if (sql(`select status from whatsapp_conversations c join whatsapp_contacts wc on wc.id = c.contact_id where wc.phone = '${globalThis.__phone}'`) !== "archived") throw new Error("não concluiu");
+  await page.reload();
+  await page.locator(".wa-inbox-filters").getByRole("tab", { name: /Concluídas/ }).click();
+  await page.locator(".wa-contact-item").filter({ hasText: "Paciente Robô" }).first().waitFor();
+  await page.screenshot({ path: `${SHOTS}/11-inbox-equipe.png` });
+});
+
+await step("respostas rápidas: criar e usar com '/'", async () => {
+  await page.locator(".wa-contact-item").filter({ hasText: "Paciente Robô" }).first().click();
+  await page.locator(".wa-qr-btn").click();
+  await page.locator(".wa-qr-pop").getByRole("button", { name: "Gerenciar" }).click();
+  await page.getByRole("button", { name: /Nova resposta/ }).click();
+  await page.locator(".crm-modal input").fill("endereco");
+  await page.locator(".crm-modal textarea").fill("Rua das Flores, 100 — Centro");
+  await page.locator(".crm-modal").getByRole("button", { name: "Salvar" }).click();
+  await page.locator(".wa-qr-manage").getByText("/endereco").waitFor();
+  await page.keyboard.press("Escape");
+  await page.locator(".crm-modal").waitFor({ state: "detached" }).catch(async () => { await page.locator(".crm-modal button[aria-label='Fechar']").click(); });
+  await page.locator(".wa-reply textarea").fill("/ende");
+  await page.locator(".wa-qr-item").filter({ hasText: "/endereco" }).click();
+  if ((await page.locator(".wa-reply textarea").inputValue()) !== "Rua das Flores, 100 — Centro") throw new Error("não inseriu");
+  await page.screenshot({ path: `${SHOTS}/12-respostas-rapidas.png` });
+  sql(`delete from wa_quick_replies where title = 'endereco'`);
+});
+
+await step("gatilho webhook mostra o endereço para copiar", async () => {
+  await page.goto(`${APP}/?section=crm-app&crm=flows`);
+  await page.getByRole("button", { name: /Nova automação/ }).click();
+  await page.locator(".fz-template").filter({ hasText: "Em branco" }).click();
+  await page.locator(".fz-node").first().click();
+  await page.locator(".fz-kind").filter({ hasText: "Webhook" }).click();
+  await page.locator(".fz-hook input").waitFor();
+  await page.waitForFunction(() => /\/functions\/v1\/cro-flows\/hook\/[0-9a-f-]{36}\/[0-9a-f]{64}$/.test(document.querySelector(".fz-hook input")?.value ?? ""));
+  await page.screenshot({ path: `${SHOTS}/13-webhook.png` });
 });
 
 await step("sem erros no console", async () => { if (errors.length) throw new Error(errors.slice(0, 5).join("\n")); });

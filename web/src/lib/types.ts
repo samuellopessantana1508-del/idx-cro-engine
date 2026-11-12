@@ -176,6 +176,8 @@ export type WhatsAppConversation = {
   ai_sentiment?: "positive" | "neutral" | "negative" | null;
   ai_purchase_probability?: number | null;
   ai_analyzed_at?: string | null;
+  assigned_to?: string | null;
+  bot_mode?: "bot" | "human";
   created_at: string;
   updated_at: string;
   contact?: WhatsAppContact;

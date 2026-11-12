@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Bot, Clock, Headphones, Send } from "lucide-react";
+import { AlertTriangle, Bot, CheckCheck, Clock, Headphones, Pencil, Plus, RotateCcw, Send, Trash2, UserRound, Zap } from "lucide-react";
 import * as api from "./api";
 import { errorText } from "./format";
-import type { WaGatewayInstance } from "./types";
+import type { Member, WaGatewayInstance } from "./types";
+import { Modal } from "./ui";
 
 type Pending = { id: string; body: string; status: string; error: string | null };
 
@@ -81,9 +82,10 @@ export function WaReplyBox({ tenantId, conversationId, notify, onOpenConnection,
           ))}
         </div>
       )}
-      <BotBar conversationId={conversationId} notify={notify} />
+      <ConversationBar tenantId={tenantId} conversationId={conversationId} notify={notify} />
       {!connected && <div className="wa-reply-note"><AlertTriangle size={12} /> WhatsApp desconectado — a mensagem fica na fila e sai quando reconectar.</div>}
       <div className="wa-reply">
+        <QuickReplies tenantId={tenantId} text={text} notify={notify} onPick={(b) => { setText(b); ref.current?.focus(); }} />
         <textarea ref={ref} rows={1} value={text} placeholder="Escreva uma resposta…" maxLength={4000}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} />
@@ -94,11 +96,14 @@ export function WaReplyBox({ tenantId, conversationId, notify, onOpenConnection,
 }
 
 const WAIT_TEXT: Record<string, string> = { response: "aguardando resposta", menu: "aguardando escolha do menu", ask: "aguardando resposta da pergunta", delay: "esperando", business_hours: "esperando o horário" };
+const memberName = (m: Member) => (m.email ?? "").split("@")[0] || "usuário";
 
-/** Robô x atendente nesta conversa (automações de WhatsApp). */
-function BotBar({ conversationId, notify }: { conversationId: string; notify: (m: string) => void }) {
+/** Responsável, concluir conversa e robô x atendente (automações). */
+function ConversationBar({ tenantId, conversationId, notify }: { tenantId: string; conversationId: string; notify: (m: string) => void }) {
   const [st, setSt] = useState<Awaited<ReturnType<typeof api.conversationBotState>> | null>(null);
+  const [members, setMembers] = useState<Member[]>([]);
   const [busy, setBusy] = useState(false);
+  useEffect(() => { api.loadMembers(tenantId).then((m) => setMembers(m.filter((x) => x.status === "active"))).catch(() => {}); }, [tenantId]);
   useEffect(() => {
     let alive = true;
     setSt(null);
@@ -107,28 +112,93 @@ function BotBar({ conversationId, notify }: { conversationId: string; notify: (m
     const t = setInterval(load, 15000);
     return () => { alive = false; clearInterval(t); };
   }, [conversationId]);
-  if (!st || (st.mode === "bot" && !st.runs.length)) return null;
-  const act = async (mode: "bot" | "human") => {
+  if (!st) return null;
+  const run = async (fn: () => Promise<void>, msg: string) => {
     setBusy(true);
-    try {
-      await api.conversationBot(conversationId, mode);
-      setSt(await api.conversationBotState(conversationId));
-      notify(mode === "human" ? "Você assumiu a conversa — as automações param aqui." : "Conversa devolvida ao robô.");
-    } catch (e) { notify(errorText(e)); } finally { setBusy(false); }
+    try { await fn(); setSt(await api.conversationBotState(conversationId)); notify(msg); }
+    catch (e) { notify(errorText(e)); } finally { setBusy(false); }
   };
-  if (st.mode === "human") {
-    return (
-      <div className="wa-bot-bar human">
-        <Headphones size={14} /> <span>Atendimento humano — automações pausadas nesta conversa.</span>
-        <button type="button" className="crm-btn ghost xs" disabled={busy} onClick={() => void act("bot")}>Devolver ao robô</button>
-      </div>
-    );
-  }
   const r = st.runs[0];
   return (
-    <div className="wa-bot-bar">
-      <Bot size={14} /> <span>Em automação: <b>{r.wa_flows?.name ?? "automação"}</b>{r.wait_kind ? ` · ${WAIT_TEXT[r.wait_kind] ?? ""}` : ""}{r.is_test ? " (teste)" : ""}</span>
-      <button type="button" className="crm-btn ghost xs" disabled={busy} onClick={() => void act("human")}>Assumir conversa</button>
+    <div className="wa-conv-bar">
+      <div className="wa-conv-team">
+        <UserRound size={14} />
+        <select value={st.assignedTo ?? ""} disabled={busy} aria-label="Responsável pela conversa"
+          onChange={(e) => void run(() => api.conversationAssign(conversationId, e.target.value || null), e.target.value ? "Conversa transferida." : "Conversa sem responsável.")}>
+          <option value="">Sem responsável</option>
+          {members.map((m) => <option key={m.user_id} value={m.user_id}>{memberName(m)}</option>)}
+        </select>
+        <button type="button" className="crm-btn ghost xs" disabled={busy}
+          onClick={() => void run(() => api.conversationClose(conversationId, !st.closed), st.closed ? "Conversa reaberta." : "Conversa concluída — volta sozinha se o cliente escrever.")}>
+          {st.closed ? <><RotateCcw size={12} /> Reabrir</> : <><CheckCheck size={12} /> Concluir</>}
+        </button>
+      </div>
+      {st.mode === "human" ? (
+        <div className="wa-bot-bar human">
+          <Headphones size={14} /> <span>Atendimento humano — automações pausadas nesta conversa.</span>
+          <button type="button" className="crm-btn ghost xs" disabled={busy} onClick={() => void run(() => api.conversationBot(conversationId, "bot"), "Conversa devolvida ao robô.")}>Devolver ao robô</button>
+        </div>
+      ) : r ? (
+        <div className="wa-bot-bar">
+          <Bot size={14} /> <span>Em automação: <b>{r.wa_flows?.name ?? "automação"}</b>{r.wait_kind ? ` · ${WAIT_TEXT[r.wait_kind] ?? ""}` : ""}{r.is_test ? " (teste)" : ""}</span>
+          <button type="button" className="crm-btn ghost xs" disabled={busy} onClick={() => void run(() => api.conversationBot(conversationId, "human"), "Você assumiu a conversa — as automações param aqui.")}>Assumir conversa</button>
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+/** Respostas rápidas: botão ⚡ ou digite “/” no começo da mensagem. */
+function QuickReplies({ tenantId, text, onPick, notify }: { tenantId: string; text: string; onPick: (body: string) => void; notify: (m: string) => void }) {
+  const [list, setList] = useState<api.QuickReply[] | null>(null);
+  const [open, setOpen] = useState(false);
+  const [manage, setManage] = useState(false);
+  const [edit, setEdit] = useState<{ id: string | null; title: string; body: string } | null>(null);
+  const load = () => api.quickReplies(tenantId).then(setList).catch(() => setList([]));
+  useEffect(() => { void load(); }, [tenantId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const slash = text.startsWith("/") ? text.slice(1).toLowerCase() : null;
+  const show = open || (slash !== null && !!list?.length);
+  const items = (list ?? []).filter((q) => !slash || q.title.toLowerCase().includes(slash) || q.body.toLowerCase().includes(slash));
+  return (
+    <>
+      <button type="button" className="crm-icon-btn wa-qr-btn" title="Respostas rápidas (ou digite /)" onClick={() => setOpen((o) => !o)}><Zap size={16} /></button>
+      {show && (
+        <div className="wa-qr-pop" onMouseLeave={() => setOpen(false)}>
+          <div className="wa-qr-head"><b>Respostas rápidas</b><button type="button" className="crm-link" onClick={() => { setManage(true); setOpen(false); }}>Gerenciar</button></div>
+          {items.length === 0 ? <p className="crm-muted small">{list?.length ? "Nada encontrado." : "Nenhuma ainda — clique em Gerenciar para criar."}</p>
+            : items.slice(0, 8).map((q) => (
+              <button key={q.id} type="button" className="wa-qr-item" onClick={() => { onPick(q.body); setOpen(false); }}>
+                <strong>/{q.title}</strong><span>{q.body}</span>
+              </button>
+            ))}
+        </div>
+      )}
+      {manage && (
+        <Modal open onClose={() => { setManage(false); setEdit(null); }} title="Respostas rápidas" width={560}
+          footer={edit ? <>
+            <button type="button" className="crm-btn ghost" onClick={() => setEdit(null)}>Cancelar</button>
+            <button type="button" className="crm-btn primary" disabled={!edit.title.trim() || !edit.body.trim()} onClick={async () => {
+              try { await api.quickReplySave(tenantId, edit.id, edit.title, edit.body); setEdit(null); void load(); } catch (e) { notify(errorText(e)); }
+            }}>Salvar</button>
+          </> : <button type="button" className="crm-btn primary" onClick={() => setEdit({ id: null, title: "", body: "" })}><Plus size={15} /> Nova resposta</button>}>
+          {edit ? (
+            <div className="crm-stack tight">
+              <label className="fz-field"><span className="fz-field-label">Atalho</span><input value={edit.title} maxLength={60} placeholder="horario" onChange={(e) => setEdit({ ...edit, title: e.target.value.replace(/^\//, "") })} /></label>
+              <label className="fz-field"><span className="fz-field-label">Mensagem</span><textarea rows={5} value={edit.body} maxLength={4000} onChange={(e) => setEdit({ ...edit, body: e.target.value })} /></label>
+            </div>
+          ) : (list ?? []).length === 0 ? <p className="crm-muted">Crie textos que a equipe usa sempre (horário, endereço, formas de pagamento…). Na conversa, digite <b>/</b> para usar.</p> : (
+            <div className="wa-qr-manage">
+              {(list ?? []).map((q) => (
+                <div key={q.id}>
+                  <div><strong>/{q.title}</strong><span className="crm-muted small">{q.body}</span></div>
+                  <button type="button" className="crm-icon-btn" title="Editar" onClick={() => setEdit({ id: q.id, title: q.title, body: q.body })}><Pencil size={14} /></button>
+                  <button type="button" className="crm-icon-btn" title="Excluir" onClick={async () => { try { await api.quickReplyDelete(q.id); void load(); } catch (e) { notify(errorText(e)); } }}><Trash2 size={14} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
+      )}
+    </>
   );
 }

@@ -254,3 +254,7 @@
   .fz-editor { height: calc(100dvh - 90px); }
   .fz-top { flex-wrap: wrap; }
 }
+
+.fz-hook { display: flex; gap: 4px; align-items: center; }
+.fz-hook input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .74rem !important; }
+.fz-code { margin: 0; padding: 10px 12px; border-radius: 10px; background: #0f172a; color: #e2e8f0; font-size: .74rem; line-height: 1.5; overflow-x: auto; }

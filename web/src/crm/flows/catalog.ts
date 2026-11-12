@@ -69,6 +69,7 @@ export const TRIGGER_KINDS: { id: string; label: string; hint: string }[] = [
   { id: "tag", label: "Etiqueta adicionada", hint: "Quando o contato recebe uma etiqueta" },
   { id: "stage", label: "Entrou numa etapa do funil", hint: "Quando a negociação muda de etapa" },
   { id: "manual", label: "Início manual", hint: "Você escolhe os contatos e inicia" },
+  { id: "webhook", label: "Webhook (outro sistema)", hint: "Seu site, formulário, n8n, Zapier… chamam um endereço" },
 ];
 
 export const UNITS: Record<string, string> = { minutes: "min", hours: "h", days: "dias" };
@@ -77,6 +78,7 @@ export const VARIABLES = [
   { v: "{primeiro_nome}", label: "Primeiro nome" }, { v: "{nome}", label: "Nome" }, { v: "{empresa}", label: "Empresa" },
   { v: "{cidade}", label: "Cidade" }, { v: "{telefone}", label: "Telefone" }, { v: "{resposta}", label: "Última resposta" },
 ];
+export const WEBHOOK_VAR = { v: "{var.trigger.campo}", label: "Dado enviado pelo webhook" };
 
 const cut = (s: string, n = 90) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const lines = (s: unknown) => (Array.isArray(s) ? s : String(s ?? "").split("\n")).map((x) => String(x).trim()).filter(Boolean);
@@ -91,6 +93,7 @@ export function summary(type: NodeType, c: Record<string, any>, ctx: SummaryCtx 
       if (c.kind === "keyword") { const kws = lines(String(c.keywords ?? "").replace(/,/g, "\n")); return kws.length ? `Mensagem com: ${kws.slice(0, 4).join(", ")}${kws.length > 4 ? "…" : ""}` : "Defina as palavras-chave"; }
       if (c.kind === "tag") return c.tag ? `Etiqueta “${c.tag}” adicionada` : "Escolha a etiqueta";
       if (c.kind === "stage") return c.stage_id ? `Entrou em “${ctx.stageName?.(c.stage_id) ?? "etapa"}”` : "Escolha a etapa";
+      if (c.kind === "webhook") return "Chamada de outro sistema (webhook)";
       if (c.kind === "campaign") return c.campaign_id ? `Respondeu “${ctx.campaignName?.(c.campaign_id) ?? "disparo"}”` : "Respondeu qualquer disparo";
       return `${k?.label ?? "Mensagem"}${c.onlyOutsideHours ? " · fora do horário" : ""}`;
     }

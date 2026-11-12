@@ -345,7 +345,10 @@ function CampaignEditor({ campaign, onClose, onSaved }: { campaign: WaCampaign |
 // ---------------------------------------------------------------------------
 function AudienceModal({ campaignId, onClose, onDone }: { campaignId: string; onClose: () => void; onDone: () => void }) {
   const { tenantId, notify } = useCrm();
-  const [src, setSrc] = useState<"dial_list" | "rows">("dial_list");
+  const [src, setSrc] = useState<"dial_list" | "tag" | "rows">("dial_list");
+  const [tags, setTags] = useState<string[] | null>(null);
+  const [tag, setTag] = useState("");
+  const [tagCount, setTagCount] = useState<number | null>(null);
   const [lists, setLists] = useState<{ name: string; total: number; pending: number }[] | null>(null);
   const [list, setList] = useState("");
   const [uf, setUf] = useState("");
@@ -357,7 +360,12 @@ function AudienceModal({ campaignId, onClose, onDone }: { campaignId: string; on
 
   useEffect(() => {
     api.waDialLists(tenantId).then((l) => { setLists(l); if (l[0]) setList(l[0].name); }).catch(() => setLists([]));
+    api.flowTagSuggestions(tenantId).then((t) => { setTags(t); if (t[0]) setTag(t[0]); }).catch(() => setTags([]));
   }, [tenantId]);
+  useEffect(() => {
+    if (!tag) { setTagCount(null); return; }
+    api.loadContacts(tenantId, { tag, pageSize: 1 }).then((r) => setTagCount(r.total)).catch(() => setTagCount(null));
+  }, [tag, tenantId]);
 
   const rows = useMemo(() => {
     if (!text.trim()) return [];
@@ -379,9 +387,20 @@ function AudienceModal({ campaignId, onClose, onDone }: { campaignId: string; on
   async function add() {
     setBusy(true);
     try {
-      const r = src === "dial_list"
-        ? await api.waAddRecipients(campaignId, { source: "dial_list", listName: list, filters: { uf: uf || undefined, city: city || undefined, only_pending: onlyPending, skip_not_interested: true } })
-        : await api.waAddRecipients(campaignId, { source: "rows", rows });
+      let r: WaAddResult;
+      if (src === "dial_list") {
+        r = await api.waAddRecipients(campaignId, { source: "dial_list", listName: list, filters: { uf: uf || undefined, city: city || undefined, only_pending: onlyPending, skip_not_interested: true } });
+      } else if (src === "tag") {
+        const ids: string[] = [];
+        for (let page = 0; page < 5; page++) {
+          const res = await api.loadContacts(tenantId, { tag, pageSize: 1000, page });
+          ids.push(...res.rows.filter((c) => c.phone).map((c) => c.id));
+          if (res.rows.length < 1000) break;
+        }
+        r = await api.waAddRecipients(campaignId, { source: "contacts", contactIds: ids });
+      } else {
+        r = await api.waAddRecipients(campaignId, { source: "rows", rows });
+      }
       setResult(r);
     } catch (e) { notify(errorText(e)); } finally { setBusy(false); }
   }
@@ -392,8 +411,8 @@ function AudienceModal({ campaignId, onClose, onDone }: { campaignId: string; on
         ? <button type="button" className="crm-btn primary" onClick={onDone}>Pronto</button>
         : <>
           <button type="button" className="crm-btn ghost" onClick={onClose}>Cancelar</button>
-          <button type="button" className="crm-btn primary" disabled={busy || (src === "dial_list" ? !list : rows.length === 0)} onClick={add}>
-            {busy ? "Adicionando…" : src === "rows" ? `Adicionar ${rows.length} contato(s)` : "Adicionar lista"}
+          <button type="button" className="crm-btn primary" disabled={busy || (src === "dial_list" ? !list : src === "tag" ? !tag || !tagCount : rows.length === 0)} onClick={add}>
+            {busy ? "Adicionando…" : src === "rows" ? `Adicionar ${rows.length} contato(s)` : src === "tag" ? `Adicionar ${Math.min(tagCount ?? 0, 5000)} contato(s)` : "Adicionar lista"}
           </button>
         </>}>
       {result ? (
@@ -408,8 +427,19 @@ function AudienceModal({ campaignId, onClose, onDone }: { campaignId: string; on
           <p className="crm-muted small">Números que não tiverem WhatsApp são detectados na hora do envio e marcados como “Sem WhatsApp”.</p>
         </div>
       ) : <>
-        <Tabs value={src} onChange={setSrc} tabs={[{ value: "dial_list", label: "Lista do discador" }, { value: "rows", label: "Colar / importar CSV" }]} />
-        {src === "dial_list" ? (
+        <Tabs value={src} onChange={setSrc} tabs={[{ value: "dial_list", label: "Lista do discador" }, { value: "tag", label: "Contatos com etiqueta" }, { value: "rows", label: "Colar / importar CSV" }]} />
+        {src === "tag" ? (
+          tags === null ? <Skeleton rows={2} /> : tags.length === 0 ? <p className="crm-muted">Nenhum contato com etiqueta ainda. Etiquetas vêm das buscas, da importação e das automações.</p> : (
+            <div className="crm-form-grid">
+              <Field label="Etiqueta" span={2}>
+                <select value={tag} onChange={(e) => setTag(e.target.value)}>
+                  {tags.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </Field>
+              <p className="crm-muted small" style={{ gridColumn: "1 / -1" }}>{tagCount === null ? "…" : `${tagCount} contato(s) com essa etiqueta`}{(tagCount ?? 0) > 5000 ? " — entram os 5000 mais recentes" : ""}. Variáveis: {"{nome}"}, {"{empresa}"}, {"{cidade}"}.</p>
+            </div>
+          )
+        ) : src === "dial_list" ? (
           lists === null ? <Skeleton rows={2} /> : lists.length === 0 ? <p className="crm-muted">Nenhuma lista no discador.</p> : (
             <div className="crm-form-grid">
               <Field label="Lista" span={2}>

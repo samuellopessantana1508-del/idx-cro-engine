@@ -1,11 +1,16 @@
 // Painel lateral: configuração do bloco selecionado.
-import { useRef, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Info, Plus, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ArrowDown, ArrowUp, Copy, Info, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import * as api from "../api";
+import { errorText } from "../format";
 import { interpolate, menuOptions, type NodeType } from "../../../../supabase/functions/_shared/flow-core";
 import type { Member, Stage, Pipeline, WaCampaign } from "../types";
 import { blockOf, daysLabel, groupOf, RULE_FIELDS, TEXT_OPS, TRIGGER_KINDS, UNIT_OPTIONS, VARIABLES } from "./catalog";
 
 export type ConfigCtx = {
+  flowId: string;
+  canConfigure: boolean;
+  notify: (m: string) => void;
   stages: Stage[];
   pipelines: Pipeline[];
   members: Member[];
@@ -197,6 +202,7 @@ function Form({ kind, c, set, ctx }: { kind: NodeType; c: Record<string, any>; s
               </select>
             </L>
           )}
+          {k === "webhook" && <WebhookInfo ctx={ctx} />}
           {k === "manual" && <p className="fz-note">Você escolhe os contatos na lista de automações (botão “Iniciar para contatos”). Saem espaçados para proteger o número.</p>}
           {["message", "first_message", "keyword"].includes(k) && (
             <>
@@ -484,4 +490,35 @@ function Form({ kind, c, set, ctx }: { kind: NodeType; c: Record<string, any>; s
     default:
       return null;
   }
+}
+
+function WebhookInfo({ ctx }: { ctx: ConfigCtx }) {
+  const [secret, setSecret] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!ctx.canConfigure) return;
+    api.flowHookSecret(ctx.flowId).then(setSecret).catch((e) => ctx.notify(errorText(e)));
+  }, [ctx.flowId, ctx.canConfigure]); // eslint-disable-line react-hooks/exhaustive-deps
+  const base = String(import.meta.env.VITE_SUPABASE_URL ?? "").replace(/\/$/, "");
+  const url = secret ? `${base}/functions/v1/cro-flows/hook/${ctx.flowId}/${secret}` : "";
+  const copy = async (t: string) => { try { await navigator.clipboard.writeText(t); ctx.notify("Copiado."); } catch { /* sem permissão */ } };
+  if (!ctx.canConfigure) return <p className="fz-note">Só gestores veem o endereço do webhook.</p>;
+  const example = `{\n  "telefone": "11999990000",\n  "nome": "Maria Souza",\n  "produto": "Kit Verão"\n}`;
+  return (
+    <>
+      <L label="Endereço (POST)" hint="Guarde em segredo: quem tiver o endereço pode iniciar a automação.">
+        <div className="fz-hook">
+          <input readOnly value={url || "Gerando…"} onFocus={(e) => e.target.select()} />
+          <button type="button" className="crm-icon-btn" title="Copiar" disabled={!url} onClick={() => void copy(url)}><Copy size={14} /></button>
+        </div>
+      </L>
+      <span className="fz-field-label">Exemplo do que enviar (JSON)</span>
+      <pre className="fz-code">{example}</pre>
+      <p className="fz-note">Precisa ter <code>telefone</code>. O nome vira contato no CRM e os outros campos ficam disponíveis nas mensagens como <code>{"{var.trigger.produto}"}</code>. Só funciona com a automação <b>ativa</b>; limite de 2.000 chamadas por dia. Quem pediu SAIR é ignorado.</p>
+      <button type="button" className="crm-btn ghost sm self-start" disabled={busy} onClick={async () => {
+        setBusy(true);
+        try { setSecret(await api.flowHookSecret(ctx.flowId, true)); ctx.notify("Endereço trocado — o antigo parou de funcionar."); } catch (e) { ctx.notify(errorText(e)); } finally { setBusy(false); }
+      }}><RefreshCw size={14} /> Trocar endereço</button>
+    </>
+  );
 }

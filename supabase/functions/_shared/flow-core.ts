@@ -16,7 +16,7 @@ export type FlowNode = { id: string; type: NodeType; position: { x: number; y: n
 export type FlowEdge = { id: string; source: string; target: string; sourceHandle?: string | null };
 export type Graph = { nodes: FlowNode[]; edges: FlowEdge[] };
 
-export type TriggerKind = "message" | "first_message" | "keyword" | "tag" | "stage" | "manual" | "campaign";
+export type TriggerKind = "message" | "first_message" | "keyword" | "tag" | "stage" | "manual" | "campaign" | "webhook";
 
 export type WaitKind = "delay" | "response" | "menu" | "ask" | "business_hours";
 export type RunState = {
@@ -201,6 +201,7 @@ export type FlowEvent =
   | { kind: "tag"; tag: string }
   | { kind: "stage"; stageId: string }
   | { kind: "manual" }
+  | { kind: "webhook" }
   | { kind: "campaign"; campaignId: string };
 
 export function triggerOf(graph: Graph): FlowNode | undefined {
@@ -225,6 +226,7 @@ export function matchTrigger(graph: Graph, ev: FlowEvent, now?: Date, tz = "Amer
     case "stage": return ev.kind === "stage" && !!c.stage_id && ev.stageId === c.stage_id;
     case "campaign": return ev.kind === "campaign" && (!c.campaign_id || ev.campaignId === c.campaign_id);
     case "manual": return ev.kind === "manual";
+    case "webhook": return ev.kind === "webhook";
     default: return false;
   }
 }
