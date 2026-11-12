@@ -103,7 +103,8 @@ begin
   if not idx_private.crm_can(p_tenant_id, 'configure') then raise exception 'Só gestores podem extrair contatos de grupos'; end if;
   if p_kind not in ('list', 'members') then raise exception 'Pedido inválido'; end if;
   if p_kind = 'members' and coalesce(p_group_jid, '') !~ '@g\.us$' then raise exception 'Grupo inválido'; end if;
-  select * into v_inst from public.whatsapp_instances where tenant_id = p_tenant_id and provider = 'gateway' limit 1;
+  select * into v_inst from public.whatsapp_instances where tenant_id = p_tenant_id and provider = 'gateway'
+     order by (status = 'connected') desc, (desired_status = 'connected') desc, created_at limit 1;
   if v_inst.id is null or v_inst.status <> 'connected' then raise exception 'Conecte o WhatsApp do CRO antes (Disparos → Conexão)'; end if;
   -- no máximo um pedido em andamento por vez por número
   if exists (select 1 from public.wa_group_jobs where instance_id = v_inst.id and status in ('pending', 'running') and created_at > now() - interval '2 minutes') then

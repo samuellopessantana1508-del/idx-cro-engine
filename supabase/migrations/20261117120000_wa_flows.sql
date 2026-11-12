@@ -278,7 +278,8 @@ begin
   if p_status = 'active' then
     if f.trigger_kind is null then raise exception 'Adicione um gatilho antes de ativar'; end if;
     if jsonb_array_length(f.graph->'nodes') < 2 then raise exception 'Adicione pelo menos uma ação depois do gatilho'; end if;
-    select id into v_inst from public.whatsapp_instances where tenant_id = f.tenant_id and provider = 'gateway' limit 1;
+    select id into v_inst from public.whatsapp_instances where tenant_id = f.tenant_id and provider = 'gateway'
+     order by (status = 'connected') desc, (desired_status = 'connected') desc, created_at limit 1;
     if v_inst is null then raise exception 'Conecte o WhatsApp do CRO (Disparos → Conexão) antes de ativar'; end if;
     update public.wa_flows set status = 'active', activated_at = now(), instance_id = coalesce(instance_id, v_inst), updated_by = auth.uid()
      where id = f.id returning * into f;

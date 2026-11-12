@@ -151,3 +151,19 @@ Testes: `tests/crm/wa-dispatch.test.mjs` (regras no banco), `services/wa-gateway
   rotinas, WhatsApp, Meta (com dias até vencer), Google Ads, Google Maps e processos ligados.
 - O painel lembra a última empresa escolhida no navegador.
 - Testes: `tests/crm/cro-cron.test.mjs` (Meta simulada), `tests/crm/health-ui.mjs`.
+
+## Automações de WhatsApp (editor visual, estilo FlowZap/Kommo/n8n)
+
+- **Onde**: menu *Automações WhatsApp* (`?section=crm-app&crm=flows`). Lista com modelos prontos (boas-vindas com menu, fora do horário, resposta de disparo, qualificação, recuperar lead frio, atendimento com IA) e editor visual (`web/src/crm/flows/*`, `@xyflow/react`, carregado sob demanda).
+- **Núcleo único**: `supabase/functions/_shared/flow-core.ts` (puro TS) roda no servidor (Edge Function `cro-flows`) e no **simulador** do editor — o que se testa no navegador é exatamente o que roda de verdade. Testes: `tests/flows/flow-core.test.ts`.
+- **Blocos**: gatilho (palavra-chave inteligente com erro de digitação/sinônimos, primeira mensagem, qualquer mensagem, respondeu disparo, etiqueta, etapa do funil, manual, webhook), mensagem (variações e `{a|b}`), mídia por link, menu numerado, pergunta que salva resposta, resposta com IA, esperar, aguardar resposta, horário comercial, condição, teste A/B, etiqueta, negociação no funil (nunca marca ganho/perda), tarefa, distribuir (rodízio), avisar equipe, salvar dado, marco (não é venda), webhook de saída, passar para atendente, SAIR, fim.
+- **Banco** (`20261117120000_wa_flows.sql`): `wa_flows`, `wa_flow_runs` (uma execução aberta por contato/fluxo), `wa_flow_events` (números por bloco), `wa_flow_queue` (mensagens recebidas, etiquetas, etapas, inícios manuais/webhook). Mensagens saem pela fila única `wa_outbox` (source `flow`, com mídia), pela mesma conexão do CRO.
+- **Motor**: o serviço `wa-gateway` chama `cro-flows` logo após cada mensagem recebida e a cada 30 s (esperas vencidas). Proteções: SAIR nunca recebe; robô para quando atendente assume (`bot_mode = human`) ou respondeu há < 30 min; reentrada configurável; início manual espaçado 25–60 s; máximo 200 por vez.
+- **Webhook de entrada**: `POST {SUPABASE_URL}/functions/v1/cro-flows/hook/<id>/<segredo>` com `{"telefone": "...", "nome": "...", ...}`; o segredo fica em `wa_flow_hooks` (sem acesso pela API) e aparece só para gestores no editor. Campos extras viram `{var.trigger.campo}`.
+- Testes: `tests/flows/flows-integration.test.mjs` (ponta a ponta com a Edge Function), `tests/flows/flows-ui.mjs` (interface).
+
+## Extratores de clientes e atendimento em equipe
+
+- **Disparos → Buscar clientes**: *Busca rápida* (ramo + cidade → 7 regiões × 3 páginas, até 120, cria uma busca salva e roda), *Colar números* (acha telefones/nomes em qualquer texto) e *Grupos do WhatsApp* (lista os grupos do número conectado e importa participantes com número visível; exige aceitar o aviso de risco; só gestores). Tudo vai para Contatos com etiqueta (`crm_contacts_tag_import`) e, se escolhido, para uma lista do discador. Migração `20261118120000_lead_extractors.sql`; os pedidos de grupos são executados pelo motor (`wa_group_jobs`).
+- **Disparos → Quem vai receber → Contatos com etiqueta**.
+- **Caixa de entrada**: responsável por conversa (transferir avisa a pessoa), concluir/reabrir (volta sozinha quando o cliente escreve), filtros Abertas/Minhas/Sem responsável/Concluídas, robô x atendente e respostas rápidas (digite `/`). Migração `20261119120000_inbox_team_hooks.sql`.

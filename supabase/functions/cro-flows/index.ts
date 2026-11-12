@@ -56,8 +56,11 @@ async function getFlow(id: string): Promise<Flow | null> {
   return flowCache.get(id)!;
 }
 async function gatewayInstance(tenant: string): Promise<string | null> {
-  const { data } = await svc.from("whatsapp_instances").select("id").eq("tenant_id", tenant).eq("provider", "gateway").limit(1).maybeSingle();
-  return (data?.id as string) ?? null;
+  // a conexão do CRO em uso (conectada primeiro)
+  const { data } = await svc.from("whatsapp_instances").select("id, status, desired_status").eq("tenant_id", tenant).eq("provider", "gateway");
+  const list = (data ?? []) as { id: string; status: string; desired_status: string }[];
+  list.sort((a, b) => Number(b.status === "connected") - Number(a.status === "connected") || Number(b.desired_status === "connected") - Number(a.desired_status === "connected"));
+  return list[0]?.id ?? null;
 }
 async function conversationFor(tenant: string, phone: string, instance: string | null): Promise<{ id: string; bot_mode: string; bot_paused_until: string | null } | null> {
   if (!instance) return null;
@@ -342,7 +345,7 @@ async function startRun(flow: Flow, phone: string, opts: {
     const { count } = await q;
     if ((count ?? 0) > 0) return null;
   }
-  const instance = flow.instance_id ?? opts.instanceId ?? (await gatewayInstance(flow.tenant_id));
+  const instance = opts.instanceId ?? (await gatewayInstance(flow.tenant_id)) ?? flow.instance_id;
   let crmId = opts.crmContactId ?? null;
   if (!crmId) {
     const { data } = await svc.from("crm_contacts").select("id").eq("tenant_id", flow.tenant_id).eq("phone", phone).is("merged_into_id", null).limit(1).maybeSingle();
@@ -432,7 +435,7 @@ async function handleOther(item: QueueItem): Promise<string> {
     const flow = await getFlow(item.flow_id!);
     if (!flow || flow.status === "archived") return "automação removida";
     if (!item.payload.test && flow.status !== "active") return "automação não está ativa";
-    const inst = flow.instance_id ?? (await gatewayInstance(flow.tenant_id));
+    const inst = (await gatewayInstance(flow.tenant_id)) ?? flow.instance_id;
     const conv = await conversationFor(flow.tenant_id, phone, inst);
     if (!item.payload.test && botBlocked(conv)) return "atendente";
     const id = await startRun(flow, phone, { conversationId: conv?.id ?? null, instanceId: inst, triggerKind: "manual", trigger: {}, isTest: !!item.payload.test, startedBy: item.payload.started_by ?? null });
@@ -441,7 +444,7 @@ async function handleOther(item: QueueItem): Promise<string> {
   if (item.kind === "webhook") {
     const flow = await getFlow(item.flow_id!);
     if (!flow || flow.status !== "active") return "automação não está ativa";
-    const inst = flow.instance_id ?? (await gatewayInstance(flow.tenant_id));
+    const inst = (await gatewayInstance(flow.tenant_id)) ?? flow.instance_id;
     const conv = await conversationFor(flow.tenant_id, phone, inst);
     if (botBlocked(conv)) return "atendente";
     const p = item.payload ?? {};
@@ -457,7 +460,7 @@ async function handleOther(item: QueueItem): Promise<string> {
   let started = 0;
   for (const f of flows) {
     if (!matchTrigger(f.graph, ev, new Date(), tz)) continue;
-    const inst = f.instance_id ?? (await gatewayInstance(f.tenant_id));
+    const inst = (await gatewayInstance(f.tenant_id)) ?? f.instance_id;
     const conv = await conversationFor(f.tenant_id, phone, inst);
     if (botBlocked(conv)) continue;
     const id = await startRun(f, phone, { conversationId: conv?.id ?? null, instanceId: inst, triggerKind: kind, trigger: item.payload, crmContactId: item.payload.contact_id ?? null });

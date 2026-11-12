@@ -144,7 +144,7 @@ await step("modelos: todos abrem sem avisos de erro", async () => {
 await step("caixa de entrada: robô na conversa → atendente assume → devolve ao robô", async () => {
   const TOKEN = randomBytes(32).toString("hex");
   sql(`insert into wa_gateway_tokens(token_hash, label) values ('${createHash("sha256").update(TOKEN).digest("hex")}', 'flows-ui')`);
-  const inst = sql(`select id from whatsapp_instances where tenant_id = '${A}' and provider = 'gateway'`);
+  const inst = sql(`select id from whatsapp_instances where tenant_id = '${A}' and provider = 'gateway' order by (desired_status = 'connected') desc, created_at limit 1`);
   const p = `55119${String(Date.now()).slice(-8)}`;
   const r = await adm.rpc("wa_gw_ingest", { p_token: TOKEN, p_instance: inst, p_msg: { from_me: false, wa_id: p, phone: p, push_name: "Paciente Robô", body: "oi", wa_message_id: `FUI${Date.now()}` } });
   if (r.error) throw new Error(r.error.message);
