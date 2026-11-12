@@ -141,10 +141,12 @@ export function interpolate(text: string, contact: ContactInfo, vars: Record<str
   // Variável vazia vira marcador: só some o espaço que ela deixaria ("Oi {nome}!" → "Oi!"),
   // sem mexer na pontuação escrita pelo usuário ("preços: ...").
   const EMPTY = "\u0000";
-  t = t.replace(/\{(var\.)?([a-z0-9_]+)\}/gi, (whole, isVar, key: string) => {
+  const path = (obj: any, key: string) => key.split(".").reduce((o, p) => (o == null ? undefined : o[p] ?? o[p.toLowerCase()]), obj);
+  t = t.replace(/\{(var\.)?([a-z0-9_]+(?:\.[a-z0-9_]+)*)\}/gi, (whole, isVar, key: string) => {
     const k = key.toLowerCase();
     let v: string | null = null;
-    if (isVar) v = String(vars[k] ?? vars[key] ?? "");
+    if (isVar) { const x = path(vars, key); v = x == null ? "" : typeof x === "object" ? JSON.stringify(x) : String(x); }
+    else if (key.includes(".")) return whole;
     else if (k in map) v = map[k];
     else if (contact.fields && k in contact.fields) v = String(contact.fields[k] ?? "");
     else if (k in vars) v = String(vars[k] ?? "");
