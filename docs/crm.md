@@ -101,3 +101,21 @@ alternativo; intervalo fixo de 10 s substituído por aleatório + limites; retom
 
 Testes: `tests/crm/wa-dispatch.test.mjs` (regras no banco), `services/wa-gateway/test` (motor com WhatsApp simulado),
 `tests/crm/dispatch-ui.mjs` (telas).
+
+## Busca automática de clientes (Google Maps → Discador → Disparos)
+
+- Usa a **API oficial Google Places (New) – Text Search** (não raspa o site). A chave é colada pelo gestor em
+  Disparos → Buscar clientes → Configurar; a função `maps-leads` guarda criptografada (`maps_settings`, AES-GCM com
+  `ENCRYPTION_KEY`) e a tela só vê os 4 últimos caracteres.
+- **Fontes salvas** (`lead_sources`): termo + cidades/bairros (ordem mantida). Cada execução usa os próximos
+  `locations_per_run` locais (rodízio), até 3 páginas (60 resultados) por local.
+- Entram no discador (`crm_dial_leads`) com posição na busca, nota, avaliações, endereço, link e site
+  (`source = google_places`). Não entram: duplicados (place_id ou telefone em qualquer lista), sem telefone,
+  fechados, quem pediu SAIR, redes/franquias (opcional) e abaixo da nota mínima (opcional).
+- **Automático**: o motor de WhatsApp chama `maps-leads {action:"cron"}` a cada 10 min com seu token; só rodam as
+  fontes vencidas (diário/2 dias/3 dias/semanal, no horário escolhido, fuso da empresa).
+- **Alimentar disparo**: a fonte pode apontar para um disparo com *alimentação automática* (`wa_campaigns.auto_feed`);
+  os novos clientes entram na fila dele (com variáveis `{empresa} {cidade} {bairro} {nota} {avaliacoes} {posicao}`)
+  e o disparo não “termina” quando a fila zera — espera os próximos. Todas as proteções de envio continuam valendo.
+- **Custo**: limite mensal de chamadas (padrão 900) em `maps_usage`; a execução para ao atingir o limite.
+- Testes: `tests/crm/maps-leads.test.mjs` (Places simulado), `tests/crm/maps-ui.mjs`.

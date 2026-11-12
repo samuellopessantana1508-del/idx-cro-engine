@@ -50,3 +50,9 @@ verify_jwt = false
 
 [functions.google-ads]
 verify_jwt = true
+
+[functions.crm-assistant]
+verify_jwt = false
+
+[functions.maps-leads]
+verify_jwt = false

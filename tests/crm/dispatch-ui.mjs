@@ -77,9 +77,10 @@ try {
     await m.getByRole("button", { name: /Adicionar variação/ }).click();
     await m.locator(".wa-msg-edit textarea").nth(1).fill("{Olá|Bom dia} {primeiro_nome}! Posso te mostrar uma ideia para a {empresa}?");
     // configuração arriscada mostra alerta
-    await m.locator('label.crm-check input[type="checkbox"]').uncheck();
+    const sair = m.getByRole("checkbox", { name: /Incluir “Se não quiser/ });
+    await sair.uncheck();
     await m.locator(".wa-warn").waitFor();
-    await m.locator('label.crm-check input[type="checkbox"]').check();
+    await sair.check();
     await page.screenshot({ path: `${SHOTS}/2-editor.png` });
     await m.getByRole("button", { name: /Criar e escolher público/ }).click();
     await page.locator(".crm-modal").getByText("Quem vai receber").waitFor();
@@ -103,7 +104,7 @@ try {
   await step("iniciar pede confirmação com o resumo das proteções e passa a 'Enviando'", async () => {
     const card = page.locator(".wa-camp").filter({ hasText: `Farmácias UI ${TAG}` });
     await card.getByRole("button", { name: "Iniciar" }).click();
-    await page.locator(".crm-modal").getByText(/Serão 2 mensagens, uma por vez, a cada 25–60 segundos, até 200 por dia, das 8h às 20h/).waitFor();
+    await page.locator(".crm-modal").getByText(/Serão 2 mensagens. Uma por vez, a cada 25–60 segundos, até 200 por dia, das 8h às 20h/).waitFor();
     await page.locator(".crm-modal").getByRole("button", { name: "Iniciar disparo" }).click();
     await toast(page, /Disparo iniciado/);
     await card.locator(".crm-pill", { hasText: "Enviando" }).waitFor();

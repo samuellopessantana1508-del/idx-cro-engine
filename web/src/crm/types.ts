@@ -523,7 +523,7 @@ export type WaGatewayInstance = {
 export type WaCampaignStatus = "draft" | "running" | "paused" | "completed" | "canceled";
 export type WaCampaign = {
   id: string; name: string; status: WaCampaignStatus; messages: string[];
-  min_delay_sec: number; max_delay_sec: number; daily_limit: number; start_hour: number; end_hour: number; opt_out_footer: boolean;
+  min_delay_sec: number; max_delay_sec: number; daily_limit: number; start_hour: number; end_hour: number; opt_out_footer: boolean; auto_feed: boolean;
   next_send_at: string | null; paused_reason: string | null; started_at: string | null; completed_at: string | null; created_at: string;
   audience: Record<string, unknown>;
   total: number; pending: number; sent: number; failed: number; invalid: number; opted_out: number; skipped: number; replied: number;
@@ -538,4 +538,23 @@ export type WaAddResult = { added: number; invalid_phone: number; duplicates: nu
 export type WaOutboxItem = {
   id: string; phone: string; body: string; source: "manual" | "campaign"; status: "queued" | "sending" | "sent" | "failed" | "canceled";
   error: string | null; created_at: string; sent_at: string | null; conversation_id: string | null;
+};
+
+// ---------- Busca de clientes (Google Maps) ----------
+export type MapsStatus = { has_key: boolean; key_hint: string | null; monthly_call_limit: number; calls_this_month: number };
+export type LeadSource = {
+  id: string; tenant_id: string; name: string; query: string; locations: string[]; location_cursor: number; list_name: string;
+  auto: boolean; interval_hours: number; run_hour: number; locations_per_run: number; pages_per_location: number; max_new_per_run: number;
+  exclude_chains: boolean; min_rating: number | null; campaign_id: string | null; active: boolean;
+  next_run_at: string | null; last_run_at: string | null; running_since: string | null;
+  last_result: { inserted: number; found: number; duplicates: number; to_campaign: number; error: string | null; api_calls: number } | null;
+  created_at: string;
+};
+export type LeadSourceRunResult = {
+  run_id: string; inserted: number; found: number; duplicates: number; no_phone: number; chains: number; low_rating: number;
+  opted_out: number; to_campaign: number; api_calls: number; error: string | null;
+};
+export type MapsPlace = {
+  place_id: string; name: string; phone: string | null; address: string | null; city: string | null; uf: string | null;
+  district: string | null; rating: number | null; reviews: number | null; rank: number; maps_url: string | null; already: boolean;
 };

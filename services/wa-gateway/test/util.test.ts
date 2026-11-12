@@ -44,3 +44,23 @@ test("status, erros transitórios, reconexão e digitação", () => {
   assert.equal(backoffMs(0), 3000); assert.equal(backoffMs(50), 60000);
   assert.ok(typingMs("oi", () => 0.5) >= 1500 && typingMs("x".repeat(1000), () => 1) <= 7200);
 });
+
+test("agendador da busca chama a função com o token do motor", async () => {
+  const { runLeadSearch } = await import("../src/main.js");
+  const http = await import("node:http");
+  let got: any = null;
+  const srv = http.createServer((req, res) => {
+    let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => {
+      got = { url: req.url, token: req.headers["x-gateway-token"], body: JSON.parse(b) };
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ran: 2 }));
+    });
+  });
+  await new Promise<void>((r) => srv.listen(11997, "127.0.0.1", () => r()));
+  const logs: string[] = [];
+  await runLeadSearch("http://127.0.0.1:11997", "anon", "tok123", { info: (...a) => logs.push(a.join(" ")), warn: () => {}, error: () => {} });
+  srv.close();
+  assert.equal(got.url, "/functions/v1/maps-leads");
+  assert.equal(got.token, "tok123");
+  assert.deepEqual(got.body, { action: "cron" });
+  assert.ok(logs.some((l) => l.includes("2")));
+});

@@ -71,6 +71,23 @@ export class Gateway {
   }
 }
 
+/** Pede ao CRO para rodar as buscas automáticas vencidas (Google Maps → discador → disparo). */
+export async function runLeadSearch(url: string, anon: string, token: string, log: Logger) {
+  try {
+    const res = await fetch(`${url}/functions/v1/maps-leads`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: anon, Authorization: `Bearer ${anon}`, "x-gateway-token": token },
+      body: JSON.stringify({ action: "cron" }),
+      signal: AbortSignal.timeout(140_000),
+    });
+    const body = (await res.json().catch(() => ({}))) as { ran?: number; error?: string };
+    if (!res.ok) log.warn("[busca] %s", body.error ?? res.status);
+    else if (body.ran) log.info("[busca] %d busca(s) automática(s) executada(s)", body.ran);
+  } catch (e) {
+    log.warn("[busca] falhou: %s", (e as Error).message);
+  }
+}
+
 /** Baileys de verdade */
 export const baileysFactory: SocketFactory = async (authDir, _log) => {
   const baileys: any = await import("@whiskeysockets/baileys");
@@ -110,6 +127,10 @@ if (isMain) {
   };
   const gw = new Gateway(new Db(url, anon, token), baileysFactory, dir, log);
   gw.start();
+  // Busca automática de clientes (Google Maps): a função só roda as buscas vencidas
+  const tick = () => runLeadSearch(url, anon, token, log);
+  setTimeout(tick, 60_000);
+  setInterval(tick, 10 * 60_000);
   log.info("[gateway] motor de WhatsApp do IDX iniciado");
   const shutdown = async () => { log.info("[gateway] encerrando…"); await gw.stop(); process.exit(0); };
   process.on("SIGTERM", shutdown);

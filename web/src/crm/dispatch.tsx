@@ -9,6 +9,7 @@ import { parseCsv } from "./csv";
 import { dateTime, errorText, phoneLabel, relative, timeOnly } from "./format";
 import type { WaAddResult, WaCampaign, WaCampaignStatus, WaGatewayInstance, WaRecipient, WaRecipientStatus } from "./types";
 import { Bar, Confirm, Empty, Field, Modal, Pill, Skeleton, Tabs } from "./ui";
+import { MapsSearchView } from "./maps-search";
 
 const statusInfo: Record<WaCampaignStatus, { label: string; tone: string }> = {
   draft: { label: "Rascunho", tone: "muted" },
@@ -44,6 +45,7 @@ function preview(text: string, sample: Record<string, string>, footer: boolean) 
 
 function nextSendLabel(c: WaCampaign) {
   if (c.status !== "running") return null;
+  if (c.auto_feed && c.pending === 0) return "Esperando novos clientes da busca automática";
   if (c.sent_today >= c.daily_limit) return `Limite de hoje atingido (${c.daily_limit}) — volta amanhã às ${c.start_hour}h`;
   if (!c.next_send_at) return "Começando…";
   const at = new Date(c.next_send_at);
@@ -135,7 +137,7 @@ export function ConnectionCard({ compact }: { compact?: boolean }) {
 // ---------------------------------------------------------------------------
 export function DispatchView() {
   const { tenantId, access, refreshKey, notify } = useCrm();
-  const [tab, setTab] = useState<"campaigns" | "optouts">("campaigns");
+  const [tab, setTab] = useState<"campaigns" | "maps" | "optouts">(() => (new URLSearchParams(window.location.search).get("tab") === "maps" ? "maps" : "campaigns"));
   const [items, setItems] = useState<WaCampaign[] | null>(null);
   const [editing, setEditing] = useState<WaCampaign | "new" | null>(null);
   const [audienceFor, setAudienceFor] = useState<WaCampaign | null>(null);
@@ -171,6 +173,7 @@ export function DispatchView() {
         <div className="crm-toolbar-left">
           <Tabs value={tab} onChange={setTab} tabs={[
             { value: "campaigns", label: "Disparos", count: items?.length },
+            { value: "maps", label: "Buscar clientes (Google Maps)" },
             { value: "optouts", label: "Pediram SAIR" },
           ]} />
         </div>
@@ -179,7 +182,7 @@ export function DispatchView() {
         )}
       </div>
 
-      {tab === "optouts" ? <OptoutsList /> : !items ? <Skeleton rows={3} height={110} /> : items.length === 0 ? (
+      {tab === "maps" ? <MapsSearchView campaigns={items ?? []} onCampaignsChanged={() => void load()} /> : tab === "optouts" ? <OptoutsList /> : !items ? <Skeleton rows={3} height={110} /> : items.length === 0 ? (
         <Empty icon={<Send size={22} />} title="Nenhum disparo ainda"
           text="Envie uma mensagem para uma lista (ex.: as farmácias do discador). O CRO envia um por vez, com intervalo aleatório, só em horário comercial e respeita quem pedir SAIR."
           action={access.write ? <button type="button" className="crm-btn primary" onClick={() => setEditing("new")}><Plus size={16} /> Criar o primeiro</button> : undefined} />
@@ -191,12 +194,13 @@ export function DispatchView() {
                 <button type="button" className="wa-camp-title" onClick={() => setDetail(c.id)}>
                   <strong>{c.name}</strong>
                   <Pill tone={statusInfo[c.status].tone}>{statusInfo[c.status].label}</Pill>
+                  {c.auto_feed && <Pill tone="blue" title="Recebe sozinho os novos clientes da busca no Google Maps">Alimentação automática</Pill>}
                 </button>
                 <div className="wa-camp-actions">
                   {access.write && c.status === "draft" && <>
                     <button type="button" className="crm-btn ghost sm" onClick={() => setEditing(c)}><Pencil size={14} /> Editar</button>
                     <button type="button" className="crm-btn ghost sm" onClick={() => setAudienceFor(c)}><Users size={14} /> Público</button>
-                    <button type="button" className="crm-btn primary sm" disabled={c.pending === 0} title={c.pending === 0 ? "Adicione contatos primeiro" : undefined} onClick={() => setStarting(c)}><Play size={14} /> Iniciar</button>
+                    <button type="button" className="crm-btn primary sm" disabled={c.pending === 0 && !c.auto_feed} title={c.pending === 0 && !c.auto_feed ? "Adicione contatos primeiro" : undefined} onClick={() => setStarting(c)}><Play size={14} /> Iniciar</button>
                   </>}
                   {access.write && c.status === "running" && <button type="button" className="crm-btn ghost sm" onClick={() => act(c, "pause")}><Pause size={14} /> Pausar</button>}
                   {access.write && c.status === "paused" && <>
@@ -218,7 +222,7 @@ export function DispatchView() {
                   {c.failed > 0 && <span className="tone-red"><b>{c.failed}</b> falharam</span>}
                   {c.opted_out > 0 && <span><b>{c.opted_out}</b> pediram SAIR</span>}
                 </div>
-              </> : <p className="crm-muted small">Sem público. {access.write && <button type="button" className="crm-link" onClick={() => setAudienceFor(c)}>Adicionar contatos</button>}</p>}
+              </> : <p className="crm-muted small">{c.auto_feed ? "Os contatos chegam pela busca automática no Google Maps." : "Sem público."} {access.write && <button type="button" className="crm-link" onClick={() => setAudienceFor(c)}>Adicionar contatos</button>}</p>}
               <footer className="crm-muted small">
                 <ShieldCheck size={13} /> {c.min_delay_sec}–{c.max_delay_sec}s entre mensagens · até {c.daily_limit}/dia · {c.start_hour}h às {c.end_hour}h
                 {c.status === "running" && <> · <Clock size={13} /> {nextSendLabel(c)}</>}
@@ -236,7 +240,7 @@ export function DispatchView() {
       {current && <CampaignDetail campaign={current} onClose={() => setDetail(null)} />}
       <Confirm open={!!starting} onClose={() => setStarting(null)} confirmLabel="Iniciar disparo"
         title={`Iniciar “${starting?.name ?? ""}”?`}
-        text={starting ? `Serão ${starting.pending} mensagens, uma por vez, a cada ${starting.min_delay_sec}–${starting.max_delay_sec} segundos, até ${starting.daily_limit} por dia, das ${starting.start_hour}h às ${starting.end_hour}h. Quem pedir SAIR não recebe mais. Você pode pausar a qualquer momento.` : ""}
+        text={starting ? `${starting.auto_feed ? `Agora: ${starting.pending} mensagem(ns), e depois cada cliente novo da busca automática. ` : `Serão ${starting.pending} mensagens. `}Uma por vez, a cada ${starting.min_delay_sec}–${starting.max_delay_sec} segundos, até ${starting.daily_limit} por dia, das ${starting.start_hour}h às ${starting.end_hour}h. Quem pedir SAIR não recebe mais. Você pode pausar a qualquer momento.` : ""}
         onConfirm={() => starting && act(starting, "start")} />
       <Confirm open={!!canceling} onClose={() => setCanceling(null)} danger confirmLabel="Cancelar disparo"
         title="Cancelar este disparo?" text="Quem ainda não recebeu não vai receber. O que já foi enviado fica no histórico."
@@ -258,6 +262,7 @@ function CampaignEditor({ campaign, onClose, onSaved }: { campaign: WaCampaign |
   const [startH, setStartH] = useState(campaign?.start_hour ?? 8);
   const [endH, setEndH] = useState(campaign?.end_hour ?? 20);
   const [footer, setFooter] = useState(campaign?.opt_out_footer ?? true);
+  const [autoFeed, setAutoFeed] = useState(campaign?.auto_feed ?? false);
   const [busy, setBusy] = useState(false);
   const refs = useRef<(HTMLTextAreaElement | null)[]>([]);
 
@@ -277,6 +282,7 @@ function CampaignEditor({ campaign, onClose, onSaved }: { campaign: WaCampaign |
         name, messages: msgs, min_delay_sec: minD, max_delay_sec: Math.max(minD, maxD), daily_limit: limit,
         start_hour: startH, end_hour: endH, opt_out_footer: footer,
       });
+      if (autoFeed !== (campaign?.auto_feed ?? false)) await api.waSetAutoFeed(id, autoFeed);
       notify(campaign ? "Disparo atualizado" : "Disparo criado — agora escolha quem vai receber");
       onSaved(id, !campaign);
     } catch (e) { notify(errorText(e)); } finally { setBusy(false); }
@@ -323,6 +329,10 @@ function CampaignEditor({ campaign, onClose, onSaved }: { campaign: WaCampaign |
         <label className="crm-check" style={{ gridColumn: "1 / -1" }}>
           <input type="checkbox" checked={footer} onChange={(e) => setFooter(e.target.checked)} />
           Incluir “Se não quiser receber mais mensagens, responda SAIR.” (recomendado)
+        </label>
+        <label className="crm-check" style={{ gridColumn: "1 / -1" }}>
+          <input type="checkbox" checked={autoFeed} onChange={(e) => setAutoFeed(e.target.checked)} />
+          Alimentação automática: continuar ligado recebendo os novos clientes da busca no Google Maps
         </label>
       </div>
       {risky && <p className="wa-warn"><AlertTriangle size={14} /> Configuração mais agressiva aumenta a chance de o WhatsApp bloquear o número. O padrão (25–60 s, 200/dia, com SAIR) é o mais seguro.</p>}

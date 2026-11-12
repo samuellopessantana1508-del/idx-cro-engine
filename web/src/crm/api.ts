@@ -4,6 +4,7 @@ import type {
   Deal, DealItem, KpiResponse, LossReason, Member, Offer, Onboarding, Order, Pipeline, Quote, RfvCustomer, RfvDashboard, Sample, Stage, Task,
   TimelineItem, DialLead, DialOutcome, DialOverview, Cadence, CadenceEnrollment, CadenceStep, Goal, GoalProgress, AssistantPlan, AssistantResult,
   WaGatewayInstance, WaCampaign, WaRecipient, WaRecipientStatus, WaAddResult, WaOutboxItem,
+  MapsStatus, LeadSource, LeadSourceRunResult, MapsPlace,
 } from "./types";
 
 export function db() {
@@ -705,4 +706,49 @@ export async function waSetOptout(tenantId: string, phone: string, optout: boole
 export async function waDialLists(tenantId: string) {
   const o = await dialOverview(tenantId, null);
   return o.lists;
+}
+
+export async function waSetAutoFeed(campaignId: string, auto: boolean) {
+  check(await db().rpc("wa_campaign_set_auto_feed", { p_campaign_id: campaignId, p_auto: auto }));
+}
+
+// ---------- Busca de clientes no Google Maps ----------
+async function mapsFn<T>(body: Record<string, unknown>): Promise<T> {
+  const { data } = await db().auth.getSession();
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/maps-leads`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${data.session?.access_token}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `Falha ${res.status} na busca`);
+  return json as T;
+}
+export async function mapsStatus(tenantId: string) {
+  return check(await db().rpc("maps_status", { p_tenant_id: tenantId })) as MapsStatus;
+}
+export const mapsSetKey = (tenantId: string, apiKey: string) => mapsFn<{ key_hint: string }>({ action: "set_key", tenant_id: tenantId, api_key: apiKey });
+export const mapsRemoveKey = (tenantId: string) => mapsFn<{ ok: boolean }>({ action: "remove_key", tenant_id: tenantId });
+export async function mapsSetLimit(tenantId: string, limit: number) {
+  check(await db().rpc("maps_set_limit", { p_tenant_id: tenantId, p_limit: limit }));
+}
+export const mapsPreview = (tenantId: string, query: string, location: string) =>
+  mapsFn<{ places: MapsPlace[]; closed: number }>({ action: "preview", tenant_id: tenantId, query, location });
+export const mapsRunSource = (sourceId: string) => mapsFn<LeadSourceRunResult>({ action: "run", source_id: sourceId });
+export async function leadSources(tenantId: string) {
+  return check(await db().from("lead_sources").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false })) as LeadSource[];
+}
+export async function saveLeadSource(tenantId: string, id: string | null, s: {
+  name: string; query: string; locations: string[]; list_name: string; auto: boolean; interval_hours: number; run_hour: number;
+  locations_per_run: number; max_new_per_run: number; exclude_chains: boolean; min_rating: number | null; campaign_id: string | null; pages_per_location: number;
+}) {
+  return check(await db().rpc("lead_source_save", {
+    p_tenant_id: tenantId, p_id: id, p_name: s.name, p_query: s.query, p_locations: s.locations, p_list_name: s.list_name,
+    p_auto: s.auto, p_interval_hours: s.interval_hours, p_run_hour: s.run_hour, p_locations_per_run: s.locations_per_run,
+    p_max_new_per_run: s.max_new_per_run, p_exclude_chains: s.exclude_chains, p_min_rating: s.min_rating, p_campaign_id: s.campaign_id,
+    p_pages_per_location: s.pages_per_location,
+  })) as string;
+}
+export async function deleteLeadSource(id: string) {
+  check(await db().rpc("lead_source_delete", { p_id: id }));
 }

@@ -975,3 +975,12 @@ kbd {
 }
 :root[data-theme="dark"] .wa-bubble { background: #005c4b; color: #e9edef; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .wa-bubble { background: #005c4b; color: #e9edef; } }
+/* Busca Google Maps */
+.maps-view { display: grid; gap: 12px; }
+.maps-key.ok { border-left: 3px solid var(--green); }
+.maps-key .crm-bar { max-width: 360px; }
+.maps-steps { margin: 0 0 14px; padding-left: 20px; display: grid; gap: 6px; font-size: 0.86rem; }
+.maps-steps a { display: inline-flex; align-items: center; gap: 3px; }
+.maps-preview-bar { margin-top: 10px; }
+.maps-preview { margin-top: 10px; max-height: 360px; overflow: auto; }
+.maps-preview tr.muted td { opacity: 0.55; }
