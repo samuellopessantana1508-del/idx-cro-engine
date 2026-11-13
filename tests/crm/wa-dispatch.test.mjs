@@ -142,6 +142,8 @@ test("resposta do cliente: marca 'respondeu', avisa quem disparou e cai na mesma
   const before = Number(sql(`select count(*) from crm_notifications where tenant_id = '${A}' and title like '%respondeu ao disparo%'`));
   // WhatsApp entrega o número sem o 9º dígito
   const no9 = ph(1).slice(0, 4) + ph(1).slice(5);
+  // pessoa respondendo (não a boas-vindas automática dos primeiros segundos)
+  sql(`update wa_campaign_recipients set sent_at = sent_at - interval '1 minute' where campaign_id = '${camp}' and phone = '${ph(1)}'`);
   ok(await G("wa_gw_ingest", { p_instance: inst.id, p_msg: { from_me: false, wa_id: ph(1), phone: no9, push_name: "Drogaria Alfa", body: "Oi, quanto custa?", wa_message_id: `WAMSG${TAG}R` } }));
   assert.notEqual(sql(`select replied_at from wa_campaign_recipients where campaign_id = '${camp}' and phone = '${ph(1)}'`), "");
   const after = Number(sql(`select count(*) from crm_notifications where tenant_id = '${A}' and title like '%respondeu ao disparo%'`));
