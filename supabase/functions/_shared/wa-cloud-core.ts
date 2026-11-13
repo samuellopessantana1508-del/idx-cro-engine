@@ -5,6 +5,7 @@ export type OutboxItem = {
   phone: string; body?: string | null;
   media_url?: string | null; media_type?: string | null; file_name?: string | null;
   template?: { name: string; language: string; params?: string[] } | null;
+  interactive?: { type: "buttons"; options: string[]; footer?: string | null } | null;
 };
 
 /** Corpo do POST /{phone_number_id}/messages */
@@ -19,6 +20,17 @@ export function cloudPayload(m: OutboxItem): Record<string, unknown> {
         name: m.template.name,
         language: { code: m.template.language || "pt_BR" },
         ...(params.length ? { components: [{ type: "body", parameters: params }] } : {}),
+      },
+    };
+  }
+  if (m.interactive?.type === "buttons" && m.interactive.options?.length) {
+    return {
+      ...base, type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text: String(m.body ?? "").slice(0, 1024) || "Escolha uma opção" },
+        ...(m.interactive.footer ? { footer: { text: m.interactive.footer.slice(0, 60) } } : {}),
+        action: { buttons: m.interactive.options.slice(0, 3).map((o, i) => ({ type: "reply", reply: { id: `opt${i + 1}`, title: o.slice(0, 20) } })) },
       },
     };
   }

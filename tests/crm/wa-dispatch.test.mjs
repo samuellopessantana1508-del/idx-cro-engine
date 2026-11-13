@@ -175,6 +175,11 @@ test("SAIR: descadastra, tira da fila e bloqueia envios futuros", async () => {
   assert.equal(sql(`select status from wa_campaign_recipients where campaign_id = '${camp}' and phone = '${ph(4)}'`), "opted_out");
   const r = await seller.rpc("wa_send_message", { p_tenant_id: A, p_body: "oi", p_phone: ph(4) });
   assert.match(r.error?.message ?? "", /SAIR/);
+  // a única mensagem que ainda sai é a confirmação do SAIR
+  const confirm = ok(await G("wa_gw_claim", { p_instance: inst.id }));
+  assert.match(confirm.body, /^Combinado! Registramos o seu pedido/);
+  assert.equal(confirm.phone, ph(4));
+  ok(await G("wa_gw_result", { p_outbox_id: confirm.id, p_ok: true, p_wa_message_id: `CONF${TAG}` }));
   // sem pendentes → disparo termina sozinho
   due(camp);
   assert.equal(ok(await G("wa_gw_claim", { p_instance: inst.id })), null);

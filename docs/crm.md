@@ -221,3 +221,13 @@ Botão "Conectar WhatsApp Oficial" em WhatsApp → Conexão → API oficial (Emb
 3. A assinatura do webhook usa a chave do app da IDX.
 
 Configuração no app da Meta (uma vez): produto WhatsApp + Facebook Login for Business; em Login for Business → Configurações, criar uma configuração do tipo "Cadastro incorporado do WhatsApp" com as permissões `whatsapp_business_management` e `whatsapp_business_messaging` (e `business_management`); o ID dela vai no segredo `WA_EMBEDDED_CONFIG_ID`. O domínio do painel precisa estar em "Domínios permitidos para o SDK JavaScript". Para clientes fora do Business Manager da IDX, o app precisa de acesso avançado a essas permissões (análise da Meta / Tech Provider).
+
+
+## Douratto Buffet: automações do Kommo recriadas
+
+`scripts/douratto/flows.mjs` recria os salesbots do Kommo da Douratto (lidos da conta dourattobuffet):
+- **Douratto - Escolas - Fim de Ano 2026** (sondagem): gatilho "respondeu o disparo" com o modelo `douratto_escolas_sondagem_2026`. "Já planejamos" → botões "Quero receber / Agora não" → PDF; "Ainda avaliando" → botões "Quero conhecer / Agora não" → PDF; "Não vamos realiza" → agradecimento. Etapas "Contato feito" e "Apresentação enviada"; outras respostas avisam a equipe.
+- **FIM DE ANO - ESCOLAS** (qualificação): gatilho "respondeu o disparo" com o modelo `douratto_escola_proposta` ({{1}} primeiro nome, {{2}} escola). "Quero ver" → mensagem + PDF → "Apresentação enviada" → Nº de pessoas → Data pretendida (campos `numero_pessoas` e `data_pretendida`) → "Qualificado" + tarefa "Montar proposta". 24 h sem resposta → tarefa, sem insistir. Pedido para parar → confirmação, etiqueta "opt-out marketing", tarefa e descadastro.
+- Funil "Confraternização Fim de Ano 2026" com as mesmas etapas do Kommo. Automação não marca ganho/perda (regra do CRO): o opt-out vira tarefa em vez de "Venda perdida".
+
+Recursos novos usados: menu com **botões de resposta** (API oficial; no QR Code sai numerado), negociação **criar ou mover**, **arquivo do computador** no bloco de mídia (função `flow-media`, link público, até 16 MB) e **confirmação automática do SAIR** (texto em `wa_channel_settings.optout_reply`). Teste: `tests/flows/douratto.test.mjs`.

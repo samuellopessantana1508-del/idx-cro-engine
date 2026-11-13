@@ -9,6 +9,7 @@ import { blockOf, daysLabel, groupOf, RULE_FIELDS, TEXT_OPS, TRIGGER_KINDS, UNIT
 
 export type ConfigCtx = {
   flowId: string;
+  tenantId: string;
   canConfigure: boolean;
   notify: (m: string) => void;
   stages: Stage[];
@@ -240,7 +241,8 @@ function Form({ kind, c, set, ctx }: { kind: NodeType; c: Record<string, any>; s
               <button key={id} type="button" className={(c.mediaType ?? "image") === id ? "is-on" : ""} onClick={() => set({ mediaType: id })}>{l}</button>
             ))}
           </div>
-          <L label="Link do arquivo" hint="Endereço público (https). Ex.: link do Google Drive com “qualquer pessoa com o link”, ou do seu site.">
+          <MediaUpload ctx={ctx} onUploaded={(f) => set({ url: f.url, mediaType: f.media_type, ...(f.media_type === "document" ? { fileName: f.file_name } : {}) })} />
+          <L label="Link do arquivo" hint="Ou cole um endereço público (https). Ex.: link do Google Drive com “qualquer pessoa com o link”, ou do seu site.">
             <input className="crm-input" value={c.url ?? ""} placeholder="https://…" onChange={(e) => set({ url: e.target.value.trim() })} />
           </L>
           {c.mediaType === "document" && <L label="Nome do arquivo"><input className="crm-input" value={c.fileName ?? ""} placeholder="tabela-de-precos.pdf" onChange={(e) => set({ fileName: e.target.value })} /></L>}
@@ -269,10 +271,15 @@ function Form({ kind, c, set, ctx }: { kind: NodeType; c: Record<string, any>; s
             ))}
             {raw.length < 10 && <button type="button" className="crm-btn ghost sm" onClick={() => setOpts([...raw, ""])}><Plus size={14} /> Opção</button>}
           </div>
+          <label className="crm-check">
+            <input type="checkbox" checked={!!c.buttons} disabled={opts.length > 3} onChange={(e) => set({ buttons: e.target.checked })} />
+            Mostrar como botões (API oficial do WhatsApp, até 3 opções de até 20 letras)
+          </label>
+          {c.buttons && opts.some((o) => o.length > 20) && <p className="fz-note warn">Botões mostram só 20 letras: encurte as opções.</p>}
           <L label="Esperar a escolha por"><Duration amount={c.timeout ?? 24} unit={c.timeoutUnit ?? "hours"} onAmount={(n) => set({ timeout: n })} onUnit={(u) => set({ timeoutUnit: u })} /></L>
           <L label="Rodapé (opcional)" hint="Se vazio: “Responda com o número da opção.”"><input className="crm-input" value={c.footer ?? ""} onChange={(e) => set({ footer: e.target.value })} /></L>
           <Bubble text={`${c.text ?? ""}\n\n${opts.map((o, i) => `${["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"][i]} ${o}`).join("\n")}\n\n${c.footer || "_Responda com o número da opção._"}`} />
-          <p className="fz-note">O cliente pode responder o número (“2”) ou escrever a opção (“falar com atendente”). Os botões nativos do WhatsApp não aparecem mais para números comuns — por isso o menu é numerado.</p>
+          <p className="fz-note">O cliente pode tocar no botão, responder o número (“2”) ou escrever a opção (“falar com atendente”). Botões só aparecem pela API oficial; pelo QR Code o menu sai numerado.</p>
         </>
       );
     }
@@ -388,15 +395,16 @@ function Form({ kind, c, set, ctx }: { kind: NodeType; c: Record<string, any>; s
       return (
         <>
           <div className="fz-seg">
-            <button type="button" className={c.action !== "move" ? "is-on" : ""} onClick={() => set({ action: "create" })}>Criar negociação</button>
-            <button type="button" className={c.action === "move" ? "is-on" : ""} onClick={() => set({ action: "move" })}>Mover de etapa</button>
+            <button type="button" className={!c.action || c.action === "create" ? "is-on" : ""} onClick={() => set({ action: "create" })}>Criar</button>
+            <button type="button" className={c.action === "upsert" ? "is-on" : ""} onClick={() => set({ action: "upsert" })}>Criar ou mover</button>
+            <button type="button" className={c.action === "move" ? "is-on" : ""} onClick={() => set({ action: "move" })}>Mover</button>
           </div>
-          <L label={c.action === "move" ? "Mover para" : "Etapa (opcional)"} hint={c.action === "move" ? undefined : "Se vazio, entra na primeira etapa do funil padrão."}>
+          <L label={c.action === "move" || c.action === "upsert" ? "Etapa" : "Etapa (opcional)"} hint={c.action === "upsert" ? "Move a negociação aberta para esta etapa; se não houver, cria nela." : c.action === "move" ? undefined : "Se vazio, entra na primeira etapa do funil padrão."}>
             <StageSelect value={c.stage_id ?? null} onChange={(v) => set({ stage_id: v })} ctx={ctx} />
           </L>
           {c.action !== "move" && (
             <>
-              <L label="Título"><VarText value={c.title ?? ""} onChange={(v) => set({ title: v })} rows={1} /></L>
+              <L label="Título (se criar)"><VarText value={c.title ?? ""} onChange={(v) => set({ title: v })} rows={1} /></L>
               <L label="Valor estimado (opcional)"><input className="crm-input" type="number" min={0} value={c.value ?? ""} onChange={(e) => set({ value: e.target.value === "" ? null : Number(e.target.value) })} /></L>
             </>
           )}
@@ -520,5 +528,29 @@ function WebhookInfo({ ctx }: { ctx: ConfigCtx }) {
         try { setSecret(await api.flowHookSecret(ctx.flowId, true)); ctx.notify("Endereço trocado — o antigo parou de funcionar."); } catch (e) { ctx.notify(errorText(e)); } finally { setBusy(false); }
       }}><RefreshCw size={14} /> Trocar endereço</button>
     </>
+  );
+}
+
+function MediaUpload({ ctx, onUploaded }: { ctx: ConfigCtx; onUploaded: (f: api.FlowMediaUpload) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  async function pick(file: File | undefined) {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const f = await api.uploadFlowMedia(ctx.tenantId, file);
+      onUploaded(f);
+      ctx.notify(`Arquivo “${f.file_name}” enviado`);
+    } catch (e) { ctx.notify(errorText(e)); } finally { setBusy(false); if (input.current) input.current.value = ""; }
+  }
+  return (
+    <div className="fz-upload">
+      <input ref={input} type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.webp,.mp4,.ogg,.mp3,.m4a,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+        onChange={(e) => void pick(e.target.files?.[0])} />
+      <button type="button" className="crm-btn ghost sm" disabled={busy || !ctx.canConfigure} onClick={() => input.current?.click()}>
+        {busy ? "Enviando…" : "Enviar arquivo do computador"}
+      </button>
+      <span className="fz-note">PDF, imagem, vídeo, áudio ou Office — até 16 MB.</span>
+    </div>
   );
 }

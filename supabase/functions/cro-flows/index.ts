@@ -141,6 +141,14 @@ function makeEffects(run: Run, flow: Flow, contact: { info: ContactInfo; row: an
       if (msg.kind === "text") {
         if (!msg.text.trim()) return;
         row.body = msg.text.slice(0, 4096);
+        if (msg.buttons) {
+          const { data: inst } = await svc.from("whatsapp_instances").select("provider").eq("id", run.instance_id).maybeSingle();
+          if ((inst as { provider?: string } | null)?.provider === "cloud_api") {
+            // API oficial: botões de resposta de verdade (até 3, título até 20 letras)
+            row.body = msg.buttons.text.slice(0, 1024);
+            row.interactive = { type: "buttons", options: msg.buttons.options.map((o) => o.slice(0, 20)), footer: msg.buttons.footer?.slice(0, 60) ?? null };
+          }
+        }
       } else {
         if (!/^https?:\/\//.test(msg.url)) throw new Error("Arquivo sem link válido");
         Object.assign(row, { body: (msg.caption ?? "").slice(0, 1024), media_url: msg.url, media_type: msg.mediaType, file_name: msg.fileName ?? null });
@@ -184,6 +192,11 @@ function makeEffects(run: Run, flow: Flow, contact: { info: ContactInfo; row: an
       }
       const { data: open } = await svc.from("crm_deals").select("id, stage_id").eq("tenant_id", run.tenant_id).eq("contact_id", contactId).eq("status", "open")
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      // "criar ou mover": move a negociação aberta; se não houver, cria na etapa escolhida
+      if (cfg.action === "upsert" && open) {
+        if (stage && open.stage_id !== stage.id) must(await svc.from("crm_deals").update({ stage_id: stage.id }).eq("id", open.id), "negociação");
+        return;
+      }
       if (cfg.action === "move") {
         if (!open) throw new Error("Contato não tem negociação em aberto para mover");
         if (!stage || open.stage_id === stage.id) return;

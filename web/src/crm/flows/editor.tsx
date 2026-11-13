@@ -244,7 +244,7 @@ function EditorInner({ flowId, onBack }: { flowId: string; onBack: () => void })
   const shownEdges = useMemo(() => edges.map((e) => (trace.edges.includes(e.id) ? { ...e, data: { sim: true }, animated: true } : e)), [edges, trace]);
 
   const sel = nodes.find((n) => n.id === selected) ?? null;
-  const cfgCtx: ConfigCtx = { flowId, canConfigure: crm.access.configure, notify: crm.notify, stages: crm.stages, pipelines: crm.pipelines, members: crm.members, memberLabel: crm.memberLabel, tags, campaigns };
+  const cfgCtx: ConfigCtx = { flowId, tenantId: crm.tenantId, canConfigure: crm.access.configure, notify: crm.notify, stages: crm.stages, pipelines: crm.pipelines, members: crm.members, memberLabel: crm.memberLabel, tags, campaigns };
 
   const setStatus = async (status: "active" | "paused") => {
     if (!flow) return;

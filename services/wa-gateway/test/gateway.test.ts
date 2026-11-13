@@ -164,6 +164,8 @@ test("disparo: envia um por vez respeitando o intervalo; resposta e SAIR chegam 
   // SAIR vindo de um @lid com número alternativo
   sock.emit("messages.upsert", { type: "notify", messages: [{ key: { remoteJid: "77788899@lid", remoteJidAlt: `${ph(4)}@s.whatsapp.net`, id: `IN${TAG}2`, fromMe: false }, message: { conversation: "sair" } }] });
   await wait(() => sql(`select count(*) from wa_optouts where tenant_id = '${A}' and phone = '${ph(4)}'`) === "1");
+  // quem pediu SAIR recebe uma confirmação (uma só)
+  await wait(() => sock.sent.some((m) => /^Combinado! Registramos o seu pedido/.test(String(m.text ?? ""))), 15000);
   // mensagem enviada pelo celular também aparece na conversa
   sock.emit("messages.upsert", { type: "notify", messages: [{ key: { remoteJid: `${first}@s.whatsapp.net`, id: `OUT${TAG}3`, fromMe: true }, message: { conversation: "respondi pelo celular" } }] });
   await wait(() => sql(`select direction from whatsapp_messages where wa_message_id = 'OUT${TAG}3'`) === "outbound");
@@ -188,8 +190,8 @@ test("automação: mensagem recebida dispara resposta com texto e imagem pelo me
   const before = sock.sent.length;
   const p = ph(8); // (final 77 simula número sem 9º dígito no FakeSock; aqui não)
   sock.emit("messages.upsert", { type: "notify", messages: [{ key: { remoteJid: `${p}@s.whatsapp.net`, id: `INF${TAG}`, fromMe: false }, pushName: "Marta Alves", messageTimestamp: Math.floor(Date.now() / 1000), message: { conversation: "me manda o catalogo" } }] });
-  await wait(() => sock.sent.length >= before + 3, 20000);
-  const out = sock.sent.slice(before);
+  await wait(() => sock.sent.slice(before).filter((m) => !/^Combinado! Registramos/.test(String(m.text ?? ""))).length >= 3, 20000);
+  const out = sock.sent.slice(before).filter((m) => !/^Combinado! Registramos/.test(String(m.text ?? "")));
   assert.equal(out[0].text, "Oi Marta, segue:");
   assert.deepEqual(out[1].content, { image: { url: "https://exemplo.com/cat.jpg" }, caption: "Catálogo" });
   assert.equal(out[2].content.document.url, "https://exemplo.com/tabela%20precos.pdf");

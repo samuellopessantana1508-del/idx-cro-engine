@@ -34,7 +34,7 @@ export type ContactInfo = {
 };
 
 export type OutMsg =
-  | { kind: "text"; text: string }
+  | { kind: "text"; text: string; buttons?: { text: string; options: string[]; footer?: string } }
   | { kind: "media"; mediaType: "image" | "video" | "audio" | "document"; url: string; caption?: string; fileName?: string };
 
 /** Efeitos colaterais — o servidor grava no banco; o simulador só registra. */
@@ -42,7 +42,7 @@ export interface FlowEffects {
   send(msg: OutMsg, nodeId: string): Promise<void>;
   tag(action: "add" | "remove", tag: string): Promise<void>;
   setField(field: string, value: string): Promise<void>;
-  crmDeal(cfg: { action: "create" | "move"; stage_id?: string | null; title?: string; value?: number | null }): Promise<void>;
+  crmDeal(cfg: { action: "create" | "move" | "upsert"; stage_id?: string | null; title?: string; value?: number | null }): Promise<void>;
   task(cfg: { title: string; type: string; due_in_hours: number; description?: string }): Promise<void>;
   assign(cfg: { user_id?: string | null; strategy?: "round_robin" | "user" }): Promise<void>;
   notify(cfg: { message: string; to?: string | null }): Promise<void>;
@@ -437,7 +437,9 @@ export async function step(graph: Graph, state: RunState, ctx: FlowContext, inpu
           const opts = menuOptions(c);
           const emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
           const body = `${text(c.text ?? "")}\n\n${opts.map((o, i) => `${emoji[i]} ${o}`).join("\n")}${c.footer ? `\n\n${text(c.footer)}` : "\n\n_Responda com o número da opção._"}`;
-          await fx.send({ kind: "text", text: body }, node.id);
+          // botões clicáveis (API oficial, até 3 opções); no QR Code sai o menu numerado
+          const buttons = c.buttons && opts.length <= 3 ? { text: text(c.text ?? ""), options: opts, footer: c.footer ? text(c.footer) : undefined } : undefined;
+          await fx.send({ kind: "text", text: body, buttons }, node.id);
           s.status = "waiting";
           s.wait = { kind: "menu", node: node.id, until: new Date(ctx.now.getTime() + delayMs(c.timeout ?? 24, c.timeoutUnit ?? "hours")).toISOString() };
           break;
@@ -497,7 +499,7 @@ export async function step(graph: Graph, state: RunState, ctx: FlowContext, inpu
           goto(nextFrom(graph, node.id));
           break;
         case "crm_deal":
-          await fx.crmDeal({ action: c.action === "move" ? "move" : "create", stage_id: c.stage_id ?? null, title: c.title ? text(c.title) : undefined, value: c.value != null && c.value !== "" ? Number(c.value) : null });
+          await fx.crmDeal({ action: c.action === "move" ? "move" : c.action === "upsert" ? "upsert" : "create", stage_id: c.stage_id ?? null, title: c.title ? text(c.title) : undefined, value: c.value != null && c.value !== "" ? Number(c.value) : null });
           goto(nextFrom(graph, node.id));
           break;
         case "task":

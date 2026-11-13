@@ -914,3 +914,20 @@ export async function quickReplySave(tenantId: string, id: string | null, title:
 export async function quickReplyDelete(id: string) {
   check(await db().rpc("wa_quick_reply_delete", { p_id: id }));
 }
+
+// ---------- Arquivos das automações (enviados pelo computador) ----------
+export type FlowMediaUpload = { id: string; url: string; file_name: string; mime: string; media_type: "image" | "video" | "audio" | "document"; size: number };
+export async function uploadFlowMedia(tenantId: string, file: File): Promise<FlowMediaUpload> {
+  const { data } = await db().auth.getSession();
+  const form = new FormData();
+  form.append("tenant_id", tenantId);
+  form.append("file", file);
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/flow-media`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${data.session?.access_token}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+    body: form,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `Falha ${res.status} ao enviar o arquivo`);
+  return json as FlowMediaUpload;
+}

@@ -66,3 +66,11 @@ test("modelos: texto do corpo e número de variáveis", () => {
   ] });
   assert.deepEqual([t.status, t.body_text, t.header_text, t.param_count], ["APPROVED", "Olá {{1}}, sua {{2}} chegou. {{1}}!", "Oferta", 2]);
 });
+
+test("botões de resposta (menu da automação) no formato da Meta", () => {
+  const p = cloudPayload({ phone: "5564999990000", body: "Posso te enviar a apresentação?", interactive: { type: "buttons", options: ["Quero receber", "Agora não", "Uma opção bem comprida demais"], footer: "Douratto" } });
+  assert.equal(p.type, "interactive");
+  const i = p.interactive as any;
+  assert.deepEqual([i.type, i.body.text, i.footer.text], ["button", "Posso te enviar a apresentação?", "Douratto"]);
+  assert.deepEqual(i.action.buttons.map((b: any) => [b.reply.id, b.reply.title]), [["opt1", "Quero receber"], ["opt2", "Agora não"], ["opt3", "Uma opção bem compri"]]);
+});

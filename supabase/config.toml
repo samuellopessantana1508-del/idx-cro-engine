@@ -71,3 +71,6 @@ verify_jwt = false   # webhook da Meta não manda JWT; a tela é validada pela p
 
 [functions.auth-email]
 verify_jwt = false   # tela de login (sem sessão); limite de pedidos na própria função
+
+[functions.flow-media]
+verify_jwt = false   # o link do arquivo é público (o WhatsApp baixa); envio exige login na própria função
