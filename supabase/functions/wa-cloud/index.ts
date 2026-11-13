@@ -30,7 +30,7 @@ const json = (d: unknown, s = 200) => new Response(JSON.stringify(d), { status: 
 
 type Secret = {
   instance_id: string; tenant_id: string; status: string; phone_number_id: string | null; waba_id: string | null;
-  access_token_enc: string; app_secret_enc: string | null; verify_token: string;
+  access_token_enc: string; app_secret_enc: string | null; verify_token: string; source?: string;
 };
 
 async function secretFor(instanceId: string): Promise<Secret | null> {
@@ -145,7 +145,11 @@ async function testConnection(instanceId: string) {
   // liga o app da Meta à conta (sem isso o webhook não recebe mensagens)
   let warning: string | null = null;
   if (sec.waba_id) {
-    const sub = await graph(token, `${sec.waba_id}/subscribed_apps`, { method: "POST", body: "{}" });
+    // conexão pelo cadastro incorporado: o próprio CRO aponta o webhook desta conta para o endereço da empresa
+    const body = sec.source === "embedded"
+      ? JSON.stringify({ override_callback_uri: `${SUPABASE_URL}/functions/v1/wa-cloud/webhook/${instanceId}`, verify_token: sec.verify_token })
+      : "{}";
+    const sub = await graph(token, `${sec.waba_id}/subscribed_apps`, { method: "POST", body });
     if (!sub.ok) warning = `Não foi possível ligar o webhook à conta: ${classifyCloudError(sub.body.error ?? {}).message}`;
   } else {
     warning = "Sem o ID da conta (WABA ID) não é possível buscar os modelos aprovados.";
@@ -170,6 +174,76 @@ async function syncTemplates(instanceId: string) {
   const { data, error } = await svc.rpc("wa_templates_replace", { p_instance: instanceId, p_templates: all });
   if (error) return { ok: false, error: error.message };
   return { ok: true, total: data, approved: all.filter((t) => t.status === "APPROVED").length };
+}
+
+// ---------------------------------------------------------------------------
+// Cadastro incorporado da Meta (Embedded Signup): "Conectar WhatsApp Oficial"
+// ---------------------------------------------------------------------------
+const APP_ID = () => Deno.env.get("META_APP_ID") ?? "";
+const APP_SECRET = () => Deno.env.get("META_APP_SECRET") ?? "";
+const CONFIG_ID = () => Deno.env.get("WA_EMBEDDED_CONFIG_ID") ?? "";
+const SDK_VERSION = () => Deno.env.get("WA_EMBEDDED_SDK_VERSION") || Deno.env.get("META_GRAPH_VERSION") || VERSION;
+
+function embeddedAvailable() {
+  return !!(APP_ID() && APP_SECRET() && CONFIG_ID());
+}
+
+async function graphApp(path: string) {
+  const res = await fetch(`${GRAPH}/${VERSION}/${path}`, { signal: AbortSignal.timeout(20_000) });
+  const body = await res.json().catch(() => ({})) as Record<string, any>;
+  return { ok: res.ok && !body.error, status: res.status, body };
+}
+
+/** Descobre a conta (WABA) e o número quando a janela da Meta não informou (ex.: popup fechado cedo). */
+async function discoverAssets(token: string): Promise<{ waba_id: string | null; phone_number_id: string | null }> {
+  const dbg = await graphApp(`debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(`${APP_ID()}|${APP_SECRET()}`)}`);
+  const scopes = (dbg.body?.data?.granular_scopes ?? []) as { scope: string; target_ids?: string[] }[];
+  const waba = scopes.find((x) => x.scope === "whatsapp_business_management")?.target_ids?.[0]
+    ?? scopes.find((x) => x.scope === "whatsapp_business_messaging")?.target_ids?.[0] ?? null;
+  if (!waba) return { waba_id: null, phone_number_id: null };
+  const nums = await graph(token, `${waba}/phone_numbers?fields=id,display_phone_number,verified_name`);
+  return { waba_id: waba, phone_number_id: nums.body?.data?.[0]?.id ?? null };
+}
+
+async function embeddedConnect(tenantId: string, userId: string, input: { code: string; waba_id?: string; phone_number_id?: string; business_id?: string }) {
+  if (!embeddedAvailable()) return { ok: false, error: "O cadastro incorporado da Meta ainda não foi configurado no servidor (WA_EMBEDDED_CONFIG_ID)." };
+  // 1) troca o código pelo token da empresa (fica no nome do Business Manager do cliente)
+  const ex = await graphApp(`oauth/access_token?client_id=${encodeURIComponent(APP_ID())}&client_secret=${encodeURIComponent(APP_SECRET())}&code=${encodeURIComponent(input.code)}`);
+  const token = ex.body?.access_token as string | undefined;
+  if (!ex.ok || !token) return { ok: false, error: `A Meta recusou a autorização: ${classifyCloudError(ex.body?.error ?? { message: `HTTP ${ex.status}` }).message}` };
+
+  let wabaId = String(input.waba_id ?? "").replace(/\D/g, "") || null;
+  let phoneId = String(input.phone_number_id ?? "").replace(/\D/g, "") || null;
+  if (!wabaId || !phoneId) {
+    const found = await discoverAssets(token);
+    wabaId = wabaId ?? found.waba_id;
+    phoneId = phoneId ?? found.phone_number_id;
+  }
+  if (!wabaId || !phoneId) return { ok: false, error: "A Meta não informou a conta e o número. Refaça a conexão escolhendo o número do WhatsApp." };
+
+  // 2) guarda (token e chave do app criptografados) e marca como cadastro incorporado
+  const { data: saved, error } = await svc.rpc("wa_cloud_save", {
+    p_tenant_id: tenantId, p_phone_number_id: phoneId, p_waba_id: wabaId,
+    p_token_enc: await encrypt(token), p_token_hint: token.slice(-4), p_secret_enc: await encrypt(APP_SECRET()),
+    p_keep_secret: false, p_user: userId,
+  });
+  if (error) return { ok: false, error: error.message };
+  const inst = (saved as { instance_id: string }).instance_id;
+  // 3) registra o número na API (o PIN de 6 dígitos vira a confirmação em duas etapas do número)
+  const pin = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, "0");
+  const reg = await graph(token, `${phoneId}/register`, { method: "POST", body: JSON.stringify({ messaging_product: "whatsapp", pin }) });
+  await svc.from("wa_cloud_credentials").update({
+    source: "embedded", business_id: String(input.business_id ?? "").replace(/\D/g, "") || null,
+    pin_enc: reg.ok ? await encrypt(pin) : null,
+  }).eq("instance_id", inst);
+  // número que já rodava na API: a Meta responde que já está registrado — segue normalmente
+  const regWarning = reg.ok ? null : classifyCloudError(reg.body?.error ?? {}).message;
+
+  // 4) liga o webhook desta conta ao CRO, confere o número e baixa os modelos
+  const test = await testConnection(inst);
+  if (test.ok) await syncTemplates(inst).catch(() => null);
+  const already = /already|registrad|registered/i.test(String(reg.body?.error?.message ?? "") + String(reg.body?.error?.error_user_msg ?? ""));
+  return { ok: test.ok, error: test.ok ? undefined : test.error, warning: test.ok ? (test.warning ?? (regWarning && !already ? `Registro do número: ${regWarning}` : null)) : undefined };
 }
 
 // ---------------------------------------------------------------------------
@@ -272,7 +346,19 @@ Deno.serve(async (req) => {
       const r = await syncTemplates(inst);
       return r.ok ? json(r) : json({ error: r.error }, 400);
     }
+    if (action === "embedded_config") {
+      // dados públicos para abrir o popup da Meta (nada secreto)
+      return json({ available: embeddedAvailable(), app_id: APP_ID() || null, config_id: CONFIG_ID() || null, version: SDK_VERSION() });
+    }
     if (!ua.access.configure) return json({ error: "Somente gestores podem configurar a API oficial" }, 403);
+
+    if (action === "embedded_connect") {
+      const code = String(body.code ?? "").trim();
+      if (!code) return json({ error: "A Meta não devolveu a autorização. Tente de novo." }, 400);
+      const r = await embeddedConnect(tenantId, ua.user.id, { code, waba_id: body.waba_id, phone_number_id: body.phone_number_id, business_id: body.business_id });
+      const { data: channel } = await ua.db.rpc("wa_channel_get", { p_tenant_id: tenantId });
+      return json({ ok: r.ok, error: r.error, warning: r.warning ?? null, channel }, r.ok || channel ? 200 : 400);
+    }
 
     if (action === "save") {
       const phoneNumberId = String(body.phone_number_id ?? "").replace(/\D/g, "");

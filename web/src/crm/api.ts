@@ -653,6 +653,7 @@ export type WaChannel = {
     id: string; status: string; phone: string | null; phone_number_id: string | null; waba_id: string | null;
     verified_name: string | null; quality: string | null; last_error: string | null; checked_at: string | null;
     webhook_seen_at: string | null; token_hint: string | null; has_app_secret: boolean; verify_token: string | null; templates: number;
+    source?: "manual" | "embedded"; business_id?: string | null;
   } | null;
 };
 export type WaTemplate = { id: string; name: string; language: string; status: string; category: string | null; body_text: string | null; header_text: string | null; param_count: number; components: { type: string; format?: string }[] };
@@ -678,6 +679,10 @@ async function cloudFn<T>(body: Record<string, unknown>): Promise<T> {
 export type CloudSaveResult = { ok: boolean; error?: string; warning?: string | null; channel: WaChannel };
 export const waCloudSave = (tenantId: string, input: { phone_number_id: string; waba_id: string; access_token?: string; app_secret?: string }) =>
   cloudFn<CloudSaveResult>({ action: "save", tenant_id: tenantId, ...input });
+export type EmbeddedConfig = { available: boolean; app_id: string | null; config_id: string | null; version: string };
+export const waEmbeddedConfig = (tenantId: string) => cloudFn<EmbeddedConfig>({ action: "embedded_config", tenant_id: tenantId });
+export const waEmbeddedConnect = (tenantId: string, input: { code: string; waba_id?: string | null; phone_number_id?: string | null; business_id?: string | null }) =>
+  cloudFn<CloudSaveResult>({ action: "embedded_connect", tenant_id: tenantId, ...input });
 export const waCloudTest = (tenantId: string) => cloudFn<CloudSaveResult>({ action: "test", tenant_id: tenantId });
 export const waCloudRemove = (tenantId: string) => cloudFn<{ ok: boolean; channel: WaChannel }>({ action: "remove", tenant_id: tenantId });
 export const waCloudSyncTemplates = (tenantId: string) => cloudFn<{ ok: boolean; total: number; approved: number }>({ action: "sync_templates", tenant_id: tenantId });

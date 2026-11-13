@@ -211,3 +211,13 @@ Convites, "Receber link no email", "Esqueci minha senha" e confirmação do prim
 - `tenant-admin` `invite_user` / `resend_invite`: cria o acesso (ou acha a conta existente — antes dava erro para quem já tinha conta em outra empresa), vincula à empresa e manda o e-mail com o link (gerado por `auth.admin.generateLink`, sempre `…/auth/v1/verify`). A situação do envio fica em `tenant_invites.email_status/email_error/email_sent_at` e aparece na lista de acessos com o botão "Reenviar acesso".
 - `auth-email` (público): link de acesso e nova senha; só envia para quem tem conta, sempre responde igual (não revela quem tem acesso), limite de 3 pedidos por e-mail e 10 por origem por hora (`auth_email_requests`, só hashes).
 - Quem entra pelo link do convite ou de nova senha vê "Crie a sua senha" (`user_metadata.password_set`).
+
+
+### Conectar WhatsApp Oficial (cadastro incorporado da Meta)
+
+Botão "Conectar WhatsApp Oficial" em WhatsApp → Conexão → API oficial (Embedded Signup da Meta):
+1. A tela carrega o SDK do Facebook e abre `FB.login` com `config_id` (`WA_EMBEDDED_CONFIG_ID`), `response_type: code` e `sessionInfoVersion: 3`. A janela da Meta devolve o código e (por mensagem `WA_EMBEDDED_SIGNUP`) a conta (WABA), o número e o Business Manager escolhidos pelo cliente.
+2. `wa-cloud` `embedded_connect`: troca o código pelo token da empresa (`META_APP_ID`/`META_APP_SECRET`), descobre conta/número pelo `debug_token` se a janela não informou, guarda tudo criptografado (`wa_cloud_credentials.source = 'embedded'`), registra o número (`/register` com PIN de 6 dígitos guardado criptografado; "já registrado" não é erro), liga o webhook da conta ao endereço da empresa (`subscribed_apps` com `override_callback_uri` + `verify_token`), confere o número e baixa os modelos.
+3. A assinatura do webhook usa a chave do app da IDX.
+
+Configuração no app da Meta (uma vez): produto WhatsApp + Facebook Login for Business; em Login for Business → Configurações, criar uma configuração do tipo "Cadastro incorporado do WhatsApp" com as permissões `whatsapp_business_management` e `whatsapp_business_messaging` (e `business_management`); o ID dela vai no segredo `WA_EMBEDDED_CONFIG_ID`. O domínio do painel precisa estar em "Domínios permitidos para o SDK JavaScript". Para clientes fora do Business Manager da IDX, o app precisa de acesso avançado a essas permissões (análise da Meta / Tech Provider).

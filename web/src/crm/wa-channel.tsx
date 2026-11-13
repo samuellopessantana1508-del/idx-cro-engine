@@ -1,7 +1,7 @@
 // Conexão do WhatsApp: a empresa escolhe entre QR Code (motor do CRO) e a API oficial da Meta.
 // Usado em WhatsApp → Conexão e (resumido) em Disparos.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BadgeCheck, Clipboard, ExternalLink, FileText, KeyRound, QrCode, RefreshCw, Send, ShieldCheck, Trash2 } from "lucide-react";
+import { AlertTriangle, BadgeCheck, Clipboard, ExternalLink, Facebook, FileText, KeyRound, QrCode, RefreshCw, Send, ShieldCheck, Trash2 } from "lucide-react";
 import * as api from "./api";
 import type { WaChannel, WaTemplate, WaTemplateChoice } from "./api";
 import { errorText, phoneLabel, relative } from "./format";
@@ -111,6 +111,120 @@ export function WaChannelPanel({ tenantId, canConfigure, notify }: { tenantId: s
   );
 }
 
+// ---------------------------------------------------------------------------
+// "Conectar WhatsApp Oficial": cadastro incorporado da Meta (Embedded Signup)
+// ---------------------------------------------------------------------------
+type FbLoginResponse = { authResponse?: { code?: string } | null; status?: string };
+type FbSdk = { init: (o: Record<string, unknown>) => void; login: (cb: (r: FbLoginResponse) => void, o: Record<string, unknown>) => void };
+declare global { interface Window { FB?: FbSdk; fbAsyncInit?: () => void } }
+
+let sdkPromise: Promise<FbSdk> | null = null;
+function loadFacebookSdk(appId: string, version: string): Promise<FbSdk> {
+  if (sdkPromise) return sdkPromise;
+  sdkPromise = new Promise<FbSdk>((resolve, reject) => {
+    const ready = () => { window.FB!.init({ appId, autoLogAppEvents: true, xfbml: false, version }); resolve(window.FB!); };
+    if (window.FB) { ready(); return; }
+    window.fbAsyncInit = ready;
+    const el = document.createElement("script");
+    el.src = "https://connect.facebook.net/pt_BR/sdk.js";
+    el.async = true; el.defer = true; el.crossOrigin = "anonymous";
+    el.onerror = () => { sdkPromise = null; reject(new Error("Não foi possível carregar o Facebook. Libere connect.facebook.net (bloqueador de anúncios?) e tente de novo.")); };
+    document.body.appendChild(el);
+  });
+  return sdkPromise;
+}
+
+type SessionInfo = { phone_number_id?: string; waba_id?: string; business_id?: string };
+
+export function EmbeddedSignupButton({ tenantId, notify, onChannel, label = "Conectar WhatsApp Oficial", ghost }: {
+  tenantId: string; notify: (m: string) => void; onChannel: (c: WaChannel) => void; label?: string; ghost?: boolean;
+}) {
+  const [cfg, setCfg] = useState<api.EmbeddedConfig | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    api.waEmbeddedConfig(tenantId).then((c) => {
+      if (!alive) return;
+      setCfg(c);
+      // o SDK já carregado faz o popup abrir no próprio clique (navegadores bloqueiam popup atrasado)
+      if (c.available && c.app_id) loadFacebookSdk(c.app_id, c.version).catch((e) => setProblem((e as Error).message));
+    }).catch(() => setCfg({ available: false, app_id: null, config_id: null, version: "" }));
+    return () => { alive = false; };
+  }, [tenantId]);
+
+  function start() {
+    if (!cfg?.available || !cfg.config_id || !window.FB) { notify("O Facebook ainda está carregando. Tente de novo em instantes."); return; }
+    setBusy(true); setProblem(null);
+    let session: SessionInfo | null = null;
+    let cancelledAt: string | null = null;
+    const onMessage = (ev: MessageEvent) => {
+      if (!/(^|\.)facebook\.com$/.test(new URL(ev.origin).hostname)) return;
+      try {
+        const data = typeof ev.data === "string" ? JSON.parse(ev.data) : ev.data;
+        if (data?.type !== "WA_EMBEDDED_SIGNUP") return;
+        if (String(data.event).startsWith("FINISH")) session = data.data ?? {};
+        else if (data.event === "CANCEL") cancelledAt = data.data?.current_step ?? "";
+        else if (data.event === "ERROR") setProblem(String(data.data?.error_message ?? "A Meta informou um erro no cadastro."));
+      } catch { /* outras mensagens do Facebook */ }
+    };
+    window.addEventListener("message", onMessage);
+    const finish = () => { window.removeEventListener("message", onMessage); setBusy(false); };
+
+    window.FB.login((resp) => {
+      const code = resp?.authResponse?.code;
+      if (!code) {
+        finish();
+        notify(cancelledAt !== null ? "Conexão cancelada na janela da Meta." : "A janela da Meta foi fechada antes de concluir.");
+        return;
+      }
+      // a Meta manda a conta e o número por mensagem, às vezes logo depois do código
+      const t0 = Date.now();
+      const go = () => {
+        if (!session && Date.now() - t0 < 3000) { setTimeout(go, 250); return; }
+        const s: SessionInfo = session ?? {};
+        api.waEmbeddedConnect(tenantId, { code, waba_id: s.waba_id ?? null, phone_number_id: s.phone_number_id ?? null, business_id: s.business_id ?? null })
+          .then((r) => {
+            onChannel(r.channel);
+            if (r.ok) notify(r.warning ? `WhatsApp oficial conectado. Atenção: ${r.warning}` : "WhatsApp oficial conectado!");
+            else { setProblem(r.error ?? "A Meta recusou a conexão"); notify(r.error ?? "A Meta recusou a conexão"); }
+          })
+          .catch((e) => { setProblem(errorText(e)); notify(errorText(e)); })
+          .finally(finish);
+      };
+      go();
+    }, {
+      config_id: cfg.config_id,
+      response_type: "code",
+      override_default_response_type: true,
+      extras: { setup: {}, featureType: "", sessionInfoVersion: "3" },
+    });
+  }
+
+  if (cfg === null) return <Skeleton rows={1} height={40} />;
+  if (!cfg.available) {
+    return <p className="wa-warn"><AlertTriangle size={14} /> A conexão pelo Facebook ainda não foi ativada no servidor (falta o ID da configuração do cadastro incorporado da Meta). Use o preenchimento manual abaixo ou peça ao administrador da IDX.</p>;
+  }
+  return (
+    <div className="wa-embed">
+      <button type="button" className={`crm-btn ${ghost ? "ghost" : "primary"} wa-embed-btn`} disabled={busy} onClick={start}>
+        <Facebook size={16} /> {busy ? "Aguardando a Meta…" : label}
+      </button>
+      {problem && <span className="wa-conn-err"><AlertTriangle size={13} /> {problem}</span>}
+    </div>
+  );
+}
+
+const EMBED_STEPS = [
+  "Clique em “Conectar WhatsApp Oficial”. Abre uma janela da Meta — não bloqueie o popup.",
+  "Entre com a conta do Facebook que é administradora do Business Manager do cliente.",
+  "Escolha o Business Manager do cliente (não o da IDX): a conta do WhatsApp fica no nome dele.",
+  "Escolha a conta do WhatsApp Business e confirme o número certo.",
+  "Revise o nome de exibição e a categoria (número que já usa a API vem preenchido).",
+  "Autorize ler e enviar mensagens, gerenciar modelos e gerenciar a conta do WhatsApp Business.",
+];
+
 function CloudSetup({ tenantId, channel, canConfigure, notify, onChannel }: {
   tenantId: string; channel: WaChannel; canConfigure: boolean; notify: (m: string) => void; onChannel: (c: WaChannel) => void;
 }) {
@@ -123,6 +237,8 @@ function CloudSetup({ tenantId, channel, canConfigure, notify, onChannel }: {
   const [warning, setWarning] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [editing, setEditing] = useState(!c);
+  const [manual, setManual] = useState(false);
+  const embedded = c?.source === "embedded";
   const [templates, setTemplates] = useState<WaTemplate[] | null>(null);
 
   const loadTemplates = useCallback(async () => {
@@ -163,6 +279,7 @@ function CloudSetup({ tenantId, channel, canConfigure, notify, onChannel }: {
         <div className="wa-conn-text">
           <strong>{ok ? `API oficial conectada · ${phoneLabel(c!.phone)}` : c ? "API oficial com problema" : "Configurar a API oficial do WhatsApp"}</strong>
           <span className="crm-muted">
+            {ok && embedded ? "Conectado pelo Facebook (cadastro incorporado da Meta) · " : ""}
             {ok ? [c!.verified_name, c!.quality ? `qualidade ${({ GREEN: "alta", YELLOW: "média", RED: "baixa" } as Record<string, string>)[c!.quality] ?? c!.quality}` : null,
                    c!.webhook_seen_at ? `última notícia da Meta ${relative(c!.webhook_seen_at)}` : "aguardando a primeira mensagem pelo webhook"].filter(Boolean).join(" · ")
               : "Use o número cadastrado na plataforma do WhatsApp Business da Meta (Cloud API)."}
@@ -175,13 +292,24 @@ function CloudSetup({ tenantId, channel, canConfigure, notify, onChannel }: {
             <button type="button" className="crm-btn ghost" disabled={!!busy} onClick={() => run("test", () => api.waCloudTest(tenantId))}>
               <RefreshCw size={15} className={busy === "test" ? "spin" : ""} /> Testar
             </button>
-            <button type="button" className="crm-btn ghost" onClick={() => setEditing(true)}>Alterar dados</button>
+            <button type="button" className="crm-btn ghost" onClick={() => { setEditing(true); setManual(!embedded); }}>{embedded ? "Reconectar" : "Alterar dados"}</button>
             <button type="button" className="crm-btn ghost danger-text" onClick={() => setConfirmRemove(true)}><Trash2 size={15} /> Remover</button>
           </div>
         )}
       </div>
 
       {canConfigure && editing && (
+        <div className="wa-embed-box">
+          <EmbeddedSignupButton tenantId={tenantId} notify={notify} onChannel={(ch) => { onChannel(ch); if (ch.cloud?.status === "connected") { setEditing(false); setManual(false); } }} />
+          <ol className="wa-steps">{EMBED_STEPS.map((t) => <li key={t}>{t}</li>)}</ol>
+          <p className="crm-muted small">Depois disso o CRO liga o recebimento de mensagens, registra o número e baixa os modelos aprovados sozinho.</p>
+          <div className="wa-cloud-actions" style={{ justifyContent: "flex-start" }}>
+            <button type="button" className="crm-link small" onClick={() => setManual((v) => !v)}>{manual ? "Esconder o preenchimento manual" : "Prefiro preencher os dados manualmente (token do usuário do sistema)"}</button>
+            {c && <button type="button" className="crm-link small" onClick={() => { setEditing(false); setManual(false); }}>Cancelar</button>}
+          </div>
+        </div>
+      )}
+      {canConfigure && editing && manual && (
         <form className="wa-cloud-form" onSubmit={(e) => { e.preventDefault(); void run("save", () => api.waCloudSave(tenantId, { phone_number_id: pnid, waba_id: waba, access_token: token || undefined, app_secret: secret || undefined })); }}>
           <div className="crm-form-grid">
             <Field label="ID do número (Phone Number ID)" hint="WhatsApp → Configuração da API, no app da Meta">
@@ -208,7 +336,10 @@ function CloudSetup({ tenantId, channel, canConfigure, notify, onChannel }: {
       )}
       {!canConfigure && !c && <p className="crm-muted small">Peça a um gestor para configurar a API oficial.</p>}
 
-      {c && webhookUrl && canConfigure && (
+      {c && embedded && canConfigure && (
+        <p className="crm-muted small"><ShieldCheck size={12} /> Recebimento de mensagens ligado automaticamente pela Meta para esta conta{c.business_id ? ` · Business Manager ${c.business_id}` : ""}.</p>
+      )}
+      {c && webhookUrl && canConfigure && !embedded && (
         <div className="wa-cloud-hook">
           <h4 className="wa-sub">Webhook (para receber mensagens)</h4>
           <ol className="wa-steps">

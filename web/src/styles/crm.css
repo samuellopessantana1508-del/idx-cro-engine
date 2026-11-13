@@ -1144,3 +1144,10 @@ kbd {
   .wa-copy { grid-template-columns: minmax(0, 1fr) auto; }
   .wa-copy span { grid-column: 1 / -1; }
 }
+
+/* Conectar WhatsApp Oficial (cadastro incorporado da Meta) */
+.wa-embed-box { display: grid; gap: 10px; border: 1px dashed var(--line); border-radius: 10px; padding: 14px; background: var(--soft); }
+.wa-embed { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wa-embed .crm-btn.primary.wa-embed-btn { background: #1877f2; border-color: #1877f2; color: #fff; }
+.wa-embed .crm-btn.primary.wa-embed-btn:hover:not(:disabled) { background: #166fe0; border-color: #166fe0; }
+.crm-btn.ghost.wa-embed-btn { background: var(--paper); color: #1877f2; }
