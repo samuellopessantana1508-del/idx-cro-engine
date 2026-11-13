@@ -10,6 +10,7 @@ import {
   type Graph, type RunState, type FlowEffects, type ContactInfo, type FlowEvent, type OutMsg,
 } from "../_shared/flow-core.ts";
 import { chatReply } from "../_shared/ai-chat.ts";
+import { phoneVariants } from "../_shared/phone-variants.ts";
 
 const svc: SupabaseClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 const ALLOW_HTTP_WEBHOOK = Deno.env.get("FLOW_WEBHOOK_ALLOW_HTTP") === "1"; // só testes locais
@@ -89,7 +90,7 @@ async function loadContact(tenant: string, phone: string, crmId: string | null, 
     const { data } = await svc.from("whatsapp_conversations").select("whatsapp_contacts(push_name)").eq("id", convId).maybeSingle();
     push = (data as any)?.whatsapp_contacts?.push_name ?? null;
   }
-  const { data: opt } = await svc.from("wa_optouts").select("phone").eq("tenant_id", tenant).eq("phone", phone).limit(1).maybeSingle();
+  const { data: opt } = await svc.from("wa_optouts").select("phone").eq("tenant_id", tenant).in("phone", phoneVariants(phone)).limit(1).maybeSingle();
   return {
     row,
     info: {
@@ -369,7 +370,7 @@ async function startRun(flow: Flow, phone: string, opts: {
   const instance = opts.instanceId ?? (await gatewayInstance(flow.tenant_id)) ?? flow.instance_id;
   let crmId = opts.crmContactId ?? null;
   if (!crmId) {
-    const { data } = await svc.from("crm_contacts").select("id").eq("tenant_id", flow.tenant_id).eq("phone", phone).is("merged_into_id", null).limit(1).maybeSingle();
+    const { data } = await svc.from("crm_contacts").select("id").eq("tenant_id", flow.tenant_id).in("phone", phoneVariants(phone)).is("merged_into_id", null).limit(1).maybeSingle();
     crmId = (data?.id as string) ?? null;
   }
   const state = startState(flow.graph, opts.trigger);
@@ -444,7 +445,8 @@ async function handleMessage(item: QueueItem): Promise<string> {
   const tz = await tenantTz(item.tenant_id);
   let campaignId: string | null = null;
   if (flows.some((f) => f.trigger_kind === "campaign")) {
-    const { data } = await svc.from("wa_campaign_recipients").select("campaign_id").eq("tenant_id", item.tenant_id).eq("phone", phone)
+    // o WhatsApp às vezes entrega o celular sem o 9º dígito (556492884069 × 5564992884069)
+    const { data } = await svc.from("wa_campaign_recipients").select("campaign_id").eq("tenant_id", item.tenant_id).in("phone", phoneVariants(phone))
       .not("sent_at", "is", null).gte("sent_at", new Date(Date.now() - 30 * 86400_000).toISOString()).order("sent_at", { ascending: false }).limit(1).maybeSingle();
     campaignId = (data?.campaign_id as string) ?? null;
   }

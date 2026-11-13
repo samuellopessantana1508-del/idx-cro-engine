@@ -143,11 +143,12 @@ test("sondagem: “Já planejamos” → botões → “Quero receber” → PDF
   await until(() => sql(`select s.name from crm_deals d join crm_stages s on s.id = d.stage_id join crm_contacts c on c.id = d.contact_id where c.tenant_id = '${B}' and c.phone = '${p}' and d.status = 'open'`) === "Apresentação enviada");
 });
 
-test("sondagem: “Não vamos realiza” → agradecimento", async () => {
+test("sondagem: “Não vamos realiza” → agradecimento (WhatsApp devolve o celular sem o 9º dígito)", async () => {
   const p = ph(2);
-  await tplButton(p, "Não vamos realiza");
-  await settle(p, 2);
-  assert.match(to(p)[1].text.body, /^Entendido! 😊/);
+  const semNove = p.slice(0, 4) + p.slice(5); // 55 64 9xxxx-xxxx → o WhatsApp responde como 55 64 xxxx-xxxx
+  await tplButton(semNove, "Não vamos realiza");
+  await until(async () => { await flush(); return to(semNove).length >= 1; });
+  assert.match(to(semNove)[0].text.body, /^Entendido! 😊/);
 });
 
 test("qualificação: “Quero ver” → PDF → nº de pessoas → data → Qualificado + tarefa de proposta", async () => {
