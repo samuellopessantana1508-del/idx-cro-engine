@@ -1,7 +1,7 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, CheckCircle2, Clock, LogOut, MessageCircle, Pause, Pencil, Play, Plus, QrCode, RefreshCw, Search, Send, ShieldCheck,
-  Smartphone, Trash2, Upload, Users, X, XCircle,
+  Repeat, Smartphone, Trash2, Upload, Users, X, XCircle,
 } from "lucide-react";
 import * as api from "./api";
 import { CrmContext, useCrm } from "./context";
@@ -294,6 +294,17 @@ function CampaignEditor({ campaign, onClose, onSaved }: { campaign: WaCampaign |
     })();
     return () => { alive = false; };
   }, [tenantId, campaign?.id]);
+  // follow-ups para quem não respondeu
+  const [fus, setFus] = useState<api.WaFollowup[]>([]);
+  const [fusLoaded, setFusLoaded] = useState(!campaign?.id);
+  useEffect(() => {
+    if (!campaign?.id) return;
+    let alive = true;
+    api.waCampaignFollowups(campaign.id).then((f) => { if (alive) { setFus(f); setFusLoaded(true); } }).catch(() => setFusLoaded(true));
+    return () => { alive = false; };
+  }, [campaign?.id]);
+  const fusReady = fus.every((f) => f.after_hours > 0 && (official ? !!f.template && f.template.params.every((p) => p.trim()) : !!f.text?.trim()))
+    && fus.every((f, i) => i === 0 || f.after_hours > fus[i - 1].after_hours);
   const tplBody = templates.find((t) => t.name === tpl?.name && t.language === tpl?.language)?.body_text ?? "";
   const tplReady = !!tpl && tpl.params.every((p) => p.trim());
 
@@ -314,6 +325,11 @@ function CampaignEditor({ campaign, onClose, onSaved }: { campaign: WaCampaign |
         start_hour: startH, end_hour: endH, opt_out_footer: official ? false : footer,
       });
       if (official) await api.waCampaignSetTemplate(id, tpl);
+      if (fusLoaded) await api.waCampaignSetFollowups(id, fus.map((f) => ({
+        after_hours: f.after_hours, label: f.label ?? null,
+        text: official ? null : (f.text ?? "").trim() || null,
+        template: official && f.template ? { name: f.template.name, language: f.template.language, params: f.template.params } : null,
+      })));
       if (autoFeed !== (campaign?.auto_feed ?? false)) await api.waSetAutoFeed(id, autoFeed);
       notify(campaign ? "Disparo atualizado" : "Disparo criado — agora escolha quem vai receber");
       onSaved(id, !campaign);
@@ -325,7 +341,7 @@ function CampaignEditor({ campaign, onClose, onSaved }: { campaign: WaCampaign |
     <Modal open onClose={onClose} title={campaign ? "Editar disparo" : "Novo disparo"} width={720}
       footer={<>
         <button type="button" className="crm-btn ghost" onClick={onClose}>Cancelar</button>
-        <button type="button" className="crm-btn primary" disabled={busy || !name.trim() || (official ? !tplReady : !msgs.some((m) => m.trim()))} onClick={save}>{campaign ? "Salvar" : "Criar e escolher público"}</button>
+        <button type="button" className="crm-btn primary" disabled={busy || !name.trim() || !fusReady || (official ? !tplReady : !msgs.some((m) => m.trim()))} onClick={save}>{campaign ? "Salvar" : "Criar e escolher público"}</button>
       </>}>
       <div className="crm-form-grid">
         <Field label="Nome do disparo" span={2}><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Farmácias SP — apresentação" /></Field>
@@ -356,6 +372,8 @@ function CampaignEditor({ campaign, onClose, onSaved }: { campaign: WaCampaign |
       </div>
       )}
 
+      <FollowupsEditor value={fus} onChange={setFus} official={official} templates={templates} />
+
       <h4 className="wa-sub"><ShieldCheck size={15} /> Proteção do número</h4>
       <div className="crm-form-grid">
         <Field label="Intervalo mínimo (s)" hint="mínimo 15"><input type="number" min={15} max={600} value={minD} onChange={(e) => setMinD(Math.max(15, Number(e.target.value) || 15))} /></Field>
@@ -379,6 +397,63 @@ function CampaignEditor({ campaign, onClose, onSaved }: { campaign: WaCampaign |
       </div>
       {risky && !official && <p className="wa-warn"><AlertTriangle size={14} /> Configuração mais agressiva aumenta a chance de o WhatsApp bloquear o número. O padrão (25–60 s, 200/dia, com SAIR) é o mais seguro.</p>}
     </Modal>
+  );
+}
+
+const FU_WHEN: { h: number; label: string }[] = [
+  { h: 1, label: "1 hora depois" }, { h: 2, label: "2 horas depois" }, { h: 4, label: "4 horas depois (D0)" }, { h: 8, label: "8 horas depois" },
+  { h: 24, label: "1 dia depois (D1)" }, { h: 48, label: "2 dias depois (D2)" }, { h: 72, label: "3 dias depois (D3)" }, { h: 96, label: "4 dias depois (D4)" },
+  { h: 120, label: "5 dias depois (D5)" }, { h: 168, label: "7 dias depois (D7)" }, { h: 240, label: "10 dias depois" }, { h: 336, label: "14 dias depois" },
+];
+const FU_DEFAULT: api.WaFollowup[] = [
+  { after_hours: 4, label: "D0 +4h", text: "{Oi|Olá}, {nome}! Conseguiu ver minha mensagem? Se quiser, te passo mais detalhes. 😊" },
+  { after_hours: 24, label: "D1", text: "{Oi|Olá}, {nome}! Passando para saber se posso te ajudar com alguma informação." },
+  { after_hours: 72, label: "D3", text: "{Oi|Olá}, {nome}! Ainda está em tempo — quer que eu te envie as opções?" },
+  { after_hours: 120, label: "D5", text: "{Oi|Olá}, {nome}! Só para não deixar passar: posso te ajudar com algo?" },
+  { after_hours: 168, label: "D7", text: "{Oi|Olá}, {nome}! Como não tivemos retorno, este é meu último contato por aqui. Muito obrigado pela atenção — fico à disposição sempre que precisar. 🙏" },
+];
+
+function FollowupsEditor({ value, onChange, official, templates }: { value: api.WaFollowup[]; onChange: (v: api.WaFollowup[]) => void; official: boolean; templates: api.WaTemplate[] }) {
+  const set = (i: number, patch: Partial<api.WaFollowup>) => onChange(value.map((f, j) => (j === i ? { ...f, ...patch } : f)));
+  const add = () => {
+    const last = value[value.length - 1]?.after_hours ?? 0;
+    const next = FU_WHEN.find((w) => w.h > last)?.h ?? last + 24;
+    onChange([...value, { after_hours: next, text: "", template: null }]);
+  };
+  const outOfOrder = value.some((f, i) => i > 0 && f.after_hours <= value[i - 1].after_hours);
+  return (
+    <div className="wa-fu">
+      <h4 className="wa-sub"><Repeat size={15} /> Follow-up se não responder</h4>
+      <p className="crm-muted small">
+        Quem não responder ao disparo recebe estas mensagens, contadas a partir do envio. A sequência <b>para sozinha</b> quando a pessoa responde ou pede SAIR, e respeita o horário de envio do disparo.
+        {official && " Na API oficial cada follow-up precisa de um modelo aprovado pela Meta."}
+      </p>
+      {value.map((f, i) => (
+        <div key={i} className="wa-fu-step">
+          <div className="wa-fu-head">
+            <b>{i + 1}º follow-up{i === value.length - 1 && value.length > 1 ? " · despedida" : ""}</b>
+            <select value={f.after_hours} onChange={(e) => set(i, { after_hours: Number(e.target.value) })}>
+              {[...FU_WHEN, ...(FU_WHEN.some((w) => w.h === f.after_hours) ? [] : [{ h: f.after_hours, label: `${f.after_hours} horas depois` }])]
+                .map((w) => <option key={w.h} value={w.h}>{w.label}</option>)}
+            </select>
+            <button type="button" className="crm-icon-btn" title="Remover follow-up" onClick={() => onChange(value.filter((_, j) => j !== i))}><X size={14} /></button>
+          </div>
+          {official ? (
+            <div className="crm-form-grid">
+              <TemplateFields templates={templates} value={f.template ?? null} onChange={(t) => set(i, { template: t })} vars={VARS}
+                sample={(p) => preview(p, { nome: "Drogaria São José", empresa: "Drogaria São José", cidade: "Campinas" }, false)} />
+            </div>
+          ) : (
+            <textarea rows={3} maxLength={3500} value={f.text ?? ""} placeholder="Mensagem do follow-up — use {nome}" onChange={(e) => set(i, { text: e.target.value })} />
+          )}
+        </div>
+      ))}
+      <div className="wa-fu-actions">
+        {value.length < 10 && <button type="button" className="crm-btn ghost sm" onClick={add}><Plus size={14} /> Adicionar follow-up</button>}
+        {value.length === 0 && !official && <button type="button" className="crm-btn ghost sm" onClick={() => onChange(FU_DEFAULT)}>Usar sequência padrão (D0+4h, D1, D3, D5, D7)</button>}
+      </div>
+      {outOfOrder && <p className="wa-warn"><AlertTriangle size={14} /> Coloque os follow-ups em ordem de prazo (o 2º depois do 1º, e assim por diante).</p>}
+    </div>
   );
 }
 

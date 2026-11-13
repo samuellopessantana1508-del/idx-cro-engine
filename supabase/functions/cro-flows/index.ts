@@ -636,10 +636,14 @@ Deno.serve(async (req) => {
   try {
     const queue = await processQueue(deadline);
     const due = await processDue(deadline);
+    // follow-ups de disparo vencidos (quem não respondeu) entram na fila de envio
+    let followups = 0;
+    try { followups = Number(must(await svc.rpc("wa_followups_tick", { p_limit: 200 }), "follow-ups") ?? 0); }
+    catch (e) { console.error("follow-ups", (e as Error).message); }
     inBackground(processAiReading().catch((e) => console.error("leitura IA", (e as Error).message)));
     // API oficial: envia o que entrou na fila (respostas das automações, disparos, cadências)
     if (!internal) inBackground(internalCall("wa-cloud/flush", {}).catch((e) => console.error("api oficial", (e as Error).message)));
-    return json({ ok: true, queue, due });
+    return json({ ok: true, queue, due, followups });
   } catch (e) {
     console.error("cro-flows", (e as Error).message);
     return json({ ok: false, error: (e as Error).message }, 500);

@@ -711,6 +711,14 @@ export async function waCampaignTemplate(campaignId: string) {
   const r = check(await db().from("wa_campaigns").select("template").eq("id", campaignId).maybeSingle()) as { template: WaTemplateChoice | null } | null;
   return r?.template ?? null;
 }
+export type WaFollowup = { after_hours: number; label?: string | null; text?: string | null; template?: (WaTemplateChoice & { preview?: string | null }) | null };
+export async function waCampaignFollowups(campaignId: string): Promise<WaFollowup[]> {
+  const r = check(await db().from("wa_campaigns").select("followups").eq("id", campaignId).maybeSingle()) as { followups: WaFollowup[] | null } | null;
+  return r?.followups ?? [];
+}
+export async function waCampaignSetFollowups(campaignId: string, followups: WaFollowup[]) {
+  return check(await db().rpc("wa_campaign_set_followups", { p_campaign_id: campaignId, p_followups: followups })) as WaFollowup[];
+}
 export async function waCampaignSetTemplate(campaignId: string, template: WaTemplateChoice | null) {
   check(await db().rpc("wa_campaign_set_template", { p_campaign_id: campaignId, p_template: template }));
 }

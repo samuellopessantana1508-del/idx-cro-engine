@@ -1151,3 +1151,11 @@ kbd {
 .wa-embed .crm-btn.primary.wa-embed-btn { background: #1877f2; border-color: #1877f2; color: #fff; }
 .wa-embed .crm-btn.primary.wa-embed-btn:hover:not(:disabled) { background: #166fe0; border-color: #166fe0; }
 .crm-btn.ghost.wa-embed-btn { background: var(--paper); color: #1877f2; }
+/* follow-ups do disparo */
+.wa-fu { display: grid; gap: 10px; margin-top: 6px; }
+.wa-fu-step { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); }
+.wa-fu-head { display: flex; align-items: center; gap: 10px; }
+.wa-fu-head b { flex: 1; font-size: 13px; white-space: nowrap; }
+.wa-fu-head select { width: min(280px, 60%); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font-size: 13px; background: var(--paper); color: var(--ink); }
+.wa-fu-step textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 13px; resize: vertical; background: var(--paper); color: var(--ink); }
+.wa-fu-actions { display: flex; gap: 8px; flex-wrap: wrap; }
