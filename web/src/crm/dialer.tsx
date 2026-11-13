@@ -90,8 +90,9 @@ export function DialerView() {
     try {
       const r = await api.dialSetOutcome(lead.id, outcome, notes, dueAt, objection);
       patchRow(r);
-      if (outcome === "meeting") notify(`Reunião registrada${dueAt ? ` para ${dateTime(dueAt)}` : ""} · contato e negociação criados no CRM`);
-      else if (outcome === "callback") notify(`Retorno agendado para ${dueAt ? dateTime(dueAt) : "amanhã às 9h"}`);
+      if (outcome === "meeting") notify(`Reunião registrada${dueAt ? ` para ${dateTime(dueAt)}` : ""} · contato e negociação em “Novo lead”`);
+      else if (outcome === "callback") notify(`Retorno agendado para ${dueAt ? dateTime(dueAt) : "amanhã às 9h"} · negociação em “Novo lead”`);
+      else if (outcome === "talked") notify("Contato e negociação em “Novo lead” criados no CRM");
       loadOverview();
     } catch (e) { patchRow(before); notify(errorText(e)); }
   }
@@ -208,7 +209,7 @@ function OutcomeNoteModal({ lead, outcome, onClose, onSave }: { lead: DialLead; 
   const [notes, setNotes] = useState("");
   const [when, setWhen] = useState("");
   const [objection, setObjection] = useState("");
-  const what = outcome === "meeting" ? "Cria contato e negociação no CRM (e a reunião na agenda, se informar o horário)." : outcome === "callback" ? "Cria contato e uma tarefa de retorno (amanhã às 9h, se não informar)." : "Cria o contato no CRM com o histórico da ligação.";
+  const what = outcome === "meeting" ? "Cria contato e negociação em “Novo lead” (e a reunião na agenda, se informar o horário)." : outcome === "callback" ? "Cria contato, negociação em “Novo lead” e uma tarefa de retorno (amanhã às 9h, se não informar)." : "Cria o contato e uma negociação em “Novo lead” com o histórico da ligação.";
   const save = () => onSave(notes, fromLocalInput(when), objection.trim() || null);
   return (
     <Modal open onClose={onClose} title={`${outcomeLabel[outcome]} — ${lead.name}`} width={460}

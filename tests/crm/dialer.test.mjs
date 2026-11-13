@@ -80,6 +80,8 @@ test("reunião cria empresa, contato, histórico e negociação no CRM (uma vez 
   const c = sql(`select c.phone || '|' || co.name || '|' || co.document || '|' || c.source_channel from crm_contacts c join crm_companies co on co.id = c.company_id where c.id = '${r.data.contact_id}'`);
   assert.equal(c, "551133334444|Drogaria Central|11222333000181|outbound");
   assert.equal(sql(`select count(*) from crm_deals where contact_id = '${r.data.contact_id}' and status = 'open'`), "1");
+  // cai em "Novo lead" (1ª etapa do funil padrão)
+  assert.equal(sql(`select s.legacy_status from crm_deals d join crm_stages s on s.id = d.stage_id where d.contact_id = '${r.data.contact_id}'`), "new");
   assert.ok(Number(sql(`select count(*) from crm_timeline where contact_id = '${r.data.contact_id}' and kind = 'call_log'`)) >= 1);
   // repetir o resultado não cria outra negociação
   await seller.rpc("crm_dial_set_outcome", { p_id: id, p_outcome: "meeting" });
@@ -92,9 +94,12 @@ test("retornar cria tarefa de ligação para o dia seguinte às 9h; sem interess
   assert.equal(r.error, null, r.error?.message);
   const t = sql(`select task_type || '|' || to_char(due_at at time zone 'America/Sao_Paulo', 'HH24:MI') || '|' || ((due_at at time zone 'America/Sao_Paulo')::date - (now() at time zone 'America/Sao_Paulo')::date) from crm_tasks where contact_id = '${r.data.contact_id}' order by created_at desc limit 1`);
   assert.equal(t, "call|09:00|1");
+  // atendeu e pediu retorno também vira negociação em "Novo lead"
+  assert.equal(sql(`select count(*) || '|' || min(s.legacy_status) from crm_deals d join crm_stages s on s.id = d.stage_id where d.contact_id = '${r.data.contact_id}' and d.status = 'open'`), "1|new");
   const id2 = sql(`select id from crm_dial_leads where list_name = '${LIST}' and name = 'Farmácia Bem Estar'`);
   const r2 = await seller.rpc("crm_dial_set_outcome", { p_id: id2, p_outcome: "not_interested" });
   assert.equal(r2.data.contact_id, null);
+  assert.equal(sql(`select count(*) from crm_deals d join crm_contacts c on c.id = d.contact_id where c.phone = '5521988887777'`), "0");
   const bad = await seller.rpc("crm_dial_set_outcome", { p_id: id2, p_outcome: "vendido" });
   assert.ok(bad.error);
 });

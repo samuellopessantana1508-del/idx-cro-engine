@@ -93,7 +93,8 @@ O antigo FlowZap (sistema separado, Next.js + SQLite) virou um módulo do CRO:
   limite diário por número (padrão 200, máx. 500), janela de horário no fuso da empresa (padrão 8h–20h), rodapé
   "responda SAIR", descadastro automático por SAIR/PARAR/STOP (`wa_optouts`) respeitado em tudo, envio interrompido
   nunca é reenviado sozinho (evita duplicar), número inexistente vira "Sem WhatsApp" (checa com e sem o 9º dígito).
-- Resposta a um disparo: marca "respondeu" e avisa quem iniciou (sino).
+- Resposta a um disparo: marca "respondeu", avisa quem iniciou (sino) e cria contato + negociação em "Novo lead" (1ª etapa do funil padrão) se ainda não houver uma aberta. Quem pediu SAIR não vira lead.
+- Discador: "Conversou", "Retornar" e "Reunião" criam contato + negociação em "Novo lead" (uma por contato). "Não atendeu", "Sem interesse" e "Número inválido" não criam negociação.
 
 Correções em relação ao FlowZap original: reconexão não desiste após 3 tentativas; checagem do número antes de enviar
 (9º dígito); mensagens enviadas pelo celular entram no histórico; conversas com ID oculto (`@lid`) usam o número
