@@ -540,8 +540,9 @@ function AudienceModal({ campaignId, onClose, onDone }: { campaignId: string; on
             {result.duplicates > 0 && <li>{result.duplicates} repetido(s) ignorado(s)</li>}
             {result.invalid_phone > 0 && <li>{result.invalid_phone} sem telefone válido</li>}
             {result.opted_out > 0 && <li>{result.opted_out} já tinham pedido SAIR — não vão receber</li>}
+            {(result.sem_whatsapp ?? 0) > 0 && <li>{result.sem_whatsapp} já falharam antes por não ter WhatsApp — ficaram de fora</li>}
           </ul>
-          <p className="crm-muted small">Números que não tiverem WhatsApp são detectados na hora do envio e marcados como “Sem WhatsApp”.</p>
+          <p className="crm-muted small">Números sem WhatsApp são detectados no envio e não entram de novo nos próximos disparos.</p>
         </div>
       ) : <>
         <Tabs value={src} onChange={setSrc} tabs={[{ value: "dial_list", label: "Lista do discador" }, { value: "tag", label: "Contatos com etiqueta" }, { value: "rows", label: "Colar / importar CSV" }]} />

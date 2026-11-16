@@ -536,7 +536,7 @@ export type WaRecipient = {
   id: string; campaign_id: string; phone: string; name: string | null; vars: Record<string, string>; status: WaRecipientStatus;
   error: string | null; sent_at: string | null; replied_at: string | null; crm_contact_id: string | null; dial_lead_id: string | null;
 };
-export type WaAddResult = { added: number; invalid_phone: number; duplicates: number; opted_out: number; total: number };
+export type WaAddResult = { added: number; invalid_phone: number; duplicates: number; opted_out: number; sem_whatsapp?: number; total: number };
 export type WaOutboxItem = {
   id: string; phone: string; body: string; source: "manual" | "campaign"; status: "queued" | "sending" | "sent" | "failed" | "canceled";
   error: string | null; created_at: string; sent_at: string | null; conversation_id: string | null;
