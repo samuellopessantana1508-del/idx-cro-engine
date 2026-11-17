@@ -6,7 +6,7 @@ const supa = createClient(
 );
 
 const invalidLinkFallbackUrl = Deno.env.get("FALLBACK_URL") ?? "";
-const appUrl = Deno.env.get("APP_URL") ?? "https://cro.sanmarfidelize.com";
+const appUrl = Deno.env.get("APP_URL") ?? "https://croengine.pro";
 const redirectPageUrl = `${appUrl.replace(/\/+$/, "")}/ir.html`;
 const ENTERED_TAG = "entrou no whatsapp";
 const allowInvalidLinkFallback = Deno.env.get("ALLOW_INVALID_LINK_FALLBACK") === "true";

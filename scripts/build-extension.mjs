@@ -27,7 +27,7 @@ function env() {
 const E = env();
 const url = (E.VITE_SUPABASE_URL ?? "").replace(/\/$/, "");
 const key = E.VITE_SUPABASE_ANON_KEY ?? "";
-const app = (E.VITE_PUBLIC_APP_URL ?? "https://cro.sanmarfidelize.com").replace(/\/$/, "");
+const app = (E.VITE_PUBLIC_APP_URL ?? "https://croengine.pro").replace(/\/$/, "");
 if (!url || !key) {
   console.warn("build-extension: VITE_SUPABASE_URL/ANON_KEY ausentes — extensão não gerada");
   process.exit(0);

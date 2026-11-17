@@ -1,6 +1,6 @@
 param(
   [string]$ProjectRef = "tykeycwworjtfpssjevw",
-  [string]$AppUrl = "https://cro.sanmarfidelize.com",
+  [string]$AppUrl = "https://croengine.pro",
   [switch]$IncludeLocalDevRedirects,
   [string]$SmtpHost = $env:SMTP_HOST,
   [int]$SmtpPort = 587,

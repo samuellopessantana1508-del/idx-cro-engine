@@ -129,7 +129,7 @@ async function audit(
 // Convite por e-mail (Resend): cria/acha o usuário, vincula à empresa e manda o link
 // ---------------------------------------------------------------------------
 function appUrl(): string {
-  return (Deno.env.get("APP_URL") || Deno.env.get("SITE_URL") || "https://cro.sanmarfidelize.com").replace(/\/$/, "");
+  return (Deno.env.get("APP_URL") || Deno.env.get("SITE_URL") || "https://croengine.pro").replace(/\/$/, "");
 }
 
 type Delivery = { user_id: string | null; email_status: "sent" | "failed" | "not_configured"; email_error: string | null; email_id: string | null };

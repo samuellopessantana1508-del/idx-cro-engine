@@ -264,7 +264,7 @@ type MetaAdAccountAsset = {
 
 // Domínio público do painel. A URI abaixo é a que precisa estar em
 // Meta Developers > Facebook Login > Valid OAuth Redirect URIs.
-const PUBLIC_APP_URL = String(import.meta.env.VITE_PUBLIC_APP_URL ?? "").replace(/\/+$/, "") || "https://cro.sanmarfidelize.com";
+const PUBLIC_APP_URL = String(import.meta.env.VITE_PUBLIC_APP_URL ?? "").replace(/\/+$/, "") || "https://croengine.pro";
 const META_OAUTH_CALLBACK_URL = `${PUBLIC_APP_URL}/meta-oauth-callback.html`;
 
 // Resultado do retorno do Facebook Login (?meta=...), definido pela Edge Function meta-oauth.

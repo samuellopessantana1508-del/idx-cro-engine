@@ -168,11 +168,11 @@ assert.match(metaOauth, /check"\) === "1"/);
 assert.match(metaOauth, /canOperateTenantOrPlatform/);
 assert.doesNotMatch(metaOauth, /localhost:5177/);
 
-assert.match(metaConfig, /https:\/\/cro\.sanmarfidelize\.com/);
+assert.match(metaConfig, /https:\/\/croengine\.pro/);
 assert.match(metaConfig, /\/meta-oauth-callback\.html/);
 assert.match(metaConfig, /RETIRED_HOSTS/);
 assert.match(metaCallbackPage, /functions\/v1\/meta-oauth/);
-assert.match(appSource, /https:\/\/cro\.sanmarfidelize\.com/);
+assert.match(appSource, /https:\/\/croengine\.pro/);
 assert.doesNotMatch(appSource, /idxparasuaempresa\.com\.br\/meta-oauth-callback/);
 assert.match(metaAssets, /adsAccessToken/);
 assert.match(metaInsights, /adsAccessToken/);

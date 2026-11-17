@@ -14,7 +14,7 @@ const cors = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const json = (d: unknown, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
-const appUrl = () => (Deno.env.get("APP_URL") || Deno.env.get("SITE_URL") || "https://cro.sanmarfidelize.com").replace(/\/$/, "");
+const appUrl = () => (Deno.env.get("APP_URL") || Deno.env.get("SITE_URL") || "https://croengine.pro").replace(/\/$/, "");
 
 async function sha(text: string) {
   const d = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${SERVICE.slice(-16)}:${text}`)));

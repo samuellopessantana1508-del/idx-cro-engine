@@ -1,7 +1,7 @@
 // E-mails transacionais do CRO pelo Resend (https://resend.com).
 // Segredos (Supabase → Edge Functions → Secrets):
 //   RESEND_API_KEY  chave da API do Resend (re_...)
-//   RESEND_FROM     remetente de um domínio verificado no Resend, ex.: "IDX CRO <acesso@sanmarfidelize.com>"
+//   RESEND_FROM     remetente de um domínio verificado no Resend, ex.: "IDX CRO <acesso@croengine.pro>"
 //   RESEND_REPLY_TO (opcional) endereço para respostas
 // RESEND_API_URL só existe para os testes (servidor simulado).
 

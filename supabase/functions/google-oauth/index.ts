@@ -9,7 +9,7 @@ const supa = createClient(
 
 // URL pública do painel. Valores antigos de APP_URL apontando para o domínio
 // desativado são ignorados.
-const DEFAULT_APP_URL = "https://cro.sanmarfidelize.com";
+const DEFAULT_APP_URL = "https://croengine.pro";
 const RETIRED_HOSTS = new Set(["idxparasuaempresa.com.br", "www.idxparasuaempresa.com.br"]);
 
 function publicAppUrl(): string {
