@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Bot, CheckCheck, Clock, Headphones, Pencil, Plus, RotateCcw, Send, Trash2, UserRound, Zap } from "lucide-react";
+import { AlertTriangle, Bot, CheckCheck, Clock, Headphones, Loader2, Mic, Paperclip, Pencil, Plus, RotateCcw, Send, Square, Trash2, UserRound, X, Zap } from "lucide-react";
+import { webmOpusToOgg } from "./webm-to-ogg";
 import * as api from "./api";
 import { errorText } from "./format";
 import type { Member, WaGatewayInstance } from "./types";
@@ -23,6 +24,11 @@ export function WaReplyBox({ tenantId, conversationId, notify, onOpenConnection,
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<Pending[]>([]);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState<string | null>(null);
+  const [recording, setRecording] = useState<{ startedAt: number } | null>(null);
+  const [now, setNow] = useState(Date.now());
+  const recRef = useRef<{ rec: MediaRecorder; chunks: Blob[]; stream: MediaStream; cancel: boolean } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -75,6 +81,64 @@ export function WaReplyBox({ tenantId, conversationId, notify, onOpenConnection,
     } catch (e) { notify(errorText(e)); } finally { setBusy(false); }
   }
 
+  // relógio da gravação
+  useEffect(() => {
+    if (!recording) return;
+    const t = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(t);
+  }, [recording]);
+  // troca de conversa ou saída da tela: para a gravação sem enviar
+  useEffect(() => () => { stopRecording(true); }, [conversationId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Sobe o arquivo e manda pela conversa (o texto digitado vira legenda, exceto em áudio). */
+  async function sendFile(file: File, label: string) {
+    setUploading(label);
+    try {
+      const up = await api.uploadFlowMedia(tenantId, file);
+      const caption = up.media_type === "audio" ? null : text.trim() || null;
+      const id = await api.waSendMedia(tenantId, { url: up.url, type: up.media_type, fileName: up.file_name, caption }, { conversationId });
+      setPending((p) => [...p, { id, body: `${label}${caption ? ` — ${caption}` : ""}`, status: "queued", error: null }]);
+      if (caption) setText("");
+    } catch (e) { notify(errorText(e)); } finally { setUploading(null); }
+  }
+
+  async function startRecording() {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") { notify("Este navegador não grava áudio. Use o Chrome."); return; }
+    let stream: MediaStream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch { notify("Permita o uso do microfone no navegador para gravar o áudio."); return; }
+    // Chrome grava WebM/Opus (convertido para OGG, o áudio de voz do WhatsApp); Safari grava MP4/AAC
+    const mimeType = ["audio/webm;codecs=opus", "audio/mp4"].find((t) => MediaRecorder.isTypeSupported(t));
+    if (!mimeType) { stream.getTracks().forEach((t) => t.stop()); notify("Este navegador não grava áudio em um formato aceito pelo WhatsApp. Use o Chrome."); return; }
+    const rec = new MediaRecorder(stream, { mimeType });
+    const ctl = { rec, chunks: [] as Blob[], stream, cancel: false };
+    rec.ondataavailable = (e) => { if (e.data.size) ctl.chunks.push(e.data); };
+    rec.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      recRef.current = null;
+      setRecording(null);
+      if (ctl.cancel || !ctl.chunks.length) return;
+      try {
+        const raw = new Uint8Array(await new Blob(ctl.chunks).arrayBuffer());
+        const file = mimeType.startsWith("audio/webm")
+          ? new File([webmOpusToOgg(raw)], `audio-${Date.now()}.ogg`, { type: "audio/ogg" })
+          : new File([raw], `audio-${Date.now()}.m4a`, { type: "audio/mp4" });
+        await sendFile(file, "🎤 Áudio");
+      } catch (e) { notify(errorText(e)); }
+    };
+    rec.start(250);
+    recRef.current = ctl;
+    setRecording({ startedAt: Date.now() });
+    setNow(Date.now());
+  }
+
+  function stopRecording(cancel: boolean) {
+    const ctl = recRef.current;
+    if (!ctl) return;
+    ctl.cancel = cancel;
+    if (ctl.rec.state !== "inactive") ctl.rec.stop();
+  }
+
   if (inst === undefined || channel === undefined) return null;
   const official = channel?.active === "cloud_api";
   if (official ? !channel?.cloud : !inst) {
@@ -109,16 +173,36 @@ export function WaReplyBox({ tenantId, conversationId, notify, onOpenConnection,
         </div>
       ) : (
       <div className="wa-reply">
+        {recording ? (
+          <div className="wa-rec" role="status">
+            <span className="wa-rec-dot" />
+            <span>Gravando {fmtSecs((now - recording.startedAt) / 1000)}</span>
+            <button type="button" className="crm-btn ghost xs" onClick={() => stopRecording(true)} title="Descartar áudio"><X size={14} /> Descartar</button>
+            <button type="button" className="crm-btn primary xs" onClick={() => stopRecording(false)} title="Parar e enviar"><Square size={12} /> Enviar áudio</button>
+          </div>
+        ) : (<>
         <QuickReplies tenantId={tenantId} text={text} notify={notify} onPick={(b) => { setText(b); ref.current?.focus(); }} />
-        <textarea ref={ref} rows={1} value={text} placeholder="Escreva uma resposta…" maxLength={4000}
+        <button type="button" className="crm-icon-btn wa-qr-btn" title="Enviar arquivo (PDF, imagem, vídeo, áudio, Word, Excel…). O texto digitado vai como legenda."
+          disabled={!!uploading} onClick={() => fileRef.current?.click()}>{uploading ? <Loader2 size={16} className="spin" /> : <Paperclip size={16} />}</button>
+        <input ref={fileRef} type="file" hidden aria-label="Arquivo para enviar"
+          accept=".pdf,.jpg,.jpeg,.png,.webp,.mp4,.3gp,.ogg,.mp3,.m4a,.aac,.amr,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+          onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void sendFile(f, `📎 ${f.name}`); }} />
+        <textarea ref={ref} rows={1} value={text} placeholder={uploading ? `Enviando ${uploading}…` : "Escreva uma resposta…"} maxLength={4000}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} />
-        <button type="button" className="crm-btn primary" disabled={busy || !text.trim()} onClick={send} title="Enviar (Enter)"><Send size={16} /></button>
+        {text.trim() ? (
+          <button type="button" className="crm-btn primary" disabled={busy} onClick={send} title="Enviar (Enter)"><Send size={16} /></button>
+        ) : (
+          <button type="button" className="crm-btn primary" disabled={!!uploading} onClick={() => void startRecording()} title="Gravar áudio"><Mic size={16} /></button>
+        )}
+        </>)}
       </div>
       )}
     </>
   );
 }
+
+const fmtSecs = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 const WAIT_TEXT: Record<string, string> = { response: "aguardando resposta", menu: "aguardando escolha do menu", ask: "aguardando resposta da pergunta", delay: "esperando", business_hours: "esperando o horário" };
 const memberName = (m: Member) => (m.email ?? "").split("@")[0] || "usuário";

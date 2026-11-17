@@ -178,8 +178,15 @@ label {
 }
 
 .ghost-button {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+
+/* na barra lateral escura o botão continua claro sobre fundo escuro */
+.sidebar .ghost-button {
   background: transparent;
-  border: 1px solid var(--line-dark);
+  border-color: var(--line-dark);
   color: var(--paper);
 }
 

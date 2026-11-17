@@ -556,7 +556,7 @@ kbd {
 .crm-wa-msg { max-width: 78%; padding: 7px 10px 5px; border-radius: 10px; background: #fff; font-size: 0.86rem; display: grid; gap: 2px; box-shadow: 0 1px 1px rgba(0, 0, 0, 0.06); white-space: pre-wrap; overflow-wrap: anywhere; color: #111; }
 .crm-wa-msg.outbound { align-self: flex-end; background: #d9fdd3; }
 .crm-wa-msg time { justify-self: end; font-size: 0.66rem; color: #667781; }
-.crm-ai-card { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid #ddd6fe; background: #faf8ff; border-radius: 12px; font-size: 0.86rem; }
+.crm-ai-card { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid #ddd6fe; background: #faf8ff; border-radius: 12px; color: var(--ink, #111); font-size: 0.86rem; }
 .crm-ai-card p { margin: 0; line-height: 1.5; }
 .crm-ai-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .crm-ai-grid span { display: grid; gap: 1px; }
@@ -720,7 +720,6 @@ kbd {
   :root:not([data-theme="light"]) .crm-segmented { background: #1f1f1f; }
   :root:not([data-theme="light"]) .crm-stagebar > button { background: #262626; }
   :root:not([data-theme="light"]) .crm-cal-day.out { background: #141414; }
-  :root:not([data-theme="light"]) .crm-ai-card { background: #1b1630; border-color: #3b2f6b; }
   :root:not([data-theme="light"]) .crm-pill { background: #262626; color: #d4d4d4; }
   :root:not([data-theme="light"]) .crm-col { color: #f5f5f5; }
   :root:not([data-theme="light"]) .crm-col .crm-card { color: #111; }
@@ -1159,3 +1158,10 @@ kbd {
 .wa-fu-head select { width: min(280px, 60%); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font-size: 13px; background: var(--paper); color: var(--ink); }
 .wa-fu-step textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 13px; resize: vertical; background: var(--paper); color: var(--ink); }
 .wa-fu-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Caixa de entrada: gravação de áudio */
+.wa-rec { display: flex; align-items: center; gap: 10px; flex: 1; padding: 6px 10px; border-radius: 10px; background: #fff4f4; color: #8a1f1f; font-size: 14px; }
+.wa-rec > span:nth-child(2) { flex: 1; font-variant-numeric: tabular-nums; }
+.wa-rec-dot { width: 10px; height: 10px; border-radius: 50%; background: #d33; animation: wa-rec-blink 1s ease-in-out infinite; }
+@keyframes wa-rec-blink { 50% { opacity: 0.25; } }
+.wa-msg-doc { display: inline-flex; align-items: center; gap: 6px; color: inherit; text-decoration: underline; word-break: break-all; }

@@ -4033,7 +4033,9 @@ export function App() {
                             ) : msg.content_type === "video" && msg.media_url ? (
                               <video controls src={msg.media_url} className="wa-msg-media" />
                             ) : msg.content_type === "document" ? (
-                              <div className="wa-msg-type-badge">Documento{msg.body ? `: ${msg.body}` : ""}</div>
+                              msg.media_url
+                                ? <a className="wa-msg-doc" href={msg.media_url} target="_blank" rel="noreferrer">📄 {msg.body || "Documento"}</a>
+                                : <div className="wa-msg-type-badge">Documento{msg.body ? `: ${msg.body}` : ""}</div>
                             ) : msg.content_type === "sticker" ? (
                               <div className="wa-msg-type-badge">Sticker</div>
                             ) : msg.content_type === "location" ? (

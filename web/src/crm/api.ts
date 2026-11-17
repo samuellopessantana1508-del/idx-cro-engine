@@ -645,6 +645,17 @@ export async function waSend(tenantId: string, body: string, target: { phone?: s
   return id;
 }
 
+/** Envia um arquivo já publicado (uploadFlowMedia) pela conversa — PDF, imagem, vídeo, áudio ou Office. */
+export async function waSendMedia(tenantId: string, media: { url: string; type: "image" | "video" | "audio" | "document"; fileName?: string | null; caption?: string | null },
+  target: { phone?: string | null; conversationId?: string | null }) {
+  const id = check(await db().rpc("wa_send_media", {
+    p_tenant_id: tenantId, p_media_url: media.url, p_media_type: media.type, p_file_name: media.fileName ?? null,
+    p_caption: media.caption ?? null, p_phone: target.phone ?? null, p_conversation_id: target.conversationId ?? null,
+  })) as string;
+  kickCloud(tenantId);
+  return id;
+}
+
 // ---------- Conexão: QR Code x API oficial (Meta Cloud API) ----------
 export type WaChannel = {
   active: "gateway" | "cloud_api";
