@@ -36,6 +36,7 @@ const inbound = (phone, body, id) => ({ object: "whatsapp_business_account", ent
   metadata: { phone_number_id: PNID }, contacts: [{ wa_id: phone, profile: { name: "Cliente Oficial" } }],
   messages: [{ from: phone, id, timestamp: String(Math.floor(Date.now() / 1000)), type: "text", text: { body } }] } }] }] });
 
+const subs = [];
 before(async () => {
   graph = http.createServer((req, res) => {
     let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => {
@@ -43,7 +44,7 @@ before(async () => {
       const reply = (code, obj) => { res.statusCode = code; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(obj)); };
       if (req.headers.authorization !== "Bearer EAAG-token-certo") return reply(401, { error: { code: 190, message: "Invalid OAuth access token" } });
       if (req.method === "GET" && url.pathname === `/v21.0/${PNID}`) return reply(200, { display_phone_number: "+55 11 4000-1234", verified_name: "Perfumaria Aroma", quality_rating: "GREEN", id: PNID });
-      if (req.method === "POST" && url.pathname === `/v21.0/${WABA}/subscribed_apps`) return reply(200, { success: true });
+      if (req.method === "POST" && url.pathname === `/v21.0/${WABA}/subscribed_apps`) { subs.push(JSON.parse(b || "{}")); return reply(200, { success: true }); }
       if (req.method === "GET" && url.pathname === `/v21.0/${WABA}/message_templates`) return reply(200, { data: [
         { name: "boas_vindas", language: "pt_BR", status: "APPROVED", category: "MARKETING", components: [{ type: "BODY", text: "Olá {{1}}! Temos novidades na {{2}}." }] },
         { name: "em_analise", language: "pt_BR", status: "PENDING", components: [{ type: "BODY", text: "Oi" }] },
@@ -90,6 +91,10 @@ test("configurar: token errado avisa; token certo conecta, liga o webhook e traz
   assert.match(c.phone, /551140001234/);
   assert.ok(c.verify_token?.length >= 32);
   inst = c.id; verify = c.verify_token;
+  // preenchimento manual também aponta o webhook da conta para o endereço desta empresa
+  const last = subs.at(-1);
+  assert.equal(last.override_callback_uri, `${URL_}/functions/v1/wa-cloud/webhook/${inst}`.replace("127.0.0.1:54321", last.override_callback_uri.split("/")[2]));
+  assert.equal(last.verify_token, verify);
   // o token nunca sai do banco em texto
   assert.doesNotMatch(sql(`select access_token_enc from wa_cloud_credentials where instance_id = '${inst}'`), /EAAG/);
   assert.equal(good.body.channel.active, "gateway", "configurar não troca a conexão sozinho");

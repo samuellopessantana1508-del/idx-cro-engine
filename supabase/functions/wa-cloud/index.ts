@@ -145,11 +145,12 @@ async function testConnection(instanceId: string) {
   // liga o app da Meta à conta (sem isso o webhook não recebe mensagens)
   let warning: string | null = null;
   if (sec.waba_id) {
-    // conexão pelo cadastro incorporado: o próprio CRO aponta o webhook desta conta para o endereço da empresa
-    const body = sec.source === "embedded"
-      ? JSON.stringify({ override_callback_uri: `${SUPABASE_URL}/functions/v1/wa-cloud/webhook/${instanceId}`, verify_token: sec.verify_token })
-      : "{}";
-    const sub = await graph(token, `${sec.waba_id}/subscribed_apps`, { method: "POST", body });
+    // o CRO aponta o webhook desta conta para o endereço desta empresa (vale também para o preenchimento manual:
+    // várias empresas podem usar o mesmo app da Meta, e o webhook do app atende só uma delas)
+    const override = JSON.stringify({ override_callback_uri: `${SUPABASE_URL}/functions/v1/wa-cloud/webhook/${instanceId}`, verify_token: sec.verify_token });
+    let sub = await graph(token, `${sec.waba_id}/subscribed_apps`, { method: "POST", body: override });
+    // app sem o produto Webhooks configurado não aceita o endereço próprio: assina do jeito simples
+    if (!sub.ok && sec.source !== "embedded") sub = await graph(token, `${sec.waba_id}/subscribed_apps`, { method: "POST", body: "{}" });
     if (!sub.ok) warning = `Não foi possível ligar o webhook à conta: ${classifyCloudError(sub.body.error ?? {}).message}`;
   } else {
     warning = "Sem o ID da conta (WABA ID) não é possível buscar os modelos aprovados.";
