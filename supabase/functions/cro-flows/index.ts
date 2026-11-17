@@ -643,6 +643,8 @@ Deno.serve(async (req) => {
     inBackground(processAiReading().catch((e) => console.error("leitura IA", (e as Error).message)));
     // API oficial: envia o que entrou na fila (respostas das automações, disparos, cadências)
     if (!internal) inBackground(internalCall("wa-cloud/flush", {}).catch((e) => console.error("api oficial", (e as Error).message)));
+    // disparos de e-mail (fila com limite por minuto/dia de cada disparo)
+    if (!internal) inBackground(internalCall("email-dispatch", { action: "tick" }).catch((e) => console.error("e-mail", (e as Error).message)));
     return json({ ok: true, queue, due, followups });
   } catch (e) {
     console.error("cro-flows", (e as Error).message);

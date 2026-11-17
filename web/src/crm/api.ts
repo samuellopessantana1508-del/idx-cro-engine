@@ -950,3 +950,72 @@ export async function uploadFlowMedia(tenantId: string, file: File): Promise<Flo
   if (!res.ok) throw new Error(json.error || `Falha ${res.status} ao enviar o arquivo`);
   return json as FlowMediaUpload;
 }
+
+// ---------------------------------------------------------------------------
+// Disparos de e-mail (aba Disparos) — só e-mail ou junto com um disparo de WhatsApp
+// ---------------------------------------------------------------------------
+export type EmailCampaignStatus = "draft" | "running" | "paused" | "completed" | "canceled";
+export type EmailCampaign = {
+  id: string; wa_campaign_id: string | null; name: string; subject: string; body: string; reply_to: string | null;
+  button_label: string | null; button_url: string | null; status: EmailCampaignStatus; per_minute: number; daily_limit: number;
+  paused_reason: string | null; created_at: string; started_at: string | null; completed_at: string | null;
+  total: number; pending: number; sent: number; failed: number; invalid: number; opted_out: number;
+};
+export type EmailRecipientStatus = "pending" | "sending" | "sent" | "failed" | "invalid" | "opted_out";
+export type EmailRecipient = { id: string; email: string; name: string | null; status: EmailRecipientStatus; error: string | null; sent_at: string | null; crm_contact_id: string | null };
+export type EmailAddResult = { added: number; total: number; duplicates: number; invalid_email: number; opted_out: number };
+export type EmailCampaignInput = {
+  name: string; subject: string; body: string; reply_to: string | null; button_label: string | null; button_url: string | null;
+  per_minute: number; daily_limit: number; wa_campaign_id?: string | null;
+};
+
+export async function emailCampaigns(tenantId: string) {
+  return check(await db().rpc("email_campaign_list", { p_tenant_id: tenantId })) as EmailCampaign[];
+}
+export async function emailSaveCampaign(tenantId: string, id: string | null, c: EmailCampaignInput) {
+  return check(await db().rpc("email_campaign_save", {
+    p_tenant_id: tenantId, p_id: id, p_name: c.name, p_subject: c.subject, p_body: c.body, p_reply_to: c.reply_to || null,
+    p_button_label: c.button_label || null, p_button_url: c.button_url || null, p_per_minute: c.per_minute,
+    p_daily_limit: c.daily_limit, p_wa_campaign_id: c.wa_campaign_id ?? null,
+  })) as string;
+}
+export async function emailAddRecipients(campaignId: string, src:
+  | { source: "rows"; rows: Record<string, string>[] }
+  | { source: "contacts"; contactIds: string[] }
+  | { source: "wa_campaign" }) {
+  return check(await db().rpc("email_campaign_add_recipients", {
+    p_campaign_id: campaignId, p_source: src.source,
+    p_contact_ids: src.source === "contacts" ? src.contactIds : null,
+    p_rows: src.source === "rows" ? src.rows : null,
+  })) as EmailAddResult;
+}
+export async function emailClearRecipients(campaignId: string) {
+  return check(await db().rpc("email_campaign_clear_recipients", { p_campaign_id: campaignId })) as number;
+}
+export async function emailCampaignAction(campaignId: string, action: "start" | "pause" | "resume" | "cancel" | "archive") {
+  return check(await db().rpc("email_campaign_action", { p_campaign_id: campaignId, p_action: action })) as string;
+}
+export async function emailRecipients(campaignId: string, f: { status?: EmailRecipientStatus | "all"; search?: string; page: number; pageSize: number }) {
+  let q = db().from("email_campaign_recipients").select("id, email, name, status, error, sent_at, crm_contact_id", { count: "exact" })
+    .eq("campaign_id", campaignId).order("sent_at", { ascending: false, nullsFirst: false }).order("created_at")
+    .range(f.page * f.pageSize, f.page * f.pageSize + f.pageSize - 1);
+  if (f.status && f.status !== "all") q = q.eq("status", f.status);
+  if (f.search?.trim()) q = q.or(`email.ilike.%${f.search.trim().replace(/[,%()]/g, "")}%,name.ilike.%${f.search.trim().replace(/[,%()]/g, "")}%`);
+  const res = await q;
+  return { rows: check(res) as EmailRecipient[], count: res.count ?? 0 };
+}
+/** Pede o envio imediato da fila de e-mails (sem esperar a rotina de 30 s). */
+export function emailKick() {
+  void (async () => {
+    const { data } = await db().auth.getSession();
+    await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/email-dispatch`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${data.session?.access_token}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "kick" }),
+    });
+  })().catch(() => {});
+}
+export async function currentUserEmail() {
+  const { data } = await db().auth.getSession();
+  return data.session?.user.email ?? null;
+}

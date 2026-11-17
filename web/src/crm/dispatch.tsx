@@ -11,6 +11,7 @@ import type { WaAddResult, WaCampaign, WaCampaignStatus, WaGatewayInstance, WaRe
 import { Bar, Confirm, Empty, Field, Modal, Pill, Skeleton, Tabs } from "./ui";
 import { MapsSearchView } from "./maps-search";
 import { TemplateFields, TemplateSendBox, WaChannelSummary, useWaChannel } from "./wa-channel";
+import { ChannelChooser, EmailAudienceModal, EmailCampaignCard, EmailCampaignDetail, EmailEditor, LinkedEmailStrip, type DispatchChannel } from "./email-dispatch";
 
 const statusInfo: Record<WaCampaignStatus, { label: string; tone: string }> = {
   draft: { label: "Rascunho", tone: "muted" },
@@ -152,12 +153,55 @@ export function DispatchView() {
   const [detail, setDetail] = useState<string | null>(null);
   const [starting, setStarting] = useState<WaCampaign | null>(null);
   const [canceling, setCanceling] = useState<WaCampaign | null>(null);
+  // e-mail: só e-mail ou junto com o WhatsApp
+  const [emails, setEmails] = useState<api.EmailCampaign[]>([]);
+  const [choosing, setChoosing] = useState(false);
+  const [bothFlow, setBothFlow] = useState(false);
+  const [emailEditing, setEmailEditing] = useState<{ campaign: api.EmailCampaign | null; waCampaignId?: string | null; thenWaAudience?: string } | null>(null);
+  const [emailAudience, setEmailAudience] = useState<{ id: string; wa_campaign_id: string | null } | null>(null);
+  const [emailDetail, setEmailDetail] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try { setItems(await api.waCampaigns(tenantId)); } catch (e) { notify(errorText(e)); setItems([]); }
+    try { setEmails(await api.emailCampaigns(tenantId)); } catch { setEmails([]); }
   }, [tenantId, notify]);
   useEffect(() => { void load(); }, [load, refreshKey]);
-  const anyRunning = items?.some((c) => c.status === "running");
+  const anyRunning = items?.some((c) => c.status === "running") || emails.some((e) => e.status === "running");
+  const linkedEmail = (waId: string) => emails.find((e) => e.wa_campaign_id === waId);
+  const emailOnly = emails.filter((e) => !e.wa_campaign_id || !items?.some((w) => w.id === e.wa_campaign_id));
+
+  function pickChannel(ch: DispatchChannel) {
+    setChoosing(false);
+    if (ch === "email") setEmailEditing({ campaign: null });
+    else { setBothFlow(ch === "both"); setEditing("new"); }
+  }
+
+  async function actEmail(c: api.EmailCampaign, a: "start" | "pause" | "resume" | "cancel" | "archive") {
+    try {
+      await api.emailCampaignAction(c.id, a);
+      if (a === "start" || a === "resume") api.emailKick();
+      notify({ start: "E-mails sendo enviados", resume: "E-mails retomados", pause: "E-mails pausados", cancel: "Disparo de e-mail cancelado", archive: "Rascunho excluído" }[a]);
+      void load();
+    } catch (e) { notify(errorText(e)); }
+  }
+
+  /** O e-mail junto acompanha o WhatsApp: ao iniciar, puxa os contatos e começa; pausa/retoma/cancela junto. */
+  async function followLinked(waId: string, a: "start" | "pause" | "resume" | "cancel" | "archive") {
+    const em = linkedEmail(waId);
+    if (!em) return;
+    try {
+      if (a === "start" && em.status === "draft") {
+        const r = await api.emailAddRecipients(em.id, { source: "wa_campaign" });
+        if (r.total - r.opted_out <= 0) { notify("WhatsApp iniciado. Nenhum contato desse disparo tem e-mail — o e-mail não foi enviado."); return; }
+        await api.emailCampaignAction(em.id, "start");
+        api.emailKick();
+      } else if ((a === "pause" && em.status === "running") || (a === "resume" && em.status === "paused")
+        || (a === "cancel" && (em.status === "running" || em.status === "paused")) || (a === "archive" && em.status === "draft")) {
+        await api.emailCampaignAction(em.id, a);
+        if (a === "resume") api.emailKick();
+      }
+    } catch (e) { notify(`E-mail junto: ${errorText(e)}`); }
+  }
   useEffect(() => {
     if (!anyRunning) return;
     const t = setInterval(() => void load(), 8000);
@@ -168,6 +212,7 @@ export function DispatchView() {
     try {
       await api.waCampaignAction(c.id, a);
       if (a === "start" || a === "resume") api.kickCloud(tenantId);
+      await followLinked(c.id, a);
       notify({ start: "Disparo iniciado", resume: "Disparo retomado", pause: "Disparo pausado", cancel: "Disparo cancelado", archive: "Rascunho excluído" }[a]);
       void load();
     } catch (e) { notify(errorText(e)); }
@@ -181,23 +226,29 @@ export function DispatchView() {
       <div className="crm-toolbar">
         <div className="crm-toolbar-left">
           <Tabs value={tab} onChange={setTab} tabs={[
-            { value: "campaigns", label: "Disparos", count: items?.length },
+            { value: "campaigns", label: "Disparos", count: items ? items.length + emailOnly.length : undefined },
             { value: "maps", label: "Buscar clientes" },
             { value: "optouts", label: "Pediram SAIR" },
           ]} />
         </div>
         {tab === "campaigns" && access.write && (
-          <button type="button" className="crm-btn primary" onClick={() => setEditing("new")}><Plus size={16} /> Novo disparo</button>
+          <button type="button" className="crm-btn primary" onClick={() => setChoosing(true)}><Plus size={16} /> Novo disparo</button>
         )}
       </div>
 
-      {tab === "maps" ? <MapsSearchView campaigns={items ?? []} onCampaignsChanged={() => void load()} /> : tab === "optouts" ? <OptoutsList /> : !items ? <Skeleton rows={3} height={110} /> : items.length === 0 ? (
+      {tab === "maps" ? <MapsSearchView campaigns={items ?? []} onCampaignsChanged={() => void load()} /> : tab === "optouts" ? <OptoutsList /> : !items ? <Skeleton rows={3} height={110} /> : items.length === 0 && emailOnly.length === 0 ? (
         <Empty icon={<Send size={22} />} title="Nenhum disparo ainda"
           text="Envie uma mensagem para uma lista (ex.: as farmácias do discador). O CRO envia um por vez, com intervalo aleatório, só em horário comercial e respeita quem pedir SAIR."
-          action={access.write ? <button type="button" className="crm-btn primary" onClick={() => setEditing("new")}><Plus size={16} /> Criar o primeiro</button> : undefined} />
+          action={access.write ? <button type="button" className="crm-btn primary" onClick={() => setChoosing(true)}><Plus size={16} /> Criar o primeiro</button> : undefined} />
       ) : (
         <div className="wa-camp-list">
-          {items.map((c) => (
+          {[...emailOnly.map((e) => ({ k: "email" as const, at: e.created_at, e })), ...items.map((c) => ({ k: "wa" as const, at: c.created_at, c }))]
+            .sort((a, b) => (a.at < b.at ? 1 : -1))
+            .map((row) => row.k === "email" ? (
+            <EmailCampaignCard key={row.e.id} c={row.e} canWrite={access.write} onAction={(a) => void actEmail(row.e, a)}
+              onEdit={() => setEmailEditing({ campaign: row.e })} onAudience={() => setEmailAudience({ id: row.e.id, wa_campaign_id: row.e.wa_campaign_id })}
+              onDetail={() => setEmailDetail(row.e.id)} />
+          ) : ((c) => (
             <article key={c.id} className="crm-card wa-camp">
               <header>
                 <button type="button" className="wa-camp-title" onClick={() => setDetail(c.id)}>
@@ -232,6 +283,12 @@ export function DispatchView() {
                   {c.opted_out > 0 && <span><b>{c.opted_out}</b> pediram SAIR</span>}
                 </div>
               </> : <p className="crm-muted small">{c.auto_feed ? "Os contatos chegam pela busca automática no Google Maps." : "Sem público."} {access.write && <button type="button" className="crm-link" onClick={() => setAudienceFor(c)}>Adicionar contatos</button>}</p>}
+              {linkedEmail(c.id) ? (
+                <LinkedEmailStrip c={linkedEmail(c.id)!} canWrite={access.write}
+                  onEdit={() => setEmailEditing({ campaign: linkedEmail(c.id)! })} onDetail={() => setEmailDetail(linkedEmail(c.id)!.id)} />
+              ) : access.write && (c.status === "draft" || c.status === "paused") && (
+                <button type="button" className="crm-link small em-add-link" onClick={() => setEmailEditing({ campaign: null, waCampaignId: c.id })}>+ Enviar um e-mail junto para estes contatos</button>
+              )}
               <footer className="crm-muted small">
                 <ShieldCheck size={13} /> {c.min_delay_sec}–{c.max_delay_sec}s entre mensagens · até {c.daily_limit}/dia · {c.start_hour}h às {c.end_hour}h
                 {c.status === "running" && <> · <Clock size={13} /> {nextSendLabel(c)}</>}
@@ -239,12 +296,30 @@ export function DispatchView() {
                 {c.status === "completed" && c.completed_at && <> · terminou {relative(c.completed_at)}</>}
               </footer>
             </article>
-          ))}
+          ))(row.c))}
         </div>
       )}
 
       {editing && <CampaignEditor campaign={editing === "new" ? null : editing} onClose={() => setEditing(null)}
-        onSaved={(id, isNew) => { setEditing(null); void load().then(() => { if (isNew) setAudienceFor({ id } as WaCampaign); }); }} />}
+        onSaved={(id, isNew) => {
+          setEditing(null);
+          // WhatsApp + E-mail: depois do WhatsApp, escreve o e-mail; depois escolhe o público
+          if (isNew && bothFlow) { setBothFlow(false); setEmailEditing({ campaign: null, waCampaignId: id, thenWaAudience: id }); void load(); return; }
+          void load().then(() => { if (isNew) setAudienceFor({ id } as WaCampaign); });
+        }} />}
+      {choosing && <ChannelChooser onClose={() => setChoosing(false)} onPick={pickChannel} />}
+      {emailEditing && <EmailEditor campaign={emailEditing.campaign} waCampaignId={emailEditing.waCampaignId}
+        onClose={() => { const next = emailEditing.thenWaAudience; setEmailEditing(null); if (next) setAudienceFor({ id: next } as WaCampaign); }}
+        onSaved={(id, isNew) => {
+          const next = emailEditing.thenWaAudience; const linked = emailEditing.waCampaignId ?? emailEditing.campaign?.wa_campaign_id ?? null;
+          setEmailEditing(null);
+          void load().then(() => {
+            if (next) setAudienceFor({ id: next } as WaCampaign);
+            else if (isNew && !linked) setEmailAudience({ id, wa_campaign_id: null });
+          });
+        }} />}
+      {emailAudience && <EmailAudienceModal campaign={emailAudience} onClose={() => setEmailAudience(null)} onDone={() => { setEmailAudience(null); void load(); }} />}
+      {emailDetail && emails.find((e) => e.id === emailDetail) && <EmailCampaignDetail campaign={emails.find((e) => e.id === emailDetail)!} onClose={() => setEmailDetail(null)} />}
       {audienceFor && <AudienceModal campaignId={audienceFor.id} onClose={() => setAudienceFor(null)} onDone={() => { setAudienceFor(null); void load(); }} />}
       {current && <CampaignDetail campaign={current} onClose={() => setDetail(null)} />}
       <Confirm open={!!starting} onClose={() => setStarting(null)} confirmLabel="Iniciar disparo"

@@ -1165,3 +1165,18 @@ kbd {
 .wa-rec-dot { width: 10px; height: 10px; border-radius: 50%; background: #d33; animation: wa-rec-blink 1s ease-in-out infinite; }
 @keyframes wa-rec-blink { 50% { opacity: 0.25; } }
 .wa-msg-doc { display: inline-flex; align-items: center; gap: 6px; color: inherit; text-decoration: underline; word-break: break-all; }
+
+/* Disparos de e-mail */
+.em-channels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 720px) { .em-channels { grid-template-columns: 1fr; } }
+.em-channel { display: grid; gap: 8px; justify-items: start; text-align: left; padding: 16px; border: 1px solid var(--line, #e5e7eb); border-radius: 12px; background: #fff; cursor: pointer; color: inherit; }
+.em-channel:hover { border-color: #111; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+.em-channel-icon { display: inline-flex; gap: 4px; align-items: center; justify-content: center; min-width: 40px; height: 40px; padding: 0 8px; border-radius: 10px; background: #f1f5f9; }
+.em-preview { border: 1px solid var(--line, #e5e7eb); border-radius: 12px; padding: 16px; background: #fafaf9; display: grid; gap: 8px; }
+.em-preview-subject { font-weight: 700; }
+.em-preview-body p { margin: 0 0 8px; white-space: pre-wrap; line-height: 1.5; }
+.em-preview-btn { justify-self: start; background: #111; color: #fff; padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; }
+.em-preview-foot { margin: 4px 0 0; font-size: 12px; color: #78716c; }
+.em-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px; border-radius: 10px; background: #f8fafc; border: 1px dashed #cbd5e1; margin: 6px 0; }
+.em-strip-title { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 0; cursor: pointer; color: inherit; font: inherit; }
+.em-add-link { display: inline-block; margin: 4px 0; }

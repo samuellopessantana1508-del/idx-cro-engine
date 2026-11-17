@@ -11,11 +11,23 @@ export function emailConfigured(): boolean {
   return !!Deno.env.get("RESEND_API_KEY");
 }
 
-export async function sendEmail(msg: { to: string; subject: string; html: string; text: string; tags?: Record<string, string> }): Promise<EmailResult> {
+/** Domínio verificado do remetente (de RESEND_FROM), ex.: "croengine.pro". */
+export function senderDomain(): string {
+  const m = /@([^>\s]+)/.exec(Deno.env.get("RESEND_FROM") || "");
+  return m ? m[1].toLowerCase() : "resend.dev";
+}
+
+export type EmailMessage = {
+  to: string; subject: string; html: string; text: string; tags?: Record<string, string>;
+  /** remetente próprio (mesmo domínio verificado), ex.: "Douratto Buffet <disparos@croengine.pro>" */
+  from?: string; replyTo?: string | null; headers?: Record<string, string>;
+};
+
+export async function sendEmail(msg: EmailMessage): Promise<EmailResult & { status?: number }> {
   const key = Deno.env.get("RESEND_API_KEY");
   if (!key) return { ok: false, skipped: true, error: "Envio de e-mail não configurado (RESEND_API_KEY)." };
-  const from = Deno.env.get("RESEND_FROM") || "IDX CRO <onboarding@resend.dev>";
-  const replyTo = Deno.env.get("RESEND_REPLY_TO") || undefined;
+  const from = msg.from || Deno.env.get("RESEND_FROM") || "IDX CRO <onboarding@resend.dev>";
+  const replyTo = msg.replyTo || Deno.env.get("RESEND_REPLY_TO") || undefined;
   const base = (Deno.env.get("RESEND_API_URL") || "https://api.resend.com").replace(/\/$/, "");
   try {
     const res = await fetch(`${base}/emails`, {
@@ -24,12 +36,13 @@ export async function sendEmail(msg: { to: string; subject: string; html: string
       body: JSON.stringify({
         from, to: [msg.to], subject: msg.subject, html: msg.html, text: msg.text,
         ...(replyTo ? { reply_to: replyTo } : {}),
+        ...(msg.headers ? { headers: msg.headers } : {}),
         ...(msg.tags ? { tags: Object.entries(msg.tags).map(([name, value]) => ({ name, value: value.replace(/[^a-zA-Z0-9_-]/g, "_") })) } : {}),
       }),
       signal: AbortSignal.timeout(15_000),
     });
     const body = await res.json().catch(() => ({})) as { id?: string; message?: string; name?: string };
-    if (!res.ok) return { ok: false, error: friendlyResendError(res.status, body.message ?? body.name ?? "") };
+    if (!res.ok) return { ok: false, status: res.status, error: friendlyResendError(res.status, body.message ?? body.name ?? "") };
     return { ok: true, id: body.id };
   } catch (e) {
     return { ok: false, error: `Sem resposta do Resend: ${(e as Error).message}` };

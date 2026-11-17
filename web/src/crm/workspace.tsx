@@ -42,7 +42,7 @@ export const crmViewTitles: Record<CrmView["name"], string> = {
   dialer: "Discador",
   cadences: "Cadências",
   goals: "Metas",
-  dispatch: "Disparos de WhatsApp",
+  dispatch: "Disparos de WhatsApp e e-mail",
   flows: "Automações de WhatsApp",
   mcp: "Conectar ao Claude (MCP)",
 };

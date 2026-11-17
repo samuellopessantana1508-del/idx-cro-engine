@@ -74,3 +74,6 @@ verify_jwt = false   # tela de login (sem sessão); limite de pedidos na própri
 
 [functions.flow-media]
 verify_jwt = false   # o link do arquivo é público (o WhatsApp baixa); envio exige login na própria função
+
+[functions.email-dispatch]
+verify_jwt = false   # link de descadastro é público; o envio confere a chave de serviço ou o login
