@@ -483,6 +483,9 @@ export function App() {
   const [signedIn, setSignedIn] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [tenantSetupRequired, setTenantSetupRequired] = useState(false);
+  // Falha ao buscar as empresas do login (rede, servidor): mostra aviso com "Tentar de novo"
+  // em vez do cadastro de empresa — quem já tem empresa não deve cair no onboarding.
+  const [bootstrapError, setBootstrapError] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmationEmail, setConfirmationEmail] = useState("");
@@ -1155,7 +1158,9 @@ export function App() {
   }
 
   async function logout() {
-    if (supabase) await supabase.auth.signOut();
+    if (supabase) await supabase.auth.signOut().catch(() => {});
+    setLoading(false);
+    setBootstrapError("");
     setSignedIn(false);
     setCurrentUserId("");
     setCurrentUserEmail("");
@@ -1197,17 +1202,26 @@ export function App() {
     setCurrentUserId(session.user.id);
     setCurrentUserEmail(session.user.email?.toLowerCase() ?? "");
 
-    const res = await authFetch("tenant-admin", {
-      method: "POST",
-      body: JSON.stringify({ action: "bootstrap" }),
-    });
-    const data = await res.json();
-
-    if (!res.ok) {
-      setToast(data.error || "Erro ao carregar acesso.");
+    let res: Response;
+    let data: any;
+    try {
+      res = await authFetch("tenant-admin", {
+        method: "POST",
+        body: JSON.stringify({ action: "bootstrap" }),
+      });
+      data = await res.json();
+    } catch {
+      setBootstrapError("Não foi possível falar com o servidor para carregar suas empresas. Verifique a internet e tente de novo.");
       setLoading(false);
       return;
     }
+
+    if (!res.ok) {
+      setBootstrapError(data?.error || "Erro ao carregar suas empresas.");
+      setLoading(false);
+      return;
+    }
+    setBootstrapError("");
 
     const loadedTenants = (data.tenants ?? []) as Tenant[];
     setPlatformRole((data.platform_role ?? null) as PlatformRole | null);
@@ -2838,6 +2852,26 @@ export function App() {
     );
   }
 
+  if (isConfigured && bootstrapError && !tenant) {
+    return (
+      <main className="login-screen">
+        <section className="login-panel setup-panel">
+          <div className="brand-mark">IDX.</div>
+          <h1>Não deu para carregar suas empresas</h1>
+          <p>{bootstrapError}</p>
+          <div className="setup-form">
+            <button className="primary-button span-2" onClick={() => { setBootstrapError(""); void loadInitialData(); }} disabled={loading}>
+              {loading ? "Carregando…" : "Tentar de novo"}
+            </button>
+            <button className="login-link-button span-2" onClick={logout}>
+              Sair
+            </button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   if (isConfigured && (tenantSetupRequired || !tenant) && !isPlatformUser) {
     return (
       <main className="login-screen">
@@ -2889,7 +2923,7 @@ export function App() {
             <button className="primary-button span-2" onClick={createClient} disabled={loading}>
               Criar painel real
             </button>
-            <button className="login-link-button span-2" onClick={logout} disabled={loading}>
+            <button className="login-link-button span-2" onClick={logout}>
               Sair
             </button>
           </div>
