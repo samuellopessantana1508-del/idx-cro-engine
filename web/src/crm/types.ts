@@ -547,7 +547,7 @@ export type MapsStatus = { has_key: boolean; key_hint: string | null; monthly_ca
 export type LeadSource = {
   id: string; tenant_id: string; name: string; query: string; locations: string[]; location_cursor: number; list_name: string;
   auto: boolean; interval_hours: number; run_hour: number; locations_per_run: number; pages_per_location: number; max_new_per_run: number;
-  exclude_chains: boolean; min_rating: number | null; campaign_id: string | null; active: boolean;
+  exclude_chains: boolean; min_rating: number | null; min_rank?: number; campaign_id: string | null; active: boolean;
   next_run_at: string | null; last_run_at: string | null; running_since: string | null;
   last_result: { inserted: number; found: number; duplicates: number; to_campaign: number; error: string | null; api_calls: number } | null;
   created_at: string;

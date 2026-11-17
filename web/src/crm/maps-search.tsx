@@ -186,6 +186,7 @@ function SourceEditor({ source, campaigns, onClose, onSaved }: { source: LeadSou
   const [maxNew, setMaxNew] = useState(source?.max_new_per_run ?? 60);
   const [noChains, setNoChains] = useState(source?.exclude_chains ?? true);
   const [minRating, setMinRating] = useState<string>(source?.min_rating != null ? String(source.min_rating) : "");
+  const [minRank, setMinRank] = useState<number>(source?.min_rank ?? 1);
   const [auto, setAuto] = useState(source?.auto ?? true);
   const [interval, setInterval_] = useState(source?.interval_hours ?? 24);
   const [hour, setHour] = useState(source?.run_hour ?? 7);
@@ -210,11 +211,12 @@ function SourceEditor({ source, campaigns, onClose, onSaved }: { source: LeadSou
   async function save() {
     setBusy(true);
     try {
-      await api.saveLeadSource(tenantId, source?.id ?? null, {
+      const savedId = await api.saveLeadSource(tenantId, source?.id ?? null, {
         name, query, locations, list_name: list, auto, interval_hours: interval, run_hour: hour, locations_per_run: perRun,
         max_new_per_run: maxNew, exclude_chains: noChains, min_rating: minRating ? Number(minRating) : null,
         campaign_id: campaignId || null, pages_per_location: pages,
       });
+      if (minRank !== (source?.min_rank ?? 1)) await api.leadSourceSetMinRank(savedId, minRank);
       if (campaignId) {
         const c = campaigns.find((x) => x.id === campaignId);
         if (c && !c.auto_feed) await api.waSetAutoFeed(campaignId, true);
@@ -258,6 +260,15 @@ function SourceEditor({ source, campaigns, onClose, onSaved }: { source: LeadSou
         <Field label="Locais por execução"><input type="number" min={1} max={50} value={perRun} onChange={(e) => setPerRun(Math.min(50, Math.max(1, Number(e.target.value) || 1)))} /></Field>
         <Field label="Páginas por local" hint="1 página = até 20 resultados (máx. 3)"><select value={pages} onChange={(e) => setPages(Number(e.target.value))}>{[1, 2, 3].map((p) => <option key={p} value={p}>{p} ({p * 20} resultados)</option>)}</select></Field>
         <Field label="Máximo de clientes novos por execução"><input type="number" min={1} max={1000} value={maxNew} onChange={(e) => setMaxNew(Math.min(1000, Math.max(1, Number(e.target.value) || 1)))} /></Field>
+        <Field label="Posição no Google" hint="quem já está bem colocado tende a não precisar de ajuda">
+          <select value={minRank} onChange={(e) => setMinRank(Number(e.target.value))}>
+            <option value={1}>Todas as posições</option>
+            <option value={4}>Só abaixo do top 3</option>
+            <option value={6}>Só abaixo do top 5</option>
+            <option value={10}>Só abaixo do top 9</option>
+            <option value={21}>Só abaixo do top 20</option>
+          </select>
+        </Field>
         <Field label="Nota mínima no Google"><select value={minRating} onChange={(e) => setMinRating(e.target.value)}><option value="">Qualquer nota</option>{["3.5", "4.0", "4.3", "4.5"].map((r) => <option key={r} value={r}>{r.replace(".", ",")}+</option>)}</select></Field>
         <label className="crm-check" style={{ gridColumn: "1 / -1" }}><input type="checkbox" checked={noChains} onChange={(e) => setNoChains(e.target.checked)} /> Ignorar redes e franquias (Drogasil, Raia, Pague Menos, Pacheco, Panvel…)</label>
       </div>

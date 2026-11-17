@@ -257,3 +257,35 @@ test("isolamento: outra empresa não vê nem roda as buscas", async () => {
   assert.equal(r.status, 403);
   assert.ok((await other.rpc("lead_source_delete", { p_id: src })).error);
 });
+
+test("só abaixo do top 9: posição mínima na busca e rede regional (mesmo nome, várias unidades) fica de fora", async () => {
+  const save = await seller.rpc("lead_source_save", {
+    p_tenant_id: A, p_id: null, p_name: `Abaixo top9 ${TAG}`, p_query: "farmácia",
+    p_locations: [`Bairro R ${TAG}`], p_list_name: `Top ${TAG}`, p_locations_per_run: 1, p_max_new_per_run: 100, p_pages_per_location: 2,
+  });
+  assert.equal(save.error, null, save.error?.message);
+  assert.equal((await seller.rpc("lead_source_set_min_rank", { p_source_id: save.data, p_min_rank: 10 })).data, 10);
+  assert.ok((await other.rpc("lead_source_set_min_rank", { p_source_id: save.data, p_min_rank: 10 })).error, "outra empresa não altera");
+  // uma unidade de rede regional já está no discador: a outra unidade (mesmo nome) não entra
+  sql(`insert into crm_dial_leads(tenant_id, list_name, name, phone, city) values ('${A}', 'Outra ${TAG}', 'Farmácia Bairro R ${TAG} 23 - Centro', '5511900000001', 'Bairro R ${TAG}')`);
+  const r = await fn(await tok(seller), { action: "run", source_id: save.data });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const ranks = sql(`select string_agg(maps_rank::text, ',' order by maps_rank) from crm_dial_leads where tenant_id = '${A}' and list_name = 'Top ${TAG}'`);
+  assert.equal(ranks, "10,11,13", "posições 1 a 9 ficam de fora; a 12 (outra unidade da rede) também");
+  assert.equal(sql(`select top_ranked from lead_source_runs where source_id = '${save.data}'`), "7");
+});
+
+test("checagem de posição: grava a posição de quem já está no discador (telefone ou nome) e marca quem não aparece", async () => {
+  const loc = `Cidade K ${TAG}, SP`;
+  const ph = (n) => "55" + phoneFor(loc, n).replace(/\D/g, "");
+  sql(`insert into crm_dial_leads(tenant_id, list_name, name, phone, city, uf) values
+       ('${A}', 'Rank ${TAG}', 'Primeira', '${ph(0)}', 'Cidade K ${TAG}', 'SP'),
+       ('${A}', 'Rank ${TAG}', 'Farmácia ${loc} 21', '5511900000099', 'Cidade K ${TAG}', 'SP'),
+       ('${A}', 'Rank ${TAG}', 'Não aparece', '5511900000098', 'Cidade K ${TAG}', 'SP')`);
+  const r = await fn(await tok(seller), { action: "rank_check", tenant_id: A, list_name: `Rank ${TAG}`, query: "farmácia" });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual([r.body.done, r.body.matched, r.body.remaining], [1, 2, 0]);
+  assert.equal(sql(`select string_agg(name || '=' || maps_rank, ',' order by maps_rank) from crm_dial_leads where tenant_id = '${A}' and list_name = 'Rank ${TAG}'`),
+    `Primeira=1,Farmácia ${loc} 21=10,Não aparece=61`);
+  assert.equal((await fn(await tok(viewer), { action: "rank_check", tenant_id: A, list_name: `Rank ${TAG}`, query: "farmácia" })).status, 403);
+});

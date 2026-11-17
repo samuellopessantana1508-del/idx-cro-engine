@@ -125,6 +125,42 @@ Deno.serve(async (req) => {
 
     if (!ua.access.write) return json({ error: "Sem permissão no CRM desta empresa" }, 403);
 
+    // Checagem de posição: busca cada cidade da lista no Google (até 60 posições) e grava a posição de quem já está no discador.
+    if (action === "rank_check") {
+      const list = String(body.list_name ?? "").trim();
+      const query = String(body.query ?? "").trim();
+      const maxCities = Math.min(20, Math.max(1, Number(body.max_cities ?? 10)));
+      if (!list || !query) return json({ error: "Informe a lista e o que buscar" }, 400);
+      const { data: rows, error: le } = await svc.from("crm_dial_leads").select("city, uf")
+        .eq("tenant_id", tenantId).eq("list_name", list).is("maps_rank", null).limit(5000);
+      if (le) return json({ error: le.message }, 400);
+      const cities = [...new Map((rows ?? []).filter((r) => r.city).map((r) => [`${r.city}|${r.uf ?? ""}`, r])).values()];
+      const key = await apiKeyFor(tenantId);
+      let calls = 0, matched = 0, done = 0;
+      for (const c of cities.slice(0, maxCities)) {
+        const { data: left } = await svc.rpc("maps_budget", { p_tenant: tenantId });
+        if (Number(left) < 3) return json({ ok: false, error: "Limite mensal de buscas atingido", done, matched, calls, remaining: cities.length - done });
+        const location = [c.city, c.uf].filter(Boolean).join(", ");
+        const found: { name: string; phone: string | null; rank: number; place_id: string }[] = [];
+        let token: string | null = null; let rank = 0;
+        for (let page = 0; page < 3; page++) {
+          const res = await searchText({ apiKey: key, query, location, pageToken: token, baseUrl: PLACES_BASE });
+          calls++;
+          await svc.rpc("maps_count_call", { p_tenant: tenantId, p_run: null });
+          const parsed = parsePlaces(res, location, rank);
+          rank += (res?.places ?? []).length;
+          found.push(...parsed.places.map((p) => ({ name: p.name, phone: p.phone, rank: p.rank, place_id: p.place_id })));
+          token = parsed.next;
+          if (!token) break;
+        }
+        const { data: r, error: re } = await svc.rpc("maps_rank_update", { p_tenant: tenantId, p_list: list, p_city: c.city, p_uf: c.uf ?? "", p_places: found });
+        if (re) return json({ error: re.message }, 400);
+        matched += Number((r as { matched: number }).matched ?? 0);
+        done++;
+      }
+      return json({ ok: true, done, matched, calls, remaining: cities.length - done });
+    }
+
     if (action === "preview") {
       const query = String(body.query ?? "").trim();
       const location = String(body.location ?? "").trim();

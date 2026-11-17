@@ -847,6 +847,10 @@ export async function saveLeadSource(tenantId: string, id: string | null, s: {
     p_pages_per_location: s.pages_per_location,
   })) as string;
 }
+/** Só entram no discador empresas a partir desta posição no Google (1 = todas; 10 = fora do top 9). */
+export async function leadSourceSetMinRank(sourceId: string, minRank: number) {
+  return check(await db().rpc("lead_source_set_min_rank", { p_source_id: sourceId, p_min_rank: minRank })) as number;
+}
 export async function deleteLeadSource(id: string) {
   check(await db().rpc("lead_source_delete", { p_id: id }));
 }
