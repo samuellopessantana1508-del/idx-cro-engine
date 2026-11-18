@@ -3,6 +3,7 @@ import { ArrowDownUp, ArrowLeft, Building2, Download, ExternalLink, GitMerge, Ma
 import * as api from "./api";
 import { ContactCadences } from "./cadences";
 import { useCrm } from "./context";
+import { CrmImportModal } from "./import-crm";
 import { SendWhatsAppModal } from "./dispatch";
 import {
   basisLabels, brl, channelLabel, dateTime, emailName, errorText, lifecycleLabels, phoneLabel, relative, segmentInfo, shortDate, waLink,
@@ -20,6 +21,7 @@ const lifecycles: Lifecycle[] = ["lead", "mql", "sal", "sql", "opportunity", "cu
 // ---------------------------------------------------------------------------
 export function ContactsView() {
   const { tenantId, userId, access, members, refreshKey, notify, openContact, quickCreate, navigate, memberLabel } = useCrm();
+  const [importing, setImporting] = useState(false);
   const [rows, setRows] = useState<Contact[] | null>(null);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
@@ -98,6 +100,8 @@ export function ContactsView() {
         <div className="crm-toolbar-right">
           {access.write && <button type="button" className="crm-btn ghost sm" onClick={() => navigate({ name: "import" })}><Upload size={15} /> Importar</button>}
           {access.export && <button type="button" className="crm-btn ghost sm" onClick={exportAll}><Download size={15} /> Exportar</button>}
+          {access.write && <button type="button" className="crm-btn ghost sm" onClick={() => setImporting(true)}><Upload size={15} /> Importar de outro CRM</button>}
+          {importing && <CrmImportModal defaultEntity="contacts" onClose={() => setImporting(false)} onDone={() => void load()} />}
           {access.write && <button type="button" className="crm-btn primary" onClick={() => quickCreate("contact")}><Plus size={16} /> Novo contato</button>}
         </div>
       </div>

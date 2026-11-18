@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, ArrowDownUp, CalendarClock, Check, ChevronDown, Clock, Download, Filter, Flame, KanbanSquare, List, MessageCircle, Pencil, Plus, Search, Trash2, Trophy, X,
+  Upload,
 } from "lucide-react";
 import * as api from "./api";
 import { useCrm } from "./context";
+import { CrmImportModal } from "./import-crm";
 import { brl, channelLabel, dueState, emailName, errorText, evidenceLabels, parseMoney, priorityLabels, relative, shortDate, taskTypeLabels } from "./format";
 import type { Deal, Stage } from "./types";
 import { Avatar, Empty, Field, Modal, Pill, Segmented, Skeleton } from "./ui";
@@ -163,6 +165,7 @@ type Sort = { key: keyof Deal; asc: boolean };
 
 export function DealsView() {
   const { tenantId, pipelines, stages, settings, members, userId, access, refreshKey, openDeal, quickCreate, notify, memberLabel, reloadStructure } = useCrm();
+  const [importing, setImporting] = useState(false);
   const [pipelineId, setPipelineId] = useState(settings?.default_pipeline_id ?? pipelines[0]?.id ?? "");
   const [mode, setMode] = useState<"board" | "list">(() => (localStorage.getItem("crm.deals.mode") as "board" | "list") || "board");
   const [deals, setDeals] = useState<Deal[] | null>(null);
@@ -276,6 +279,8 @@ export function DealsView() {
         <div className="crm-toolbar-right">
           <Segmented size="sm" value={mode} onChange={setMode} options={[{ value: "board", label: <><KanbanSquare size={15} /> Funil</> }, { value: "list", label: <><List size={15} /> Lista</> }]} />
           {access.export && <button type="button" className="crm-btn ghost sm" onClick={exportCsv}><Download size={15} /> Exportar</button>}
+          {access.write && <button type="button" className="crm-btn ghost sm" onClick={() => setImporting(true)}><Upload size={15} /> Importar de outro CRM</button>}
+          {importing && <CrmImportModal defaultEntity="deals" onClose={() => setImporting(false)} onDone={() => void load()} />}
           {access.write && <button type="button" className="crm-btn primary" onClick={() => quickCreate("deal", { pipeline_id: pipelineId })}><Plus size={16} /> Nova negociação</button>}
         </div>
       </div>
