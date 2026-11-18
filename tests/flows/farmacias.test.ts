@@ -58,10 +58,11 @@ test("grafo válido: todas as saídas de todos os blocos estão ligadas", () => 
 
 test("disparo, follow-ups e limites do disparo", () => {
   assert.match(OPENER, /1️⃣ Sim, sou eu/);
+  assert.match(OPENER, /Aqui é o Arthur, da IDX/);
   assert.equal(FOLLOWUPS.length, 5);
   const hours = FOLLOWUPS.map((f: any) => f.after_hours);
   assert.deepEqual([...hours].sort((a, b) => a - b), hours);
-  assert.ok(CAMPAIGN.min_delay_sec >= 15 && CAMPAIGN.max_delay_sec >= CAMPAIGN.min_delay_sec);
+  assert.ok(CAMPAIGN.min_delay_sec >= 5 && CAMPAIGN.max_delay_sec >= CAMPAIGN.min_delay_sec);
   for (const t of [OPENER, ...FOLLOWUPS.map((f: any) => f.text)]) {
     assert.doesNotMatch(t, /tr[aá]fego|an[uú]ncio pago|gr[aá]tis/i, "não falar em tráfego pago nem “grátis”");
     assert.doesNotMatch(t, /https?:\/\//, "sem link na prospecção fria");

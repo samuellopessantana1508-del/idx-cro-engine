@@ -7,7 +7,7 @@ export const CALENDLY = "https://calendly.com/idxparasuaempresa/como-vender-mais
 
 /** Primeira mensagem do disparo ({a|b} sorteia uma variação por contato, para nada sair idêntico). */
 export const OPENER = [
-  "{Oi|Olá}, tudo bem? Aqui é o Samuel, da IDX, de Rio Verde.",
+  "{Oi|Olá}, tudo bem? Aqui é o Arthur, da IDX, de Rio Verde.",
   "",
   "{Estou conversando com algumas farmácias|Tenho conversado com farmácias} da região sobre um ponto que quase ninguém olha: quem aparece primeiro quando alguém do bairro procura farmácia no Google e chama no WhatsApp.",
   "",
@@ -29,10 +29,10 @@ export const FOLLOWUPS = [
 
 export const CAMPAIGN = {
   name: "Farmácias · Prospecção IDX (WhatsApp)",
-  min_delay_sec: 15, // o sistema não aceita menos de 15 s (proteção contra bloqueio do número)
-  max_delay_sec: 20,
-  daily_limit: 200,
-  start_hour: 9,
+  min_delay_sec: 5, // uma mensagem a cada ~5 s (pedido do dono da conta; QR Code, não a API oficial)
+  max_delay_sec: 5,
+  daily_limit: 500, // máximo do sistema: na prática, sem limite para as ~400 farmácias
+  start_hour: 8,
   end_hour: 18,
   opt_out_footer: false,
 };
