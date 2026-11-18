@@ -454,6 +454,29 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // Remover o acesso de um usuário à empresa: o vínculo fica "desativado" (some do sistema na hora,
+  // todas as permissões exigem vínculo ativo). Dá para devolver depois com "Devolver acesso" (reenvia o convite).
+  if (action === "remove_user") {
+    const targetId = String(body.user_id ?? "").trim();
+    const { data: target } = await supa.from("tenant_users").select("id, user_id, email, role, status")
+      .eq("tenant_id", tenantId).eq("user_id", targetId).maybeSingle();
+    if (!target) return json({ error: "Usuário não encontrado nesta empresa" }, 404);
+    if (target.user_id === user.id) return json({ error: "Você não pode remover o seu próprio acesso" }, 400);
+    if (target.status === "disabled") return json({ ok: true, already_removed: true });
+    const platform = canCreateTenants(await platformRole(user.id, user.email));
+    if (target.role === "owner") {
+      const { data: me } = await supa.from("tenant_users").select("role").eq("tenant_id", tenantId).eq("user_id", user.id).eq("status", "active").maybeSingle();
+      if (!platform && (me as { role?: string } | null)?.role !== "owner") return json({ error: "Só um dono pode remover outro dono" }, 403);
+      const { count } = await supa.from("tenant_users").select("id", { count: "exact", head: true })
+        .eq("tenant_id", tenantId).eq("role", "owner").eq("status", "active");
+      if (Number(count ?? 0) <= 1) return json({ error: "A empresa precisa ter pelo menos um dono ativo" }, 400);
+    }
+    const { error: upErr } = await supa.from("tenant_users").update({ status: "disabled" }).eq("id", target.id);
+    if (upErr) return json({ error: upErr.message }, 400);
+    await audit(user.id, "tenant_user.removed", tenantId, "tenant_user", target.id, { email: target.email, role: target.role });
+    return json({ ok: true });
+  }
+
   if (action === "manage_whatsapp_instance") {
     const subAction = String(body.sub_action ?? "list");
 

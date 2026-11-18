@@ -3934,3 +3934,9 @@ td small {
   .user-row { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr) auto; }
   .user-row > div { grid-column: 1 / -1; }
 }
+
+/* Usuários: remover acesso */
+.user-remove-confirm { display: inline-flex; gap: 6px; align-items: center; }
+.user-row .user-remove { white-space: nowrap; }
+.user-row .danger-button { background: #b42318; color: #fff; border: 1px solid #b42318; border-radius: 8px; padding: 6px 12px; font-weight: 600; cursor: pointer; }
+.user-row .danger-button:disabled { opacity: .6; cursor: default; }

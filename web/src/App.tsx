@@ -494,6 +494,7 @@ export function App() {
   const [needsPassword, setNeedsPassword] = useState(false);
   const [accessEmails, setAccessEmails] = useState<Record<string, AccessEmailInfo>>({});
   const [resendingEmail, setResendingEmail] = useState("");
+  const [removingUser, setRemovingUser] = useState("");
   const [currentUserId, setCurrentUserId] = useState("");
   const [currentUserEmail, setCurrentUserEmail] = useState("");
   const [active, setActive] = useState<Section>(requestedSection ?? "dashboard");
@@ -1574,6 +1575,20 @@ export function App() {
       else setToast(data.email_sent ? `Email de acesso reenviado para ${targetEmail}.` : `Não foi possível enviar o email: ${data.email_error ?? "erro"}`);
       await loadTenantData();
     } finally { setResendingEmail(""); }
+  }
+
+  async function removeUserAccess(target: TenantUser) {
+    if (!tenant) return;
+    setRemovingUser(target.id);
+    try {
+      const res = await authFetch("tenant-admin", { method: "POST", body: JSON.stringify({ action: "remove_user", tenant_id: tenant.id, user_id: target.user_id }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) setToast(humanError(data.error) || data.error || "Erro ao remover o acesso.");
+      else setToast(`Acesso de ${target.email ?? "usuário"} removido de ${tenant.name}.`);
+      await loadTenantData();
+    } catch {
+      setToast("Não foi possível falar com o servidor. Tente de novo.");
+    } finally { setRemovingUser(""); }
   }
 
   async function inviteUser(options?: { email?: string; role?: InviteDraft["role"]; successMessage?: string }) {
@@ -4680,7 +4695,8 @@ export function App() {
                 </div>
                 <Users size={18} />
               </div>
-              <TenantUsersList users={tenantUsers} emails={accessEmails} canResend={canAdminTenant} resending={resendingEmail} onResend={resendAccess} />
+              <TenantUsersList users={tenantUsers} emails={accessEmails} canResend={canAdminTenant} resending={resendingEmail} onResend={resendAccess}
+                onRemove={removeUserAccess} removing={removingUser} currentUserId={currentUserId || null} />
             </section>
 
             <section className="panel">
@@ -6180,9 +6196,11 @@ function crmActivityDetail(activity: CrmActivity): string {
 
 type AccessEmailInfo = { status: string; email_status: "sent" | "failed" | "not_configured" | null; email_error: string | null; email_sent_at: string | null; created_at: string };
 
-function TenantUsersList({ users, emails = {}, canResend, resending, onResend }: {
+function TenantUsersList({ users, emails = {}, canResend, resending, onResend, onRemove, removing, currentUserId }: {
   users: TenantUser[]; emails?: Record<string, AccessEmailInfo>; canResend?: boolean; resending?: string; onResend?: (email: string) => void;
+  onRemove?: (user: TenantUser) => void; removing?: string; currentUserId?: string | null;
 }) {
+  const [confirming, setConfirming] = useState<string | null>(null);
   if (!users.length) return <EmptyState text="Nenhum usuário vinculado ainda." />;
   return (
     <div className="user-list">
@@ -6201,8 +6219,22 @@ function TenantUsersList({ users, emails = {}, canResend, resending, onResend }:
             <StatusPill text={userStatusLabel(user.status)} tone={user.status === "active" ? "good" : "muted"} />
             {canResend && user.email && onResend && (
               <button type="button" className="ghost-dark-button user-resend" disabled={resending === user.email} onClick={() => onResend(user.email!)}>
-                {resending === user.email ? "Enviando…" : "Reenviar acesso"}
+                {resending === user.email ? "Enviando…" : user.status === "disabled" ? "Devolver acesso" : "Reenviar acesso"}
               </button>
+            )}
+            {canResend && onRemove && user.status !== "disabled" && user.user_id !== currentUserId && (
+              confirming === user.id ? (
+                <span className="user-remove-confirm">
+                  <button type="button" className="danger-button user-remove" disabled={removing === user.id}
+                    onClick={() => { onRemove(user); setConfirming(null); }}>
+                    {removing === user.id ? "Removendo…" : "Confirmar remoção"}
+                  </button>
+                  <button type="button" className="ghost-dark-button" onClick={() => setConfirming(null)}>Cancelar</button>
+                </span>
+              ) : (
+                <button type="button" className="ghost-dark-button user-remove" title="A pessoa perde o acesso a esta empresa na hora"
+                  onClick={() => setConfirming(user.id)}>Remover acesso</button>
+              )
             )}
           </article>
         );
