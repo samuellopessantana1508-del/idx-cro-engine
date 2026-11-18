@@ -410,7 +410,7 @@ async function handleMessage(item: QueueItem): Promise<string> {
   const { data: waiting } = await svc.from("wa_flow_runs").select("id").eq("tenant_id", item.tenant_id).eq("phone", phone)
     .eq("status", "waiting").in("wait_kind", [...RESPONSE_WAITS]).order("updated_at", { ascending: false });
   // só a automação mais recente responde (antes, duas esperando respondiam à mesma mensagem)
-  let resumed = 0;
+  let resumed = 0, lockedOut = false;
   for (const w of waiting ?? []) {
     if (resumed) {
       await svc.from("wa_flow_runs").update({ status: "cancelled", finished_at: new Date().toISOString(), last_error: "Outra automação mais recente assumiu a conversa" })
@@ -419,7 +419,7 @@ async function handleMessage(item: QueueItem): Promise<string> {
     }
     const { data: run } = await svc.rpc("wa_flow_lock_run", { p_run_id: w.id });
     const r = (Array.isArray(run) ? run[0] : run) as Run | null;
-    if (!r?.id) continue;
+    if (!r?.id) { lockedOut = true; continue; }
     const flow = await getFlow(r.flow_id);
     if (!flow || (flow.status !== "active" && !r.is_test)) {
       await svc.from("wa_flow_runs").update({ locked_until: null }).eq("id", r.id);
@@ -432,6 +432,11 @@ async function handleMessage(item: QueueItem): Promise<string> {
     resumed++;
   }
   if (resumed) return `retomou ${resumed}`;
+  // a execução estava sendo processada (ex.: mandando a próxima pergunta): a mensagem não se perde, tenta de novo
+  if (lockedOut) throw new Error("automação ocupada com este contato");
+  const { count: running } = await svc.from("wa_flow_runs").select("id", { count: "exact", head: true }).eq("tenant_id", item.tenant_id)
+    .eq("phone", phone).eq("is_test", false).eq("status", "running").gt("updated_at", new Date(Date.now() - 2 * 60_000).toISOString());
+  if ((running ?? 0) > 0) throw new Error("automação ocupada com este contato");
 
   // 2) contato já está no meio de outra automação (ex.: esperando um intervalo): não começa outra por cima
   const { count: busy } = await svc.from("wa_flow_runs").select("id", { count: "exact", head: true }).eq("tenant_id", item.tenant_id)
@@ -504,21 +509,49 @@ async function handleOther(item: QueueItem): Promise<string> {
   return `iniciou ${started}`;
 }
 
+/** Espera depois da última mensagem do contato antes de responder (junta mensagens seguidas). */
+const MERGE_WAIT_MS = Number(Deno.env.get("FLOW_MERGE_WAIT_MS") ?? 8_000);
+
 async function processQueue(deadline: number) {
   let n = 0;
   while (Date.now() < deadline) {
     const items = must(await svc.rpc("wa_flow_claim_queue", { p_limit: 25 }), "fila") as QueueItem[];
     if (!items?.length) break;
+    const merged = new Set<number>();
     for (const it of items) {
+      if (merged.has(it.id)) continue;
       try {
+        if (it.kind === "message" && it.phone) {
+          // Várias mensagens seguidas ("Bom dia" + "1️⃣", ou um texto quebrado em 3) viram UMA resposta:
+          // espera a pessoa parar de digitar uns segundos e junta tudo o que chegou.
+          const { data: pend } = await svc.from("wa_flow_queue").select("id, payload, created_at").eq("tenant_id", it.tenant_id)
+            .eq("phone", it.phone).eq("kind", "message").is("processed_at", null).order("id");
+          const group = (pend ?? []) as { id: number; payload: Record<string, any>; created_at: string }[];
+          const newest = Math.max(...group.map((g) => Date.parse(g.created_at)), 0);
+          if (group.length && Date.now() - newest < MERGE_WAIT_MS) {
+            for (const g of group) merged.add(g.id);
+            await svc.from("wa_flow_queue").update({ locked_until: null, attempts: Math.max(0, it.attempts - 1), not_before: new Date(newest + MERGE_WAIT_MS).toISOString() })
+              .in("id", group.map((g) => g.id));
+            continue;
+          }
+          const others = group.filter((g) => g.id !== it.id);
+          if (others.length) {
+            const texts = group.map((g) => String(g.payload?.text ?? "").trim()).filter(Boolean);
+            it.payload = { ...it.payload, text: texts.join("\n"), merged: group.length };
+            for (const g of others) merged.add(g.id);
+            await svc.from("wa_flow_queue").update({ processed_at: new Date().toISOString(), result: `junto com a mensagem #${it.id}`, locked_until: null })
+              .in("id", others.map((g) => g.id));
+          }
+        }
         const result = it.phone ? (it.kind === "message" ? await handleMessage(it) : await handleOther(it)) : "sem telefone";
         await svc.from("wa_flow_queue").update({ processed_at: new Date().toISOString(), result: result.slice(0, 200), locked_until: null }).eq("id", it.id);
       } catch (e) {
         const msg = (e as Error).message.slice(0, 200);
         console.error("cro-flows fila", it.id, msg);
-        await svc.from("wa_flow_queue").update(it.attempts >= 3
+        const busy = msg.includes("ocupada"); // outra mensagem do mesmo contato ainda sendo respondida: tenta logo
+        await svc.from("wa_flow_queue").update(it.attempts >= (busy ? 10 : 3)
           ? { processed_at: new Date().toISOString(), result: `erro: ${msg}`, locked_until: null }
-          : { locked_until: null, not_before: new Date(Date.now() + 30_000).toISOString(), result: `tentando de novo: ${msg}` }).eq("id", it.id);
+          : { locked_until: null, not_before: new Date(Date.now() + (busy ? 10_000 : 30_000)).toISOString(), result: `tentando de novo: ${msg}` }).eq("id", it.id);
       }
       n++;
     }

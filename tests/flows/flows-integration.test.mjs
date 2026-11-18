@@ -197,6 +197,18 @@ test("opção 2 passa para atendente: robô para e equipe é avisada", async () 
   await drain();
 });
 
+
+test("várias mensagens seguidas viram uma resposta só; emoji de número escolhe a opção", async () => {
+  const p = ph(31);
+  await inbound(p, "preço", "Carla");
+  await tick();
+  assert.match(outbox(p), /Como posso ajudar\?/);
+  await inbound(p, "Bom dia");
+  await inbound(p, "2️⃣");
+  await tick();
+  assert.match(outbox(p), /Já chamo alguém da equipe/, "“Bom dia” + “2️⃣” = opção 2");
+  assert.equal(sql(`select count(*) from wa_flow_queue where phone = '${p}' and result like 'junto com a mensagem%'`), "1");
+});
 test("sem resposta no prazo: segue pelo caminho 'Não respondeu' (tarefa no CRM)", async () => {
   const p = ph(3);
   await inbound(p, "orcamento", "Carla Dias");

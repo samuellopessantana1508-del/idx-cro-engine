@@ -59,6 +59,9 @@ export function messageContent(item: OutItem): Record<string, unknown> {
  * com espera crescente), publica o QR, grava entrada/saída no banco e envia a
  * fila (uma mensagem por vez; o banco decide o intervalo e os limites).
  */
+/** Janela do histórico recuperado ao reconectar (respostas que chegaram com o número desconectado). */
+const HISTORY_WINDOW_S = 12 * 3600;
+
 export class Session {
   private sock: SocketLike | null = null;
   private open = false;
@@ -98,6 +101,7 @@ export class Session {
       sock.ev.on("creds.update", () => { saveCreds().catch((e) => this.log.error("[%s] saveCreds", this.id, e)); });
       sock.ev.on("connection.update", (u) => this.onConnection(sock, u));
       sock.ev.on("messages.upsert", (m) => this.onMessages(m));
+      sock.ev.on("messaging-history.set", (h) => this.onHistory(h));
       sock.ev.on("messages.update", (u) => this.onStatus(u));
     } catch (e) {
       this.log.error("[%s] falha ao iniciar conexão: %s", this.id, String((e as Error)?.message ?? e));
@@ -170,6 +174,21 @@ export class Session {
       const ok = await this.db.ingest(this.id, p).then(() => true, (e) => { this.log.error("[%s] ingest: %s", this.id, e.message); return false; });
       // mensagem recebida: avisa as automações para responderem já
       if (ok && !(p as { from_me?: boolean }).from_me) this.opts.onInbound?.((p as { body?: string | null }).body ?? undefined);
+    }
+  }
+
+  /**
+   * Ao conectar de novo (QR lido depois de uma queda), o WhatsApp entrega as conversas recentes como histórico,
+   * não como mensagem nova. As respostas que chegaram enquanto o número estava desconectado vêm por aqui:
+   * entram na caixa de entrada e nas automações (as já gravadas são ignoradas pelo banco).
+   */
+  private async onHistory(h: any) {
+    const since = Date.now() / 1000 - HISTORY_WINDOW_S;
+    const recent = (h?.messages ?? []).filter((raw: any) => Number(raw?.messageTimestamp?.low ?? raw?.messageTimestamp ?? 0) >= since)
+      .sort((a: any, b: any) => Number(a?.messageTimestamp?.low ?? a?.messageTimestamp ?? 0) - Number(b?.messageTimestamp?.low ?? b?.messageTimestamp ?? 0));
+    if (recent.length) {
+      this.log.info("[%s] histórico: %d mensagem(ns) das últimas %dh", this.id, recent.length, HISTORY_WINDOW_S / 3600);
+      await this.onMessages({ type: "append", messages: recent });
     }
   }
 

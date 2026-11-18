@@ -201,6 +201,21 @@ test("automação: mensagem recebida dispara resposta com texto e imagem pelo me
   await admin.rpc("wa_flow_set_status", { p_flow_id: f.data.id, p_status: "archived" });
 });
 
+test("ao reconectar, respostas que chegaram com o número fora do ar entram pelo histórico (e as antigas não)", async () => {
+  const p = ph(9);
+  const now = Math.floor(Date.now() / 1000);
+  sock.emit("messaging-history.set", { messages: [
+    { key: { remoteJid: `${p}@s.whatsapp.net`, id: `HIS${TAG}old`, fromMe: false }, messageTimestamp: now - 3 * 86400, message: { conversation: "mensagem velha" } },
+    { key: { remoteJid: `${p}@s.whatsapp.net`, id: `HIS${TAG}new`, fromMe: false }, pushName: "Farmácia", messageTimestamp: now - 1800, message: { conversation: "1️⃣" } },
+  ] });
+  await wait(() => sql(`select count(*) from whatsapp_messages where wa_message_id = 'HIS${TAG}new' and direction = 'inbound'`) === "1");
+  assert.equal(sql(`select count(*) from whatsapp_messages where wa_message_id = 'HIS${TAG}old'`), "0");
+  // o mesmo histórico de novo não duplica
+  sock.emit("messaging-history.set", { messages: [{ key: { remoteJid: `${p}@s.whatsapp.net`, id: `HIS${TAG}new`, fromMe: false }, messageTimestamp: now - 1800, message: { conversation: "1️⃣" } }] });
+  await new Promise((r) => setTimeout(r, 500));
+  assert.equal(sql(`select count(*) from whatsapp_messages where wa_message_id = 'HIS${TAG}new'`), "1");
+});
+
 test("grupos: lista os grupos e extrai participantes com número (sem quem esconde o número)", async () => {
   const denied = await seller.rpc("wa_groups_request", { p_tenant_id: A, p_kind: "list" });
   assert.match(denied.error?.message ?? "", /gestores/);

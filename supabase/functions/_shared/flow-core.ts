@@ -68,7 +68,21 @@ export const MAX_STEPS_PER_TICK = 60;
 // Texto: normalização, palavras-chave (igual ao FlowZap original), variáveis
 // -----------------------------------------------------------------------------
 export function normalize(str: string): string {
-  return String(str ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
+  return String(str ?? "")
+    .replace(/🔟/g, "10").replace(/[\uFE0F\u20E3]/g, "") // emoji de número (1️⃣) vira o número
+    .replace(/[\uFF10-\uFF19]/g, (d) => String(d.charCodeAt(0) - 0xFF10))
+    .toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
+}
+
+/** Número da opção numa resposta: "1", "1️⃣", "1.", "opção 2", "2 - é outra pessoa" — inclusive numa linha
+ * no meio de várias mensagens seguidas ("Bom dia" + "1️⃣"). "3 pedidos por dia" não conta como opção. */
+export function optionNumber(message: string): number | null {
+  const lines = String(message ?? "").split(/\n+/).map((l) => normalize(l)).filter(Boolean);
+  for (const l of lines) {
+    const m = l.match(/^(?:opcao|numero|op\.?|n\.?)?\s*(\d{1,2})\s*[.)!:-]?\s*$/) ?? l.match(/^(\d{1,2})\s*[.):-]\s+\S/);
+    if (m) return Number(m[1]);
+  }
+  return null;
 }
 
 function levenshtein(a: string, b: string): number {
@@ -333,6 +347,7 @@ function evalRule(rule: Record<string, any>, ctx: FlowContext, vars: Record<stri
       case "gt": return Number(subject) > Number(val);
       case "lt": return Number(subject) < Number(val);
       case "keyword": return val.split(/[\n,]/).some((k) => matchKeyword(subject, k.trim()));
+      case "regex": try { return new RegExp(val, "i").test(s); } catch { return false; }
       default: return false;
     }
   };
@@ -341,6 +356,8 @@ function evalRule(rule: Record<string, any>, ctx: FlowContext, vars: Record<stri
     case "has_tag": return (ctx.contact.tags ?? []).some((t) => normalize(t) === normalize(val)) === (op !== "not_equals");
     case "business_hours": return inBusinessHours(ctx.now, ctx.tz, rule.hours ?? {}) === (op !== "not_equals");
     case "last_message": return textOp(String(vars.lastResponse ?? ""));
+    // número escolhido no menu (1, 1️⃣, "opção 1"...), mesmo no meio de várias mensagens
+    case "option": { const n = optionNumber(String(vars.lastResponse ?? "")); return n !== null && (op === "not_equals" ? String(n) !== val : String(n) === val); }
     case "variable": return textOp(String(vars[rule.key ?? ""] ?? ""));
     case "contact_field": {
       const k = String(rule.key ?? "");
@@ -397,7 +414,7 @@ export async function step(graph: Graph, state: RunState, ctx: FlowContext, inpu
         if (input.timeout) { goto(nextFrom(graph, node.id, "timeout")); break; }
         const opts = menuOptions(node.data.config ?? {});
         const ans = normalize(String(input.message ?? ""));
-        const num = Number((ans.match(/^\d+/) ?? [])[0]);
+        const num = optionNumber(String(input.message ?? ""));
         let idx = Number.isInteger(num) && num >= 1 && num <= opts.length ? num - 1 : -1;
         if (idx < 0) idx = opts.findIndex((o) => normalize(o) === ans || (ans.length >= 3 && normalize(o).includes(ans)) || matchKeyword(ans, o, "contains"));
         s.vars.lastChoice = idx >= 0 ? opts[idx] : "";

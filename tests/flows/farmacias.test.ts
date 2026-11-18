@@ -167,3 +167,58 @@ test("24 h sem resposta em cada etapa cria tarefa (sem insistência automática)
   const e = await talk("1", "1", "1", "1", "1", "3", null);
   assert.equal(e.st.status, "completed");
 });
+
+test("emoji de número e várias mensagens seguidas", async () => {
+  for (const first of ["1️⃣", "1", "1.", "Bom dia\n1️⃣", "Sim, sou eu", "sou eu mesma"]) {
+    const r = await talk(first);
+    assert.equal(r.st.node, "q1", JSON.stringify(first));
+  }
+  const a = await talk("1️⃣", "1️⃣", "2️⃣", "3️⃣", "Bom dia\n2");
+  assert.deepEqual([a.fields.origem_pedidos, a.fields.como_cliente_novo_escolhe, a.fields.pedidos_dia, a.fields.capacidade_atendimento], ["Já é cliente", "Vai na mais conhecida", "Mais de 30", "Com ajustes"]);
+  assert.equal(a.st.node, "oferta");
+  const b = await talk("Bom dia\n2️⃣");
+  assert.equal(b.st.node, "ask_resp");
+  const c = await talk("Olá\n3️⃣");
+  assert.ok(has(c.calls, "tag:add:farmácia: agora não"));
+  const d = await talk("1", "3 por dia");
+  assert.equal(d.fields.origem_pedidos, "3 por dia", "“3 por dia” é resposta, não a opção 3");
+});
+
+test("resposta automática da farmácia não conta como resposta da pessoa", async () => {
+  const auto = "‎Drograria Brisas agradece seu contato. Como podemos ajudar?";
+  const a = await talk(auto);
+  assert.equal(a.st.node, "w_auto");
+  assert.equal(a.sent.length, 0, "não responde a robô");
+  const b = await talk(auto, "1️⃣");
+  assert.equal(b.st.node, "q1");
+  const c = await talk("A Farmácia X agradece a sua mensagem. Informamos que nosso horário de atendimento é de segunda a sexta", null, "1");
+  assert.equal(c.st.node, "q1", "40 min sem a pessoa: explica, pergunta de novo e segue");
+  assert.match(c.sent[0], /Arthur, da IDX/);
+  const d = await talk(auto, "Olá! Seja bem-vindo à Farmácia Y 💊");
+  assert.equal(d.st.node, "w_auto2", "segunda mensagem automática: só espera");
+  const e = await talk("Olá! 😊 Seja bem-vindo à Miligrama 💊\nTrabalhamos com fórmulas", "Não tenho interesse");
+  assert.ok(has(e.calls, "tag:add:farmácia: agora não"));
+});
+
+test("só cumprimentou ou perguntou quem é: explica e pergunta de novo", async () => {
+  for (const first of ["Bom dia", "Oi, tudo bem?", "quem é?", "Boa tarde! Quem fala?", "Do que se trata?"]) {
+    const r = await talk(first);
+    assert.equal(r.st.node, "confirma", first);
+  }
+  assert.equal((await talk("Bom dia", "1")).st.node, "q1");
+  assert.equal((await talk("oi", "Sou eu sim")).st.node, "q1");
+  assert.equal((await talk("Oi", "2")).st.node, "ask_resp");
+  assert.ok(has((await talk("Oi", "3")).calls, "tag:add:farmácia: agora não"));
+  assert.equal((await talk("Oi", "oi?")).st.node, "q1", "não explica duas vezes");
+});
+
+test("recusa no meio das perguntas encerra com educação", async () => {
+  for (const msg of ["Não tenho interesse", "não, obrigado", "agora não"]) {
+    const r = await talk("1", "1", msg);
+    assert.ok(has(r.calls, "tag:add:farmácia: agora não"), msg);
+    assert.equal(r.st.status, "completed");
+  }
+  for (const msg of ["Não tenho farmácia mais", "número errado", "Vendi a farmácia"]) {
+    assert.ok(has((await talk(msg)).calls, "tag:add:farmácia: agora não"), msg);
+  }
+});
