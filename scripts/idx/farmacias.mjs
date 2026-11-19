@@ -242,5 +242,46 @@ export function farmaciasGraph({ campaignId = null, stages = {} } = {}) {
   );
   link(E("humano", "msg_humano"), E("msg_humano", "handoff"));
 
+  return untangle({ nodes, edges });
+}
+
+/**
+ * Deixa o desenho legível no editor: saídas comuns (SAIR, "agora não", passar para a equipe, fim) viram uma cópia
+ * por ramo, para nenhuma seta atravessar o fluxo inteiro, e cada bloco ganha a posição calculada em POSICOES.
+ * O comportamento é o mesmo: as cópias fazem exatamente o que o bloco original fazia.
+ */
+function untangle(g) {
+  const CHAINS = { tag_optout: ["tag_optout", "msg_optout", "optout"], humano: ["humano", "msg_humano", "handoff"], bye: ["bye", "tag_nao"] };
+  const byId = new Map(g.nodes.map((n) => [n.id, n]));
+  const nodes = [...g.nodes];
+  let edges = [...g.edges];
+  for (const [head, chain] of Object.entries(CHAINS)) {
+    const incoming = edges.filter((e) => e.target === head);
+    incoming.slice(1).forEach((e, i) => {
+      const sfx = `_${i + 2}`;
+      chain.forEach((id) => nodes.push({ ...structuredClone(byId.get(id)), id: id + sfx }));
+      e.target = head + sfx;
+      edges.filter((x) => chain.includes(x.source) && chain.includes(x.target))
+        .forEach((x) => edges.push({ ...x, id: x.id + sfx, source: x.source + sfx, target: x.target + sfx }));
+      // a cópia do "agora não" também termina no seu próprio fim
+      edges.filter((x) => x.source === chain[chain.length - 1] && !chain.includes(x.target))
+        .forEach((x) => edges.push({ ...x, id: x.id + sfx, source: x.source + sfx }));
+    });
+  }
+  // um "Fim" para cada ramo
+  const fim = byId.get("fim");
+  let k = 0;
+  edges = edges.map((e) => {
+    if (e.target !== "fim") return e;
+    k++;
+    if (k === 1) return e;
+    nodes.push({ ...structuredClone(fim), id: `fim_${k}` });
+    return { ...e, id: `${e.id}_${k}`, target: `fim_${k}` };
+  });
+  for (const n of nodes) if (POSICOES[n.id]) n.position = { ...POSICOES[n.id] };
   return { nodes, edges };
 }
+
+// POSICOES (gerado por scripts/idx/layout-farmacias.mjs; não editar à mão)
+const POSICOES = {"t":{"x":40,"y":964},"c_sair":{"x":402,"y":952},"c_auto":{"x":764,"y":1951},"c_nao":{"x":1126,"y":840},"c_outro":{"x":1488,"y":1801},"c_sim":{"x":1850,"y":892},"c_oi_ja":{"x":2212,"y":1620},"c_auto_ja":{"x":1126,"y":1951},"f_auto":{"x":1488,"y":1963},"w_auto":{"x":1850,"y":684},"w_auto2":{"x":1488,"y":734},"f_oi":{"x":2574,"y":684},"confirma":{"x":2936,"y":611},"tag_optout":{"x":764,"y":2119},"msg_optout":{"x":1126,"y":2107},"optout":{"x":1488,"y":2119},"bye":{"x":1488,"y":572},"tag_nao":{"x":1850,"y":408},"fim":{"x":1850,"y":552},"ask_resp":{"x":3298,"y":1850},"c_sair_resp":{"x":3660,"y":1778},"f_resp":{"x":4022,"y":1718},"deal_resp":{"x":4384,"y":1718},"task_resp":{"x":4746,"y":1718},"msg_resp":{"x":5108,"y":1706},"deal_novo":{"x":3298,"y":845},"tag_conv":{"x":3660,"y":845},"q1":{"x":4022,"y":773},"q1_f0":{"x":5470,"y":342},"q1_f1":{"x":5470,"y":474},"q1_f2":{"x":5470,"y":914},"q1_sair":{"x":4384,"y":1272},"q1_nao":{"x":4746,"y":1350},"q1_fora":{"x":5108,"y":1244},"q1_ft":{"x":5470,"y":1322},"q1_sem":{"x":4384,"y":1578},"q2":{"x":5832,"y":623},"q2_f0":{"x":7280,"y":1214},"q2_f1":{"x":7280,"y":1082},"q2_f2":{"x":7280,"y":950},"q2_sair":{"x":6194,"y":268},"q2_nao":{"x":6556,"y":190},"q2_fora":{"x":6918,"y":448},"q2_ft":{"x":7280,"y":394},"q2_sem":{"x":6194,"y":58},"oferta":{"x":7642,"y":918},"oferta_sair":{"x":8004,"y":1678},"oferta_sim":{"x":8366,"y":1606},"oferta_sem":{"x":8004,"y":1910},"periodo":{"x":8728,"y":746},"periodo_f":{"x":9090,"y":838},"periodo_ft":{"x":9090,"y":536},"ask_dia":{"x":9452,"y":760},"c_sair_dia":{"x":9814,"y":898},"f_dia":{"x":10176,"y":982},"deal_reuniao":{"x":10538,"y":982},"tag_reuniao":{"x":10900,"y":982},"task_reuniao":{"x":11262,"y":982},"aviso_reuniao":{"x":11624,"y":982},"msg_reuniao":{"x":11986,"y":970},"dia_sem":{"x":9814,"y":700},"ask_lig":{"x":8004,"y":558},"c_sair_lig":{"x":8366,"y":630},"f_lig":{"x":8728,"y":316},"deal_lig":{"x":9090,"y":316},"task_lig":{"x":9452,"y":316},"aviso_lig":{"x":9814,"y":316},"msg_lig":{"x":10176,"y":304},"lig_sem":{"x":8366,"y":432},"por_escrito":{"x":8004,"y":933},"deal_escrito":{"x":8366,"y":1206},"task_escrito":{"x":8728,"y":1468},"msg_escrito":{"x":9090,"y":1456},"humano":{"x":5470,"y":1190},"msg_humano":{"x":5832,"y":1278},"handoff":{"x":6194,"y":1290},"tag_optout_2":{"x":4022,"y":1862},"msg_optout_2":{"x":4384,"y":1850},"optout_2":{"x":4746,"y":1862},"tag_optout_3":{"x":4746,"y":1046},"msg_optout_3":{"x":5108,"y":1034},"optout_3":{"x":5470,"y":1046},"tag_optout_4":{"x":6556,"y":670},"msg_optout_4":{"x":6918,"y":658},"optout_4":{"x":7280,"y":670},"tag_optout_5":{"x":8366,"y":1772},"msg_optout_5":{"x":8728,"y":1760},"optout_5":{"x":9090,"y":1772},"tag_optout_6":{"x":10176,"y":838},"msg_optout_6":{"x":10538,"y":826},"optout_6":{"x":10900,"y":838},"tag_optout_7":{"x":8728,"y":172},"msg_optout_7":{"x":9090,"y":160},"optout_7":{"x":9452,"y":172},"humano_2":{"x":7280,"y":526},"msg_humano_2":{"x":7642,"y":262},"handoff_2":{"x":8004,"y":274},"humano_3":{"x":8728,"y":1628},"msg_humano_3":{"x":9090,"y":1616},"handoff_3":{"x":9452,"y":1628},"humano_4":{"x":8366,"y":918},"msg_humano_4":{"x":8728,"y":1168},"handoff_4":{"x":9090,"y":1180},"bye_2":{"x":5108,"y":1482},"tag_nao_2":{"x":5470,"y":1494},"bye_3":{"x":6918,"y":58},"tag_nao_3":{"x":7280,"y":70},"bye_4":{"x":8366,"y":1050},"tag_nao_4":{"x":8728,"y":1324},"fim_2":{"x":3298,"y":638},"fim_3":{"x":2212,"y":408},"fim_4":{"x":3660,"y":1934},"fim_5":{"x":5470,"y":1718},"fim_6":{"x":4746,"y":1578},"fim_7":{"x":6556,"y":58},"fim_8":{"x":8366,"y":1910},"fim_9":{"x":12348,"y":982},"fim_10":{"x":10176,"y":700},"fim_11":{"x":10538,"y":316},"fim_12":{"x":8728,"y":40},"fim_13":{"x":8366,"y":786},"fim_14":{"x":9452,"y":1468},"fim_15":{"x":5832,"y":1494},"fim_16":{"x":7642,"y":70},"fim_17":{"x":9090,"y":1324}};
+// /POSICOES
