@@ -417,7 +417,7 @@ export async function step(graph: Graph, state: RunState, ctx: FlowContext, inpu
         const opts = menuOptions(node.data.config ?? {});
         const ans = normalize(String(input.message ?? ""));
         const num = optionNumber(String(input.message ?? ""));
-        let idx = Number.isInteger(num) && num >= 1 && num <= opts.length ? num - 1 : -1;
+        let idx = num !== null && Number.isInteger(num) && num >= 1 && num <= opts.length ? num - 1 : -1;
         const mc = node.data.config ?? {};
         const byKeyword = () => opts.findIndex((o) => normalize(o) === ans || (ans.length >= 3 && normalize(o).includes(ans)) || matchKeyword(ans, o, "contains"));
         const askAi = async () => {
