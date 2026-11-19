@@ -3042,6 +3042,8 @@ export function App() {
       </aside>
 
       <main className="main">
+        {/* a Visão comercial monta aqui o hero 3D (portal), acima do cabeçalho */}
+        <div id="crm-hero-slot" />
         <header className="topbar">
           <div>
             <p className="eyeline">{isPlatformUser ? `Gestor IDX · ${platformRoleLabel(platformRole)}` : "Dados reais da empresa"}</p>

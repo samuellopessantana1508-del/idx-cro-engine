@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertTriangle, ArrowRight, CalendarCheck2, CalendarClock, CheckCircle2, CircleDollarSign, Flame, HeartPulse, KanbanSquare, MessageCircle, Sunrise, Target, Trophy,
 } from "lucide-react";
@@ -10,6 +11,8 @@ import { brl, channelLabel, dueState, errorText, phoneLabel, relative, segmentIn
 import type { Contact, Deal, KpiResponse, RfvCustomer, Task } from "./types";
 import { Avatar, Empty, Pill, Segmented, Skeleton, Stat } from "./ui";
 import { TaskRow } from "./records";
+import { InfinityHero } from "./hero/hero";
+import { CountUp, useReveal } from "./hero/motion";
 
 type Period = "month" | "30d" | "quarter";
 function periodRange(p: Period): { from: Date; to: Date; label: string } {
@@ -25,7 +28,11 @@ function startOfDay(d = new Date()) { const x = new Date(d); x.setHours(0, 0, 0,
 // Visão comercial (dashboard): responde "o que precisa de atenção agora"
 // ---------------------------------------------------------------------------
 export function HomeView() {
-  const { tenantId, userId, access, refreshKey, notify, navigate, openDeal, openContact, memberLabel } = useCrm();
+  const { tenantId, tenantName, userId, access, refreshKey, notify, navigate, openDeal, openContact, memberLabel } = useCrm();
+  const pageRef = useRef<HTMLDivElement>(null);
+  const [heroSlot, setHeroSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => { setHeroSlot(document.getElementById("crm-hero-slot")); }, []);
+  useReveal(pageRef, ".crm-hello, .crm-stat, .crm-panel, .crm-goal-mini");
   const [scope, setScope] = useState<"mine" | "team">(access.role === "sales" ? "mine" : "team");
   const [period, setPeriod] = useState<Period>("month");
   const [kpi, setKpi] = useState<KpiResponse | null>(null);
@@ -67,9 +74,15 @@ export function HomeView() {
   const today = (tasks ?? []).filter((t) => dueState(t.due_at) === "today");
 
   const val = (key: string) => (m?.[key]?.available ? Number(m[key].value) : null);
+  const todayCount = tasks === null ? "·" : String(overdue.length + today.length);
+  const openCount = deals === null ? "·" : String(deals.length);
 
   return (
-    <div className="crm-page">
+    <div className="crm-page crm-home" ref={pageRef}>
+      {heroSlot && createPortal(
+        <InfinityHero tenantName={tenantName} badges={[{ value: todayCount, label: "atividades para hoje" }, { value: openCount, label: "negociações abertas" }]} />,
+        heroSlot,
+      )}
       <div className="crm-toolbar">
         <div className="crm-toolbar-left">
           <div className="crm-hello">
@@ -85,12 +98,12 @@ export function HomeView() {
 
       {!m ? <Skeleton rows={1} height={96} /> : (
         <div className="crm-stats">
-          <Stat label="Em negociação" value={brl(val("pipeline_value"), true)} sub={`${val("open_deals") ?? 0} abertas · ponderado ${brl(val("weighted_pipeline"), true)}`} onClick={() => navigate({ name: "deals" })} hint={m.pipeline_value?.formula} />
-          <Stat label={`Vendas ${range.label}`} tone="green" value={brl(val("revenue"), true)} sub={`${val("orders") ?? 0} venda(s) com evidência${(val("pending_sales") ?? 0) > 0 ? ` · ${val("pending_sales")} pendente(s)` : ""}`} hint={m.revenue?.formula} />
-          <Stat label="Negociações ganhas" value={val("won_deals") ?? 0} sub={m.win_rate?.available ? `Win rate ${Number(m.win_rate.value).toFixed(0)}% · ${val("lost_deals") ?? 0} perdida(s)` : "Win rate: sem negociações encerradas no período"} hint={m.win_rate?.formula} />
-          <Stat label="Previsão do mês" value={brl(val("forecast_month"), true)} sub="Σ valor × probabilidade (fechamento no mês)" hint={m.forecast_month?.formula} />
-          <Stat label="Atividades atrasadas" tone={overdue.length ? "red" : undefined} value={overdue.length} sub={`${today.length} para hoje`} onClick={() => navigate({ name: "routine" })} />
-          <Stat label="Sem próxima ação" tone={noNext.length ? "amber" : undefined} value={noNext.length} sub={`${rotting.length} parada(s) além do prazo da etapa`} onClick={() => navigate({ name: "deals" })} />
+          <Stat label="Em negociação" value={<CountUp value={brl(val("pipeline_value"), true)} />} sub={`${val("open_deals") ?? 0} abertas · ponderado ${brl(val("weighted_pipeline"), true)}`} onClick={() => navigate({ name: "deals" })} hint={m.pipeline_value?.formula} />
+          <Stat label={`Vendas ${range.label}`} tone="green" value={<CountUp value={brl(val("revenue"), true)} />} sub={`${val("orders") ?? 0} venda(s) com evidência${(val("pending_sales") ?? 0) > 0 ? ` · ${val("pending_sales")} pendente(s)` : ""}`} hint={m.revenue?.formula} />
+          <Stat label="Negociações ganhas" value={<CountUp value={val("won_deals") ?? 0} />} sub={m.win_rate?.available ? `Win rate ${Number(m.win_rate.value).toFixed(0)}% · ${val("lost_deals") ?? 0} perdida(s)` : "Win rate: sem negociações encerradas no período"} hint={m.win_rate?.formula} />
+          <Stat label="Previsão do mês" value={<CountUp value={brl(val("forecast_month"), true)} />} sub="Σ valor × probabilidade (fechamento no mês)" hint={m.forecast_month?.formula} />
+          <Stat label="Atividades atrasadas" tone={overdue.length ? "red" : undefined} value={<CountUp value={overdue.length} />} sub={`${today.length} para hoje`} onClick={() => navigate({ name: "routine" })} />
+          <Stat label="Sem próxima ação" tone={noNext.length ? "amber" : undefined} value={<CountUp value={noNext.length} />} sub={`${rotting.length} parada(s) além do prazo da etapa`} onClick={() => navigate({ name: "deals" })} />
         </div>
       )}
 
