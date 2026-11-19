@@ -5,7 +5,7 @@
 // Prova usada: Rede SanMar (Rio Verde), 8.150 cliques em ~9 meses a R$1,54 (Método 3P, seção 02). Nada de promessa de resultado.
 // Nada aqui marca venda ganha/perdida: quem fecha é a pessoa, na reunião.
 
-export const CALENDLY = "https://calendly.com/idxparasuaempresa/como-vender-mais-no-whatsapp-farmacias";
+export const CALENDLY = "https://calendly.com/samuellopesrv/30min";
 
 /** Primeira mensagem: entrega um dado útil, desperta o dono e só então pergunta se é ele ({a|b} sorteia variações).
  * Dado: Pesquisa de Comportamento do Consumidor em Farmácias 2026 (IFEPEC, com Instituto Axxus e NEIT/Unicamp, 4 mil
