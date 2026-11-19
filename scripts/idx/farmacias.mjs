@@ -1,37 +1,38 @@
-// Prospecção de farmácias da IDX pelo WhatsApp (QR Code / Evolution), seguindo o Playbook Comercial de Farmácias:
-// gancho curto → só o dono decide → SPIN (Situação, Problema, Implicação, Necessidade) → reunião de 30 min por vídeo.
-// Os "presentes" (programa de remédio de uso contínuo e site) aparecem só como insinuação: o foco é o diagnóstico.
+// Prospecção de farmácias da IDX pelo WhatsApp (QR Code / Evolution).
+// Ordem: 1) confirmar que é o dono ou a dona; 2) duas perguntas (Google e recompra); 3) reunião de 30 min por vídeo.
+// A oferta é o Método 3P (Google Ads para farmácias: Praça, Proximidade e Pedido), sem falar em "tráfego pago":
+// a conversa fala de quem procura farmácia no Google e da recompra de quem usa remédio todo mês.
+// Prova usada: Rede SanMar (Rio Verde), 8.150 cliques em ~9 meses a R$1,54 (Método 3P, seção 02). Nada de promessa de resultado.
 // Nada aqui marca venda ganha/perdida: quem fecha é a pessoa, na reunião.
 
 export const CALENDLY = "https://calendly.com/idxparasuaempresa/como-vender-mais-no-whatsapp-farmacias";
 
-/** Primeira mensagem do disparo ({a|b} sorteia uma variação por contato, para nada sair idêntico). */
+/** Primeira mensagem: só confirma se é o dono ({a|b} sorteia uma variação por contato). */
 export const OPENER = [
   "{Oi|Olá}, tudo bem? Aqui é o Arthur, da IDX, de Rio Verde.",
   "",
-  "{Estou conversando com algumas farmácias|Tenho conversado com farmácias} da região sobre um ponto que quase ninguém olha: quem aparece primeiro quando alguém do bairro procura farmácia no Google e chama no WhatsApp.",
+  "{Queria|Preciso} falar com o dono ou a dona da {empresa}. É sobre os clientes que procuram farmácia no Google aí na região.",
   "",
-  "É você quem cuida da {empresa}?",
+  "É com você mesmo?",
   "",
   "1️⃣ Sim, sou eu",
-  "2️⃣ É outra pessoa",
-  "3️⃣ Agora não",
+  "2️⃣ Não, é outra pessoa",
 ].join("\n");
 
-/** Follow-ups para quem não respondeu (mesma cadência dos outros disparos, com as alavancas do playbook). */
+/** Follow-ups para quem não respondeu. Responder 1 em qualquer um leva para a conversa com o dono. */
 export const FOLLOWUPS = [
-  { after_hours: 26, label: "D1 · Lembrete", text: "Oi! Passando só para minha mensagem não se perder no meio das outras 😊\n\nÉ você quem cuida da {empresa}? Pode responder com o número:\n1️⃣ Sim, sou eu\n2️⃣ É outra pessoa" },
-  { after_hours: 72, label: "D3 · Curiosidade", text: "Fiz uma pesquisa rápida aqui: quando alguém procura farmácia na sua cidade pelo Google, só 3 ou 4 aparecem em destaque, e são elas que recebem a maior parte dos pedidos no WhatsApp.\n\nQuer que eu te mostre onde a {empresa} aparece hoje? Responda 1 que eu te explico." },
-  { after_hours: 120, label: "D5 · Prova", text: "Para você ter uma ideia do que eu faço: uma autoescola que eu atendo recebeu 796 contatos em 30 dias, com anúncio local levando direto para o WhatsApp.\n\nÉ outro segmento, mas o mecanismo é o mesmo que eu usaria na farmácia. Faz sentido conversarmos 30 minutos? Responda 1 para sim." },
-  { after_hours: 168, label: "D7 · Novidade", text: "Um detalhe que eu ainda não comentei: existe um canal novo, sem custo para a farmácia, para quem usa remédio de uso contínuo comprar todo mês no mesmo lugar.\n\nSe quiser, te explico em poucos minutos. Responda 1 que eu te conto." },
-  { after_hours: 336, label: "D14 · Despedida", text: "Não quero te incomodar, então paro por aqui. Se um dia fizer sentido trazer mais clientes do bairro pelo WhatsApp, é só me chamar.\n\nSucesso para a {empresa}! 🙏" },
+  { after_hours: 26, label: "D1 · Lembrete", text: "Oi! Só para minha mensagem não se perder 🙂\n\nFalo com o dono ou a dona da {empresa}?\n1️⃣ Sim, sou eu\n2️⃣ Não, é outra pessoa" },
+  { after_hours: 72, label: "D3 · Curiosidade", text: "Fiz um teste aqui: pesquisei “farmácia perto de mim” na sua região. O Google mostra 3 ou 4 farmácias no topo, e o pedido de quem precisa de remédio agora vai para elas.\n\nSe você for o dono ou a dona, responde 1 que eu te mostro onde a {empresa} aparece." },
+  { after_hours: 120, label: "D5 · Prova", text: "Numa rede de farmácias aqui de Rio Verde, as buscas por farmácia no Google trouxeram mais de 8 mil cliques em 9 meses, pagando uns R$1,50 por clique.\n\nDá para montar algo do tamanho da sua cidade para a {empresa}. Responde 1 que eu te explico em 30 minutos." },
+  { after_hours: 168, label: "D7 · Recompra", text: "Uma coisa que eu ainda não te contei: existe um jeito, sem custo para a farmácia, de fazer quem usa remédio de uso contínuo comprar com vocês todo mês.\n\nSe quiser saber como, responde 1." },
+  { after_hours: 336, label: "D14 · Despedida", text: "Vou parar de te mandar mensagem para não incomodar. Se um dia quiser ver onde a {empresa} aparece no Google, é só me chamar por aqui.\n\nSucesso aí! 🙏" },
 ];
 
 export const CAMPAIGN = {
   name: "Farmácias · Prospecção IDX (WhatsApp)",
-  min_delay_sec: 5, // uma mensagem a cada ~5 s (pedido do dono da conta; QR Code, não a API oficial)
-  max_delay_sec: 5,
-  daily_limit: 500, // máximo do sistema: na prática, sem limite para as ~400 farmácias
+  min_delay_sec: 60, // uma mensagem por minuto (mais natural e com menos risco de o WhatsApp derrubar o número)
+  max_delay_sec: 75,
+  daily_limit: 500,
   start_hour: 8,
   end_hour: 18,
   opt_out_footer: false,
@@ -85,8 +86,8 @@ export function farmaciasGraph({ campaignId = null, stages = {} } = {}) {
     N("w_auto2", "wait_response", { timeout: 48, timeoutUnit: "hours" }, 780, 900, "Esperar a pessoa (48 h)"),
     N("f_oi", "set_field", { field: "farm_explicado", value: "sim" }, 1300, 640, "Marcar: já explicou"),
     N("confirma", "send_menu", {
-      text: "{Oi|Olá}! 😊 Aqui é o Arthur, da IDX, de Rio Verde. Ajudo farmácias da região a receberem mais pedidos de clientes do bairro pelo WhatsApp.\n\nSó para eu falar com a pessoa certa: é você quem cuida da farmácia?",
-      options: "Sim, sou eu\nÉ outra pessoa\nAgora não", buttons: true, timeout: 24, timeoutUnit: "hours", footer: "",
+      text: "{Oi|Olá}! 🙂 Aqui é o Arthur, da IDX, de Rio Verde. Eu ajudo farmácias da região a receber o pedido de quem procura farmácia no Google.\n\nAntes de tudo: falo com o dono ou a dona da farmácia?",
+      options: "Sim, sou eu\nNão, é outra pessoa", buttons: true, timeout: 24, timeoutUnit: "hours", footer: "",
     }, 1560, 700, "Explicar e perguntar de novo"),
   );
   link(E("t", "c_sair"), E("c_sair", "tag_optout", "yes"), E("c_sair", "c_auto", "no"),
@@ -100,7 +101,7 @@ export function farmaciasGraph({ campaignId = null, stages = {} } = {}) {
     E("c_oi", "c_oi_ja", "yes"), E("c_oi", "deal_novo", "no"),
     E("c_oi_ja", "deal_novo", "yes"), E("c_oi_ja", "f_oi", "no"),
     E("f_oi", "confirma"),
-    E("confirma", "deal_novo", "opt0"), E("confirma", "ask_resp", "opt1"), E("confirma", "bye", "opt2"),
+    E("confirma", "deal_novo", "opt0"), E("confirma", "ask_resp", "opt1"),
     E("confirma", "c_sair", "other"), E("confirma", "fim", "timeout"));
 
   // ---- SAIR ----
@@ -121,12 +122,12 @@ export function farmaciasGraph({ campaignId = null, stages = {} } = {}) {
 
   // ---- outra pessoa: pede o contato de quem decide ----
   add(
-    N("ask_resp", "ask", { text: "Sem problema, obrigado por responder! 🙏\n\nPode me passar o nome e o WhatsApp de quem cuida da farmácia? Prometo ser breve e objetivo com ele(a).", saveAs: "responsavel", timeout: 48, timeoutUnit: "hours" }, 1040, 100, "Quem é o responsável?"),
+    N("ask_resp", "ask", { text: "Obrigado por avisar! 🙏\n\nVocê me passa o nome e o WhatsApp do dono ou da dona? Se preferir, me diz o melhor horário para encontrar ele(a) na farmácia.", saveAs: "responsavel", timeout: 48, timeoutUnit: "hours" }, 1040, 100, "Quem é o responsável?"),
     N("c_sair_resp", "condition", SAIR, 1300, 100, "Pediu para sair?"),
     N("f_resp", "set_field", { field: "responsavel", value: "{resposta}" }, 1560, 40, "Salvar responsável"),
     N("deal_resp", "crm_deal", { action: "upsert", stage_id: stages.novo ?? null, title }, 1820, 40, "Novo lead"),
     N("task_resp", "task", { title: "Falar com o responsável da {nome}", description: "Indicado pela farmácia: {resposta}. Abordar com a mensagem B do playbook (ponto forte real + quem cuida da divulgação).", taskType: "whatsapp", dueInHours: 4 }, 2080, 40, "Tarefa: falar com o dono"),
-    N("msg_resp", "send_text", { text: "Muito obrigado! Vou falar com ele(a). Bom trabalho aí! 😊" }, 2340, 40, "Agradecer"),
+    N("msg_resp", "send_text", { text: "Valeu demais! Vou falar com ele(a). Bom trabalho aí! 😊" }, 2340, 40, "Agradecer"),
   );
   link(E("ask_resp", "c_sair_resp", "answered"), E("ask_resp", "fim", "timeout"),
     E("c_sair_resp", "tag_optout", "yes"), E("c_sair_resp", "f_resp", "no"),
@@ -160,31 +161,21 @@ export function farmaciasGraph({ campaignId = null, stages = {} } = {}) {
       E(id, `${id}_sem`, "timeout"), E(`${id}_sem`, "fim"));
   };
 
-  question("q1", QX, "Situação",
-    "Que bom falar com você! 🙌\n\nVou ser direto: são só 3 perguntas rápidas para eu entender a realidade da farmácia.\n\nHoje, os pedidos que chegam pelo WhatsApp vêm mais de quem…",
-    ["Já é cliente da farmácia", "Achou a gente no Google", "Meio a meio"], "origem_pedidos",
-    ["Já é cliente", "Google / internet", "Meio a meio"], "q2");
+  question("q1", QX, "Google",
+    "Prazer! Vou ser rápido.\n\nQuando alguém aí perto pesquisa “farmácia perto de mim” ou “farmácia que entrega” no Google, você sabe se a farmácia de vocês aparece entre as primeiras?",
+    ["Aparece sim", "Não sei", "Acho que não aparece"], "google_posicao_percebida",
+    ["Acha que aparece", "Não sabe", "Acha que não aparece"], "q2");
 
-  question("q2", QX + 1040, "Problema",
-    "Entendi, obrigado! 👍\n\nE quem mora perto e ainda não conhece a farmácia: quando precisa de um remédio com pressa, como você acha que essa pessoa escolhe onde pedir?",
-    ["Pesquisa no Google", "Vai na mais conhecida", "Pergunta a conhecidos"], "como_cliente_novo_escolhe",
-    ["Pesquisa no Google", "Vai na mais conhecida", "Indicação de conhecidos"], "q3");
-
-  question("q3", QX + 2080, "Implicação",
-    "Pois é. Quando alguém pesquisa “farmácia perto de mim”, o Google mostra 3 ou 4 farmácias, e quem aparece primeiro costuma levar o pedido.\n\nE não é um pedido só: quem usa remédio todo mês tende a voltar sempre para a mesma farmácia.\n\nHoje chegam mais ou menos quantos pedidos por dia no WhatsApp de vocês?",
-    ["Até 10", "De 10 a 30", "Mais de 30"], "pedidos_dia",
-    ["Até 10", "De 10 a 30", "Mais de 30"], "q4");
-
-  question("q4", QX + 3120, "Necessidade",
-    "Só para ter uma noção: com um ticket médio de uns R$70, cada 3 pedidos a mais por dia somam mais de R$6 mil por mês no caixa.\n\nSe começassem a chegar mais pedidos de gente do bairro pelo WhatsApp, a equipe daria conta de atender?",
-    ["Sim, daria conta", "Com alguns ajustes", "Hoje já está no limite"], "capacidade_atendimento",
-    ["Daria conta", "Com ajustes", "No limite"], "oferta");
+  question("q2", QX + 1040, "Recompra",
+    "Pergunto porque quem faz essa busca quer comprar agora e quase sempre pede na primeira farmácia que aparece. Numa rede de farmácias aqui de Rio Verde, essas buscas trouxeram mais de 8 mil cliques em 9 meses, a uns R$1,50 cada.\n\nE o cliente novo que chega: vocês conseguem fazer ele voltar todo mês? Quem usa remédio de uso contínuo, por exemplo.",
+    ["Sim, a gente acompanha", "Às vezes", "Não, depende dele"], "recompra",
+    ["Acompanha a recompra", "Às vezes", "Depende do cliente"], "oferta");
 
   // ---- convite para a reunião (insinua o canal de uso contínuo, sem vender nada por mensagem) ----
-  const OX = QX + 4160;
+  const OX = QX + 2080;
   add(
     N("oferta", "send_menu", {
-      text: "Obrigado pelas respostas! 🙏\n\nCom o que você me contou, já dá para montar um diagnóstico da farmácia: o que aparece hoje quando alguém procura farmácia na sua região e onde estão escapando pedidos para o concorrente.\n\nE tem uma novidade que vale você conhecer: um canal novo, sem custo para a farmácia, para quem usa remédio de uso contínuo comprar todo mês com vocês. 😉\n\nTe mostro tudo numa conversa de 30 minutos, por vídeo. Mesmo que não siga adiante, você fica com o diagnóstico. Podemos marcar?",
+      text: "Entendi. Quem paga o investimento é a recompra de todo mês, por isso essa parte pesa tanto.\n\nMinha proposta é uma conversa de 30 minutos por vídeo. Te mostro onde a farmácia aparece hoje no Google, quantas pessoas da sua região procuram farmácia e o plano que usamos: anúncio só para quem está perto e procurando farmácia na hora. Também te mostro um jeito, sem custo para a farmácia, de trazer de volta todo mês quem usa remédio de uso contínuo.\n\nVocê fica com esse diagnóstico mesmo que não feche nada comigo. Vamos marcar?",
       options: "Sim, vamos marcar\nPrefiro uma ligação\nAgora não", buttons: true, timeout: 24, timeoutUnit: "hours", footer: "",
     }, OX, 0, "Convite: reunião de 30 min"),
     N("oferta_sair", "condition", SAIR, OX + 260, 300, "Pediu para sair?"),
@@ -208,7 +199,7 @@ export function farmaciasGraph({ campaignId = null, stages = {} } = {}) {
     N("tag_reuniao", "tag", { action: "add", tag: "farmácia: reunião" }, OX + 1820, -300, "Etiqueta: reunião"),
     N("task_reuniao", "task", { title: "Confirmar reunião de 30 min com {nome}", description: "Pediu: {resposta} ({periodo_reuniao}). Confirmar o horário e mandar o link da chamada. Antes: busca “farmácia com entrega em [cidade]”, perfil no Google e Instagram abertos; respostas da conversa estão nos campos do contato.", taskType: "meeting", dueInHours: 1 }, OX + 2080, -300, "Tarefa: confirmar reunião"),
     N("aviso_reuniao", "notify", { message: "📅 {nome} quer marcar a reunião de 30 min: “{resposta}”. Confirmar o horário e mandar o link." }, OX + 2340, -300, "Avisar a equipe"),
-    N("msg_reuniao", "send_text", { text: "Perfeito, anotado! ✅\n\nVou te confirmar por aqui com o link da chamada. Se puder, anota o ticket médio e quantos pedidos chegam por dia: com isso eu já levo a conta pronta para a farmácia." }, OX + 2600, -300, "Confirmar"),
+    N("msg_reuniao", "send_text", { text: "Perfeito, anotado! ✅\n\nTe confirmo por aqui com o link da chamada. Se puder, separa o ticket médio e quantos pedidos chegam por dia: eu já levo a conta feita para a sua farmácia." }, OX + 2600, -300, "Confirmar"),
     N("dia_sem", "task", { title: "Aceitou a reunião mas não passou o horário: {nome}", description: "Disse sim para a reunião de 30 min ({periodo_reuniao}), mas não respondeu o dia. Chamar com duas opções de horário.", taskType: "meeting", dueInHours: 2 }, OX + 1040, -80, "Tarefa: sem horário"),
   );
   link(E("periodo", "periodo_f", "opt0"), E("periodo", "periodo_f", "opt1"), E("periodo", "periodo_f", "opt2"),

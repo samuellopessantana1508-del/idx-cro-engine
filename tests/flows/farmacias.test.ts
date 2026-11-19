@@ -70,23 +70,25 @@ test("disparo, follow-ups e limites do disparo", () => {
   assert.doesNotMatch(interpolate(OPENER, { name: "X" } as any, {}, () => 0), /\{[a|]/);
 });
 
-test("caminho completo: dono → 4 perguntas → reunião por vídeo", async () => {
-  const r = await talk("1", "1", "1", "uns 15 por dia", "3", "1", "2", "quinta às 10h");
+test("caminho completo: confirma o dono → 2 perguntas → reunião por vídeo", async () => {
+  const r = await talk("1", "1", "3", "1", "2", "quinta às 10h");
   assert.equal(r.st.status, "completed");
   assert.ok(has(r.calls, "deal:upsert:st-novo") && has(r.calls, "deal:upsert:st-reuniao"));
   assert.ok(has(r.calls, "task:meeting:Confirmar reunião de 30 min com Drogaria Bom Preço"));
   assert.ok(has(r.calls, "notify:📅"));
   assert.deepEqual(
-    { o: r.fields.origem_pedidos, c: r.fields.como_cliente_novo_escolhe, p: r.fields.pedidos_dia, cap: r.fields.capacidade_atendimento, per: r.fields.periodo_reuniao, h: r.fields.horario_reuniao },
-    { o: "Já é cliente", c: "Pesquisa no Google", p: "uns 15 por dia", cap: "No limite", per: "Tarde", h: "quinta às 10h" });
-  assert.match(r.sent.join("\n"), /calendly\.com\/idxparasuaempresa/);
-  assert.match(r.sent.join("\n"), /remédio de uso contínuo/);
-  assert.doesNotMatch(r.sent.join("\n"), /tr[aá]fego|gr[aá]tis/i);
+    { g: r.fields.google_posicao_percebida, rc: r.fields.recompra, per: r.fields.periodo_reuniao, h: r.fields.horario_reuniao },
+    { g: "Acha que aparece", rc: "Depende do cliente", per: "Tarde", h: "quinta às 10h" });
+  const all = r.sent.join("\n");
+  assert.match(all, /calendly\.com\/idxparasuaempresa/);
+  assert.match(all, /remédio de uso contínuo/);
+  assert.match(all, /8 mil cliques/);
+  assert.doesNotMatch(all, /tr[aá]fego|gr[aá]tis|—/i);
   assert.ok(!has(r.calls, "handoff"));
 });
 
 test("respostas por texto também avançam (“sou eu”, “pode ser”, período por texto)", async () => {
-  const r = await talk("Sou eu mesmo, pode falar", "a maioria já é cliente", "google", "mais de 30", "dá conta sim", "Sim, pode ser", "de manhã cedo", "sexta 9h");
+  const r = await talk("Sou eu mesmo, pode falar", "não sei", "a gente liga pro cliente às vezes", "Sim, pode ser", "de manhã cedo", "sexta 9h");
   assert.equal(r.st.status, "completed");
   assert.ok(has(r.calls, "deal:upsert:st-reuniao"));
   assert.equal(r.fields.periodo_reuniao, "Manhã"); // texto livre que lembra a opção conta como a opção
@@ -98,16 +100,16 @@ test("“Eu sou o dono” não vai para o caminho de outra pessoa", async () => 
 });
 
 test("prefere ligação", async () => {
-  const r = await talk("1", "2", "1", "2", "1", "2", "amanhã às 15h");
+  const r = await talk("1", "2", "1", "2", "amanhã às 15h");
   assert.equal(r.st.status, "completed");
   assert.ok(has(r.calls, "task:callback:Ligar para") && has(r.calls, "deal:upsert:st-fu") && has(r.calls, "notify:📞"));
   assert.equal(r.fields.horario_ligacao, "amanhã às 15h");
 });
 
 test("agora não na reunião → diagnóstico por escrito (sim e não)", async () => {
-  const a = await talk("1", "3", "3", "1", "2", "3", "1");
+  const a = await talk("1", "3", "3", "3", "1");
   assert.ok(has(a.calls, "task:whatsapp:Enviar diagnóstico") && has(a.calls, "deal:upsert:st-fu"));
-  const b = await talk("1", "3", "3", "1", "2", "3", "2");
+  const b = await talk("1", "3", "3", "3", "2");
   assert.ok(has(b.calls, "tag:add:farmácia: agora não") && !has(b.calls, "task:whatsapp"));
 });
 
@@ -130,41 +132,40 @@ test("primeira resposta: agora não, não, outra pessoa, SAIR", async () => {
 });
 
 test("SAIR no meio da conversa, em qualquer pergunta", async () => {
-  for (const before of [[], ["1"], ["1", "1"], ["1", "1", "1"], ["1", "1", "1", "1"]]) {
+  for (const before of [[], ["1"], ["1", "1"]]) {
     const r = await talk("1", ...before, "sair");
     assert.ok(has(r.calls, "optout"), `depois de ${before.length} respostas`);
   }
-  const d = await talk("1", "1", "1", "1", "1", "1", "1", "sair");
+  const d = await talk("1", "1", "1", "1", "1", "sair");
   assert.ok(has(d.calls, "optout"), "no pedido de horário");
-  const l = await talk("1", "1", "1", "1", "1", "2", "parar");
+  const l = await talk("1", "1", "1", "2", "parar");
   assert.ok(has(l.calls, "optout"), "no horário da ligação");
   const p = await talk("2", "sair");
   assert.ok(has(p.calls, "optout"), "no pedido do responsável");
 });
 
 test("pergunta ou objeção fora do roteiro passa para a equipe", async () => {
-  for (const [replies, msg] of [[[], "quanto custa?"], [["1"], "já tenho agência"], [["1", "1"], "quem é você?"], [["1", "1", "1"], "qual o valor"], [["1", "1", "1", "1"], "como funciona isso?"]] as const) {
+  for (const [replies, msg] of [[[], "quanto custa?"], [["1"], "já tenho agência"], [["1", "1"], "qual o valor"], [["1", "1"], "como funciona isso?"]] as const) {
     const r = await talk("1", ...replies, msg);
     assert.equal(r.st.status, "completed", msg);
     assert.ok(has(r.calls, "handoff") && has(r.calls, "notify:💬"), msg);
   }
-  const e = await talk("1", "1", "1", "1", "1", "3", "me manda o preço");
+  const e = await talk("1", "1", "1", "3", "me manda o preço");
   assert.ok(has(e.calls, "handoff"), "texto livre no diagnóstico por escrito");
 });
 
 test("24 h sem resposta em cada etapa cria tarefa (sem insistência automática)", async () => {
   const cases: [string[], string][] = [
-    [[], "Conversa parou (Situação)"], [["1"], "Conversa parou (Problema)"], [["1", "1"], "Conversa parou (Implicação)"],
-    [["1", "1", "1"], "Conversa parou (Necessidade)"], [["1", "1", "1", "1"], "Convite sem resposta"],
-    [["1", "1", "1", "1", "1"], "Aceitou a reunião mas não passou o horário"], [["1", "1", "1", "1", "1", "1"], "Aceitou a reunião mas não passou o horário"],
-    [["1", "1", "1", "1", "2"], "Pediu ligação mas não passou o horário"],
+    [[], "Conversa parou (Google)"], [["1"], "Conversa parou (Recompra)"], [["1", "1"], "Convite sem resposta"],
+    [["1", "1", "1"], "Aceitou a reunião mas não passou o horário"], [["1", "1", "1", "1"], "Aceitou a reunião mas não passou o horário"],
+    [["1", "1", "2"], "Pediu ligação mas não passou o horário"],
   ];
   for (const [replies, title] of cases) {
     const r = await talk("1", ...replies, null);
     assert.equal(r.st.status, "completed", title);
     assert.ok(r.calls.some((c) => c.includes(title)), `${title}: ${r.calls.join(" | ")}`);
   }
-  const e = await talk("1", "1", "1", "1", "1", "3", null);
+  const e = await talk("1", "1", "1", "3", null);
   assert.equal(e.st.status, "completed");
 });
 
@@ -173,15 +174,15 @@ test("emoji de número e várias mensagens seguidas", async () => {
     const r = await talk(first);
     assert.equal(r.st.node, "q1", JSON.stringify(first));
   }
-  const a = await talk("1️⃣", "1️⃣", "2️⃣", "3️⃣", "Bom dia\n2");
-  assert.deepEqual([a.fields.origem_pedidos, a.fields.como_cliente_novo_escolhe, a.fields.pedidos_dia, a.fields.capacidade_atendimento], ["Já é cliente", "Vai na mais conhecida", "Mais de 30", "Com ajustes"]);
+  const a = await talk("1️⃣", "1️⃣", "Bom dia\n3️⃣");
+  assert.deepEqual([a.fields.google_posicao_percebida, a.fields.recompra], ["Acha que aparece", "Depende do cliente"]);
   assert.equal(a.st.node, "oferta");
   const b = await talk("Bom dia\n2️⃣");
   assert.equal(b.st.node, "ask_resp");
   const c = await talk("Olá\n3️⃣");
   assert.ok(has(c.calls, "tag:add:farmácia: agora não"));
   const d = await talk("1", "3 por dia");
-  assert.equal(d.fields.origem_pedidos, "3 por dia", "“3 por dia” é resposta, não a opção 3");
+  assert.equal(d.fields.google_posicao_percebida, "3 por dia", "“3 por dia” é resposta, não a opção 3");
 });
 
 test("resposta automática da farmácia não conta como resposta da pessoa", async () => {
