@@ -6,7 +6,7 @@ const reducedMotion = () => typeof window !== "undefined" && window.matchMedia("
  * Revela com cascata os elementos marcados dentro do contêiner quando entram na tela.
  * Observa novos nós (dados que chegam depois do esqueleto de carregamento).
  */
-export function useReveal(ref: RefObject<HTMLElement>, selector: string) {
+export function useReveal(ref: RefObject<HTMLElement>, selector: string, ready = true) {
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
@@ -45,7 +45,7 @@ export function useReveal(ref: RefObject<HTMLElement>, selector: string) {
       mo.disconnect();
       window.clearTimeout(batchTimer);
     };
-  }, [ref, selector]);
+  }, [ref, selector, ready]);
 }
 
 const NUM = /\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:,\d+)?/;

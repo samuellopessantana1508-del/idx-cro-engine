@@ -1,5 +1,8 @@
 import "../styles/command-center.css";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { InfinityHero } from "./hero/hero";
+import { CountUp, useReveal } from "./hero/motion";
 import {
   AlertTriangle, ArrowRight, Bot, CalendarClock, CheckCircle2, CircleDollarSign, Flame, KanbanSquare, MessageCircle, Send, Sparkles, Target, TrendingUp, Trophy, Users, Wifi, WifiOff,
 } from "lucide-react";
@@ -54,6 +57,11 @@ export function CommandCenter({ tenantId, tenantName, onCrm, onWhatsApp, notify 
   const [period, setPeriod] = useState<Period>("month");
   const [data, setData] = useState<Data | null>(null);
   const [pipelineId, setPipelineId] = useState<string | null>(null);
+  // hero 3D do infinito no topo da área principal (portal) + motion dos cartões
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [heroSlot, setHeroSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => { setHeroSlot(document.getElementById("crm-hero-slot")); }, []);
+  useReveal(rootRef, ".cc-hero, .cc-metric, .cc-alert, .cc-card", data !== null);
 
   const load = useCallback(async () => {
     const r = range(period);
@@ -109,7 +117,16 @@ export function CommandCenter({ tenantId, tenantName, onCrm, onWhatsApp, notify 
   const val = (k: string) => (m?.[k]?.available ? Number(m[k].value) : null);
   const r = range(period);
 
-  if (!data) return <CommandCenterSkeleton />;
+  const heroTasks = data ? data.tasks.filter((t) => { const s = dueState(t.due_at); return s === "overdue" || s === "today"; }).length : null;
+  const hero = heroSlot && createPortal(
+    <InfinityHero tenantName={tenantName} badges={[
+      { value: heroTasks === null ? "·" : String(heroTasks), label: "atividades para hoje" },
+      { value: data ? String(data.deals.length) : "·", label: "negociações abertas" },
+    ]} />,
+    heroSlot,
+  );
+
+  if (!data) return <>{hero}<CommandCenterSkeleton /></>;
 
   const overdue = data.tasks.filter((t) => dueState(t.due_at) === "overdue");
   const today = data.tasks.filter((t) => dueState(t.due_at) === "today");
@@ -142,7 +159,7 @@ export function CommandCenter({ tenantId, tenantName, onCrm, onWhatsApp, notify 
   if (pausedCamp) alerts.push({ tone: "amber", text: `Disparo “${pausedCamp.name}” pausado: ${pausedCamp.paused_reason}`, action: "Abrir", go: () => onCrm({ name: "dispatch" }) });
 
   return (
-    <div className="cc">
+    <>{hero}<div className="cc crm-home" ref={rootRef}>
       <header className="cc-hero">
         <div>
           <p className="cc-eyebrow">{new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })}</p>
@@ -286,7 +303,7 @@ export function CommandCenter({ tenantId, tenantName, onCrm, onWhatsApp, notify 
         </section>
 
       </div>
-    </div>
+    </div></>
   );
 }
 
@@ -299,7 +316,7 @@ function Metric({ icon, label, value, hint, tone }: { icon: React.ReactNode; lab
     <div className={`cc-metric t-${tone}`}>
       <span className="cc-metric-icon">{icon}</span>
       <span className="cc-metric-label">{label}</span>
-      <strong>{value}</strong>
+      <strong><CountUp value={value} /></strong>
       <small>{hint}</small>
     </div>
   );

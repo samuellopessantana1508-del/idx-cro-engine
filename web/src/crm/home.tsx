@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   AlertTriangle, ArrowRight, CalendarCheck2, CalendarClock, CheckCircle2, CircleDollarSign, Flame, HeartPulse, KanbanSquare, MessageCircle, Sunrise, Target, Trophy,
 } from "lucide-react";
@@ -11,7 +10,7 @@ import { brl, channelLabel, dueState, errorText, phoneLabel, relative, segmentIn
 import type { Contact, Deal, KpiResponse, RfvCustomer, Task } from "./types";
 import { Avatar, Empty, Pill, Segmented, Skeleton, Stat } from "./ui";
 import { TaskRow } from "./records";
-import { InfinityHero } from "./hero/hero";
+import "../styles/hero.css";
 import { CountUp, useReveal } from "./hero/motion";
 
 type Period = "month" | "30d" | "quarter";
@@ -28,10 +27,8 @@ function startOfDay(d = new Date()) { const x = new Date(d); x.setHours(0, 0, 0,
 // Visão comercial (dashboard): responde "o que precisa de atenção agora"
 // ---------------------------------------------------------------------------
 export function HomeView() {
-  const { tenantId, tenantName, userId, access, refreshKey, notify, navigate, openDeal, openContact, memberLabel } = useCrm();
+  const { tenantId, userId, access, refreshKey, notify, navigate, openDeal, openContact, memberLabel } = useCrm();
   const pageRef = useRef<HTMLDivElement>(null);
-  const [heroSlot, setHeroSlot] = useState<HTMLElement | null>(null);
-  useEffect(() => { setHeroSlot(document.getElementById("crm-hero-slot")); }, []);
   useReveal(pageRef, ".crm-hello, .crm-stat, .crm-panel, .crm-goal-mini");
   const [scope, setScope] = useState<"mine" | "team">(access.role === "sales" ? "mine" : "team");
   const [period, setPeriod] = useState<Period>("month");
@@ -74,15 +71,9 @@ export function HomeView() {
   const today = (tasks ?? []).filter((t) => dueState(t.due_at) === "today");
 
   const val = (key: string) => (m?.[key]?.available ? Number(m[key].value) : null);
-  const todayCount = tasks === null ? "·" : String(overdue.length + today.length);
-  const openCount = deals === null ? "·" : String(deals.length);
 
   return (
     <div className="crm-page crm-home" ref={pageRef}>
-      {heroSlot && createPortal(
-        <InfinityHero tenantName={tenantName} badges={[{ value: todayCount, label: "atividades para hoje" }, { value: openCount, label: "negociações abertas" }]} />,
-        heroSlot,
-      )}
       <div className="crm-toolbar">
         <div className="crm-toolbar-left">
           <div className="crm-hello">

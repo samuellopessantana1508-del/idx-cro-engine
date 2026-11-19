@@ -3042,7 +3042,7 @@ export function App() {
       </aside>
 
       <main className="main">
-        {/* a Visão comercial monta aqui o hero 3D (portal), acima do cabeçalho */}
+        {/* a Dashboard monta aqui o hero 3D (portal), acima do cabeçalho */}
         <div id="crm-hero-slot" />
         <header className="topbar">
           <div>

@@ -481,6 +481,40 @@
 .crm-home .crm-panel h3 svg { transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .crm-home .crm-panel:hover h3 svg { transform: rotate(-8deg) scale(1.12); }
 
+/* Dashboard (central de comando): reflexo nos indicadores e elevação nos cartões */
+.crm-home .cc-metric::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.85) 50%, transparent 65%);
+  transform: translateX(-130%);
+}
+.crm-home .cc-metric.rv-in::before { animation: crm-home-sheen 1.3s cubic-bezier(0.4, 0, 0.2, 1) calc(var(--rv-d, 0ms) + 350ms) 1 both; }
+.crm-home .cc-metric strong { font-variant-numeric: tabular-nums; }
+.crm-home .cc-card { position: relative; }
+.crm-home .cc-card::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+@media (hover: hover) {
+  .crm-home .cc-card.rv-in:hover,
+  .crm-home .cc-metric.rv-in:hover { transform: translate3d(0, -3px, 0); }
+  .crm-home .cc-card:hover::after { opacity: 1; }
+  .crm-home .cc-list li,
+  .crm-home .cc-funnel-row { transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .crm-home .cc-list li:hover,
+  .crm-home .cc-funnel-row:hover { transform: translate3d(4px, 0, 0); }
+}
+.crm-home .cc-card-icon svg { transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.crm-home .cc-card:hover .cc-card-icon svg { transform: rotate(-8deg) scale(1.12); }
+
 /* saudação: fio fino que se desenha ao entrar */
 .crm-home .crm-hello { position: relative; padding-left: 14px; }
 .crm-home .crm-hello::before {
@@ -499,7 +533,9 @@
 .crm-home .crm-hello:not(.rv)::before { transform: scaleY(1); }
 
 @media (prefers-reduced-motion: reduce) {
-  .crm-home .crm-stat::after { display: none; }
+  .crm-home .crm-stat::after,
+  .crm-home .cc-metric::before { display: none; }
+  .crm-home .cc-card-icon svg { transition: none; }
   .crm-home .crm-panel h3 svg { transition: none; }
   .idx-hero-cue i { animation: none; }
   .idx-w > span, .idx-specs li { transition: none; }
