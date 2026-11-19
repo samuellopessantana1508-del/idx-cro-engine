@@ -42,7 +42,8 @@ export const CAMPAIGN = {
 
 const N = (id, type, config, x, y, label) => ({ id, type, position: { x, y }, data: { config, ...(label ? { label } : {}) } });
 const E = (source, target, sourceHandle = null) => ({ id: `${source}-${target}-${sourceHandle ?? "n"}`, source, target, sourceHandle });
-const rules = (match, list, ai) => ({ match, rules: list.map(([op, value, field = "last_message"]) => ({ field, op, value })), ...(ai ? { ai } : {}) });
+// aiFirst: a IA do sistema lê toda resposta escrita; palavras-chave ficam de reserva se a IA falhar
+const rules = (match, list, ai) => ({ match, rules: list.map(([op, value, field = "last_message"]) => ({ field, op, value })), ...(ai ? { ai, aiFirst: true } : {}) });
 const opt = (n) => ["equals", String(n), "option"]; // número da opção, também como emoji (1️⃣) ou no meio de várias mensagens
 
 // Respostas (o motor compara sem acento e em minúsculas)
@@ -86,7 +87,7 @@ export function farmaciasGraph({ campaignId = null, stages = {} } = {}) {
     N("f_oi", "set_field", { field: "farm_explicado", value: "sim" }, 1300, 640, "Marcar: já explicou"),
     N("confirma", "send_menu", {
       text: "{Oi|Olá}! 🙂 Aqui é o Arthur, da IDX, de Rio Verde. Eu ajudo farmácias da região a receber o pedido de quem procura farmácia no Google.\n\nAntes de tudo: falo com o dono ou a dona da farmácia?",
-      options: "Sim, sou eu\nNão, é outra pessoa", buttons: true, timeout: 24, timeoutUnit: "hours", footer: "",
+      options: "Sim, sou eu\nNão, é outra pessoa", buttons: true, aiFirst: true, timeout: 24, timeoutUnit: "hours", footer: "",
     }, 1560, 700, "Explicar e perguntar de novo"),
   );
   link(E("t", "c_sair"), E("c_sair", "tag_optout", "yes"), E("c_sair", "c_auto", "no"),
@@ -141,7 +142,7 @@ export function farmaciasGraph({ campaignId = null, stages = {} } = {}) {
   // Pergunta com 3 opções: cada resposta salva um campo; texto livre passa pelo filtro de SAIR e de pergunta/objeção.
   const QX = 1560;
   const question = (id, x, label, text, options, field, values, next) => {
-    add(N(id, "send_menu", { text, options: options.join("\n"), buttons: true, timeout: 24, timeoutUnit: "hours", footer: "" }, x, y, label));
+    add(N(id, "send_menu", { text, options: options.join("\n"), buttons: true, aiFirst: true, timeout: 24, timeoutUnit: "hours", footer: "" }, x, y, label));
     options.forEach((_, i) => {
       add(N(`${id}_f${i}`, "set_field", { field, value: values[i] }, x + 260, y - 120 + i * 80, `Salvar: ${values[i]}`));
       link(E(id, `${id}_f${i}`, `opt${i}`), E(`${id}_f${i}`, next));
@@ -174,7 +175,7 @@ export function farmaciasGraph({ campaignId = null, stages = {} } = {}) {
   add(
     N("oferta", "send_menu", {
       text: "Entendi. Quem paga o investimento é a recompra de todo mês, por isso essa parte pesa tanto.\n\nMinha proposta é uma conversa de 30 minutos por vídeo. Te mostro onde a farmácia aparece hoje no Google, quantas pessoas da sua região procuram farmácia e o plano que usamos: anúncio só para quem está perto e procurando farmácia na hora. Também te mostro um jeito, sem custo para a farmácia, de trazer de volta todo mês quem usa remédio de uso contínuo.\n\nVocê fica com esse diagnóstico mesmo que não feche nada comigo. Vamos marcar?",
-      options: "Sim, vamos marcar\nPrefiro uma ligação\nAgora não", buttons: true, timeout: 24, timeoutUnit: "hours", footer: "",
+      options: "Sim, vamos marcar\nPrefiro uma ligação\nAgora não", buttons: true, aiFirst: true, timeout: 24, timeoutUnit: "hours", footer: "",
     }, OX, 0, "Convite: reunião de 30 min"),
     N("oferta_sair", "condition", SAIR, OX + 260, 300, "Pediu para sair?"),
     N("oferta_sim", "condition", rules("any", [["starts_with", "sim"], ["equals", "ok"], ["equals", "pode"], ["contains", "vamos marcar"], ["contains", "pode marcar"], ["contains", "pode ser"], ["contains", "bora"], ["contains", "claro"], ["contains", "beleza"], ["contains", "fechado"], ["contains", "combinado"], ["contains", "topo"], ["contains", "quero sim"]], "aceita marcar a reunião ou a conversa"), OX + 520, 300, "Aceitou por texto?"),
@@ -187,7 +188,7 @@ export function farmaciasGraph({ campaignId = null, stages = {} } = {}) {
 
   // sim → período → dia/horário (ou o próprio link de agenda)
   add(
-    N("periodo", "send_menu", { text: "Ótimo! 🎯 Qual período costuma ser mais tranquilo para você?", options: "Manhã\nTarde\nFim do dia", buttons: true, timeout: 24, timeoutUnit: "hours", footer: "" }, OX + 260, -260, "Período"),
+    N("periodo", "send_menu", { text: "Ótimo! 🎯 Qual período costuma ser mais tranquilo para você?", options: "Manhã\nTarde\nFim do dia", buttons: true, aiFirst: true, timeout: 24, timeoutUnit: "hours", footer: "" }, OX + 260, -260, "Período"),
     N("periodo_f", "set_field", { field: "periodo_reuniao", value: "{var.lastChoice}" }, OX + 520, -300, "Salvar período"),
     N("periodo_ft", "set_field", { field: "periodo_reuniao", value: "{resposta}" }, OX + 520, -180, "Salvar período (texto)"),
     N("ask_dia", "ask", { text: `Combinado! Me diz o melhor dia e horário (por exemplo: quinta às 10h) que eu já reservo para você.\n\nSe preferir, você mesmo escolhe aqui na minha agenda: ${CALENDLY}`, saveAs: "horario", timeout: 24, timeoutUnit: "hours" }, OX + 780, -260, "Dia e horário"),
@@ -225,7 +226,7 @@ export function farmaciasGraph({ campaignId = null, stages = {} } = {}) {
 
   // agora não → oferece o diagnóstico por escrito (objeção "me manda por WhatsApp")
   add(
-    N("por_escrito", "send_menu", { text: "Sem problema! Posso te mandar o diagnóstico por aqui mesmo, por escrito, para você ver com calma quando der?", options: "Pode mandar\nNão, obrigado", buttons: true, timeout: 48, timeoutUnit: "hours", footer: "" }, OX + 260, 400, "Diagnóstico por escrito?"),
+    N("por_escrito", "send_menu", { text: "Sem problema! Posso te mandar o diagnóstico por aqui mesmo, por escrito, para você ver com calma quando der?", options: "Pode mandar\nNão, obrigado", buttons: true, aiFirst: true, timeout: 48, timeoutUnit: "hours", footer: "" }, OX + 260, 400, "Diagnóstico por escrito?"),
     N("deal_escrito", "crm_deal", { action: "upsert", stage_id: stages.followup ?? null, title }, OX + 520, 360, "Follow-up"),
     N("task_escrito", "task", { title: "Enviar diagnóstico por escrito para {nome}", description: "Não quis reunião agora, mas aceitou receber o diagnóstico por WhatsApp. Mandar algo feito para a farmácia (o que aparece no Google, onde perde pedido) e propor a reunião de novo.", taskType: "whatsapp", dueInHours: 24 }, OX + 780, 360, "Tarefa: diagnóstico"),
     N("msg_escrito", "send_text", { text: "Combinado! Vou preparar com calma e te mando por aqui nos próximos dias. 😊" }, OX + 1040, 360, "Confirmar"),

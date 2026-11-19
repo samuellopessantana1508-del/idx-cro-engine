@@ -418,13 +418,18 @@ export async function step(graph: Graph, state: RunState, ctx: FlowContext, inpu
         const ans = normalize(String(input.message ?? ""));
         const num = optionNumber(String(input.message ?? ""));
         let idx = Number.isInteger(num) && num >= 1 && num <= opts.length ? num - 1 : -1;
-        if (idx < 0) idx = opts.findIndex((o) => normalize(o) === ans || (ans.length >= 3 && normalize(o).includes(ans)) || matchKeyword(ans, o, "contains"));
+        const mc = node.data.config ?? {};
+        const byKeyword = () => opts.findIndex((o) => normalize(o) === ans || (ans.length >= 3 && normalize(o).includes(ans)) || matchKeyword(ans, o, "contains"));
+        const askAi = async () => {
+          const k = await fx.classify!({ question: String(mc.text ?? ""), options: opts, message: String(input.message ?? "") }).catch(() => -1);
+          return Number.isInteger(k) && k >= 0 && k < opts.length ? k : -1;
+        };
         let byAi = false;
-        // resposta escrita do jeito da pessoa ("sou eu sim, pode falar"): a IA entende qual opção ela quis dizer
-        if (idx < 0 && ans && fx.classify && (node.data.config ?? {}).ai !== false) {
-          const k = await fx.classify({ question: String((node.data.config ?? {}).text ?? ""), options: opts, message: String(input.message ?? "") }).catch(() => -1);
-          if (Number.isInteger(k) && k >= 0 && k < opts.length) { idx = k; byAi = true; }
-        }
+        // número/emoji decide na hora; texto: com aiFirst a IA lê primeiro (palavra-chave só se a IA não souber),
+        // sem aiFirst a palavra-chave vem primeiro e a IA entra quando ela não pega
+        if (idx < 0 && ans && fx.classify && mc.ai !== false && mc.aiFirst) { idx = await askAi(); byAi = idx >= 0; }
+        if (idx < 0) idx = byKeyword();
+        if (idx < 0 && ans && fx.classify && mc.ai !== false && !mc.aiFirst) { idx = await askAi(); byAi = idx >= 0; }
         s.vars.lastChoice = idx >= 0 ? opts[idx] : "";
         fx.log(node.id, "choice", { option: idx >= 0 ? idx + 1 : null, ...(byAi ? { ai: true } : {}) });
         goto(nextFrom(graph, node.id, idx >= 0 ? `opt${idx}` : "other"));
@@ -501,12 +506,13 @@ export async function step(graph: Graph, state: RunState, ctx: FlowContext, inpu
           const rules: Record<string, any>[] = Array.isArray(c.rules) && c.rules.length ? c.rules : [{ field: c.field ?? "responded", op: c.op, value: c.value, key: c.key }];
           const results = rules.map((r) => evalRule(r, ctx, s.vars));
           let ok = (c.match ?? "all") === "any" ? results.some(Boolean) : results.every(Boolean);
-          // condição com descrição para a IA: se as palavras-chave não pegaram, a IA decide se a resposta se encaixa
+          // condição com descrição para a IA. Sem aiFirst: a IA só entra se as palavras-chave não pegaram.
+          // Com aiFirst: para texto (não número de opção), a IA decide; palavra-chave só vale se a IA não responder.
           let byAi = false;
           const said = String(s.vars.lastResponse ?? "").trim();
-          if (!ok && String(c.ai ?? "").trim() && said && fx.classify) {
+          if (String(c.ai ?? "").trim() && said && fx.classify && (c.aiFirst ? optionNumber(said) === null : !ok)) {
             const k = await fx.classify({ question: `A mensagem do contato se encaixa nesta descrição? ${String(c.ai).trim()}`, options: ["Sim, se encaixa", "Não se encaixa"], message: said }).catch(() => -1);
-            if (k === 0) { ok = true; byAi = true; }
+            if (k === 0) { ok = true; byAi = true; } else if (k === 1 && c.aiFirst) ok = false;
           }
           fx.log(node.id, ok ? "yes" : "no", byAi ? { ai: true } : undefined);
           goto(nextFrom(graph, node.id, ok ? "yes" : "no"));
