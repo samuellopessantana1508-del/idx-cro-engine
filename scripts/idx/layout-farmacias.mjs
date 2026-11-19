@@ -7,12 +7,9 @@ const { farmaciasGraph } = await import(file.href + "?t=" + Date.now());
 const g = farmaciasGraph({ campaignId: "x", stages: {} });
 
 const W = 252, COL = W + 110, GAP = 36;
-const height = (n) => {
-  const c = n.data.config ?? {};
-  if (n.type === "send_menu") return 150 + 30 * String(c.options ?? "").split("\n").filter(Boolean).length;
-  if (n.type === "condition" || n.type === "ask" || n.type === "send_text") return 120;
-  return 96;
-};
+// alturas medidas no editor do CRO (com folga), por tipo de bloco
+const H = { trigger: 130, condition: 210, send_menu: 290, ask: 180, send_text: 145, wait_response: 170, task: 125, notify: 120, handoff: 110, optout: 85, tag: 110, set_field: 100, crm_deal: 110, end: 110 };
+const height = (n) => H[n.type] ?? 120;
 const byId = new Map(g.nodes.map((n) => [n.id, n]));
 const out = new Map(g.nodes.map((n) => [n.id, []]));
 for (const e of g.edges) out.get(e.source).push(e.target);
