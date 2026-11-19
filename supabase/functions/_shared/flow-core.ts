@@ -49,6 +49,8 @@ export interface FlowEffects {
   conversion(label: string): Promise<void>;
   webhook(cfg: { url: string; method: string; body: any }): Promise<{ ok: boolean; status: number; data?: any }>;
   ai(cfg: { prompt: string; message: string; history?: string }): Promise<string>;
+  /** IA classifica a resposta: índice da opção que ela quis dizer, ou -1 se nenhuma. Opcional (sem IA, só palavras-chave). */
+  classify?(cfg: { question: string; options: string[]; message: string }): Promise<number>;
   handoff(message?: string): Promise<void>;
   optout(): Promise<void>;
   log(nodeId: string, event: string, detail?: any): void;
@@ -417,8 +419,14 @@ export async function step(graph: Graph, state: RunState, ctx: FlowContext, inpu
         const num = optionNumber(String(input.message ?? ""));
         let idx = Number.isInteger(num) && num >= 1 && num <= opts.length ? num - 1 : -1;
         if (idx < 0) idx = opts.findIndex((o) => normalize(o) === ans || (ans.length >= 3 && normalize(o).includes(ans)) || matchKeyword(ans, o, "contains"));
+        let byAi = false;
+        // resposta escrita do jeito da pessoa ("sou eu sim, pode falar"): a IA entende qual opção ela quis dizer
+        if (idx < 0 && ans && fx.classify && (node.data.config ?? {}).ai !== false) {
+          const k = await fx.classify({ question: String((node.data.config ?? {}).text ?? ""), options: opts, message: String(input.message ?? "") }).catch(() => -1);
+          if (Number.isInteger(k) && k >= 0 && k < opts.length) { idx = k; byAi = true; }
+        }
         s.vars.lastChoice = idx >= 0 ? opts[idx] : "";
-        fx.log(node.id, "choice", { option: idx >= 0 ? idx + 1 : null });
+        fx.log(node.id, "choice", { option: idx >= 0 ? idx + 1 : null, ...(byAi ? { ai: true } : {}) });
         goto(nextFrom(graph, node.id, idx >= 0 ? `opt${idx}` : "other"));
         break;
       }
@@ -492,8 +500,15 @@ export async function step(graph: Graph, state: RunState, ctx: FlowContext, inpu
         case "condition": {
           const rules: Record<string, any>[] = Array.isArray(c.rules) && c.rules.length ? c.rules : [{ field: c.field ?? "responded", op: c.op, value: c.value, key: c.key }];
           const results = rules.map((r) => evalRule(r, ctx, s.vars));
-          const ok = (c.match ?? "all") === "any" ? results.some(Boolean) : results.every(Boolean);
-          fx.log(node.id, ok ? "yes" : "no");
+          let ok = (c.match ?? "all") === "any" ? results.some(Boolean) : results.every(Boolean);
+          // condição com descrição para a IA: se as palavras-chave não pegaram, a IA decide se a resposta se encaixa
+          let byAi = false;
+          const said = String(s.vars.lastResponse ?? "").trim();
+          if (!ok && String(c.ai ?? "").trim() && said && fx.classify) {
+            const k = await fx.classify({ question: `A mensagem do contato se encaixa nesta descrição? ${String(c.ai).trim()}`, options: ["Sim, se encaixa", "Não se encaixa"], message: said }).catch(() => -1);
+            if (k === 0) { ok = true; byAi = true; }
+          }
+          fx.log(node.id, ok ? "yes" : "no", byAi ? { ai: true } : undefined);
           goto(nextFrom(graph, node.id, ok ? "yes" : "no"));
           break;
         }

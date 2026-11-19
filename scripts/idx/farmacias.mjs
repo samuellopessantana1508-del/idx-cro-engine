@@ -7,13 +7,15 @@
 
 export const CALENDLY = "https://calendly.com/idxparasuaempresa/como-vender-mais-no-whatsapp-farmacias";
 
-/** Primeira mensagem: só confirma se é o dono ({a|b} sorteia uma variação por contato). */
+/** Primeira mensagem: entrega um dado útil, desperta o dono e só então pergunta se é ele ({a|b} sorteia variações).
+ * Dado: Pesquisa de Comportamento do Consumidor em Farmácias 2026 (IFEPEC, com Instituto Axxus e NEIT/Unicamp, 4 mil
+ * consumidores): compras por WhatsApp em farmácias cresceram 101% desde 2024. */
 export const OPENER = [
   "{Oi|Olá}, tudo bem? Aqui é o Arthur, da IDX, de Rio Verde.",
   "",
-  "{Queria|Preciso} falar com o dono ou a dona da {empresa}. É sobre os clientes que procuram farmácia no Google aí na região.",
+  "{Saiu|Vi} uma pesquisa do IFEPEC com a Unicamp, feita com 4 mil clientes de farmácia: as compras pelo WhatsApp dobraram desde 2024. E quem ainda não conhece a farmácia costuma achar o número no Google, procurando “farmácia perto de mim”.",
   "",
-  "É com você mesmo?",
+  "Dei uma olhada em como a {empresa} aparece nessa busca e queria mostrar para o dono ou a dona. É com você mesmo?",
   "",
   "1️⃣ Sim, sou eu",
   "2️⃣ Não, é outra pessoa",
@@ -30,8 +32,8 @@ export const FOLLOWUPS = [
 
 export const CAMPAIGN = {
   name: "Farmácias · Prospecção IDX (WhatsApp)",
-  min_delay_sec: 60, // uma mensagem por minuto (mais natural e com menos risco de o WhatsApp derrubar o número)
-  max_delay_sec: 75,
+  min_delay_sec: 60, // exatamente uma mensagem por minuto
+  max_delay_sec: 60,
   daily_limit: 500,
   start_hour: 8,
   end_hour: 18,
@@ -40,23 +42,21 @@ export const CAMPAIGN = {
 
 const N = (id, type, config, x, y, label) => ({ id, type, position: { x, y }, data: { config, ...(label ? { label } : {}) } });
 const E = (source, target, sourceHandle = null) => ({ id: `${source}-${target}-${sourceHandle ?? "n"}`, source, target, sourceHandle });
-const rules = (match, list) => ({ match, rules: list.map(([op, value, field = "last_message"]) => ({ field, op, value })) });
+const rules = (match, list, ai) => ({ match, rules: list.map(([op, value, field = "last_message"]) => ({ field, op, value })), ...(ai ? { ai } : {}) });
 const opt = (n) => ["equals", String(n), "option"]; // número da opção, também como emoji (1️⃣) ou no meio de várias mensagens
 
 // Respostas (o motor compara sem acento e em minúsculas)
-const SAIR = rules("any", [["equals", "sair"], ["equals", "parar"], ["equals", "pare"], ["starts_with", "sair "], ["contains", "nao me mande"], ["contains", "nao quero receber"], ["contains", "pare de mandar"], ["contains", "me tira da lista"], ["contains", "remover meu numero"]]);
+const SAIR = rules("any", [["equals", "sair"], ["equals", "parar"], ["equals", "pare"], ["starts_with", "sair "], ["contains", "nao me mande"], ["contains", "nao quero receber"], ["contains", "pare de mandar"], ["contains", "me tira da lista"], ["contains", "remover meu numero"]], "pede para não receber mais mensagens, para parar de mandar ou para tirar o número da lista");
 // Recusa clara (vale em qualquer etapa da conversa)
 const NEGATIVO = "(agora nao|sem interesse|nao (tenho|temos|ha) (nenhum )?interesse|nao (quero|queremos|preciso|precisamos)|dispenso|nao,? obrigad|nao me interessa|nao tenho mais (a )?farmacia|nao tenho farmacia|(fechei|fechamos|vendi|vendemos) a farmacia|a farmacia (fechou|foi vendida)|numero errado|engano|nao (e|eh) (uma )?farmacia|nao trabalho (mais )?(com|na|em) farmacia)";
-const NAO = rules("any", [opt(3), ["regex", `^nao[.!]*$`], ["regex", NEGATIVO]]);
-const NAO_MEIO = rules("any", [["regex", NEGATIVO], ["regex", `^nao[,.! ]*(obrigad[oa])?[.!]*$`]]);
+const NAO = rules("any", [opt(3), ["regex", `^nao[.!]*$`], ["regex", NEGATIVO]], "recusa a conversa, diz que não tem interesse, que não quer, que fechou ou vendeu a farmácia, ou que o número está errado");
+const NAO_MEIO = rules("any", [["regex", NEGATIVO], ["regex", `^nao[,.! ]*(obrigad[oa])?[.!]*$`]], "desiste da conversa ou diz que não tem interesse");
 // Resposta automática da farmácia (saudação do WhatsApp Business): não é a pessoa respondendo
-const AUTO = rules("any", [["regex", "(agradece (o seu|seu|a sua|sua|pelo)|seja bem[- ]?vind|horario de atendimento|nosso horario|atendimento (e|eh) de|mensagem automatica|resposta automatica|deixe (aqui )?(o )?(seu|sua) (recado|mensagem|pedido)|retornaremos|entraremos em contato|responderemos (assim|em breve)|agradecemos (o|seu|a|pelo)|obrigad[oa] (por|pelo) (entrar em )?contato|fora do (nosso )?horario|estamos fechados|no momento (nao|estamos)|digite o numero|escolha uma (das )?opc|selecione uma opc|faca (ja )?(o )?seu pedido|confira (nosso|o nosso) cardapio|em breve (um|uma|nossa) (atendente|equipe))"]]);
-// Só cumprimentou ou perguntou quem é: explica e pergunta de novo, antes das perguntas
-const SAUDACAO = rules("any", [["regex", "^(oi+|ola|opa|e ai|bom dia|boa tarde|boa noite|tudo (bem|bom)|pois nao|diga|fala|sim\\?|alo|quem (e|eh|fala|seria)( voce| vc)?|do que se trata|qual (o )?assunto|o que seria|como assim|pode falar\\?)([ ,!?.]+(tudo (bem|bom)|como vai|bom dia|boa tarde|boa noite|quem (e|fala)|pois nao))*[ ,!?.]*$"]]);
-const SIM = rules("any", [opt(1), ["regex", "^(sim|sou eu|sou sim|eu mesm[oa]|isso|sou o dono|sou a dona|sou (o |a )?proprietari[oa]|eu cuido|sou eu mesm[oa]|pode falar|pode mandar|sim,? (sou|pode|eu))"]]);
-const OUTRO = rules("any", [opt(2), ["contains", "outra pessoa"], ["contains", "nao sou eu"], ["contains", "nao sou o"], ["contains", "nao sou a"], ["contains", "sou funcionari"], ["contains", "sou balconist"], ["contains", "sou atendente"], ["contains", "falar com o dono"], ["contains", "falar com a dona"], ["contains", "e o dono"], ["contains", "e a dona"], ["contains", "com o proprietari"], ["contains", "com a proprietari"], ["contains", "meu patrao"], ["contains", "minha patroa"]]);
+const AUTO = rules("any", [["regex", "(agradece (o seu|seu|a sua|sua|pelo)|seja bem[- ]?vind|horario de atendimento|nosso horario|atendimento (e|eh) de|mensagem automatica|resposta automatica|deixe (aqui )?(o )?(seu|sua) (recado|mensagem|pedido)|retornaremos|entraremos em contato|responderemos (assim|em breve)|agradecemos (o|seu|a|pelo)|obrigad[oa] (por|pelo) (entrar em )?contato|fora do (nosso )?horario|estamos fechados|no momento (nao|estamos)|digite o numero|escolha uma (das )?opc|selecione uma opc|faca (ja )?(o )?seu pedido|confira (nosso|o nosso) cardapio|em breve (um|uma|nossa) (atendente|equipe))"]], "é uma mensagem automática da empresa (boas-vindas, horário de atendimento, menu de opções, aviso de ausência ou texto padrão), não uma pessoa respondendo a conversa");
+const SIM = rules("any", [opt(1), ["regex", "^(sim|sou eu|sou sim|eu mesm[oa]|isso|eu cuido|pode falar|pode mandar|sim,? (sou|pode|eu))"], ["regex", "(^|\\W)(eu )?sou (o |a |um |uma )?(dono|dona|proprietari[oa]|socio|socia|responsavel|gerente|farmaceutic[oa] responsavel)"]], "confirma que é o dono, a dona, sócio ou responsável pela farmácia, ou aceita continuar a conversa (ex.: pode falar, pode mandar)");
+const OUTRO = rules("any", [opt(2), ["contains", "outra pessoa"], ["contains", "nao sou eu"], ["contains", "nao sou o"], ["contains", "nao sou a"], ["contains", "sou funcionari"], ["contains", "sou balconist"], ["contains", "sou atendente"], ["contains", "falar com o dono"], ["contains", "falar com a dona"], ["contains", "e o dono"], ["contains", "e a dona"], ["contains", "com o proprietari"], ["contains", "com a proprietari"], ["contains", "meu patrao"], ["contains", "minha patroa"]], "diz que não é o dono nem o responsável, que a pessoa certa é outra, ou passa o contato de outra pessoa");
 // Pergunta ou objeção fora do roteiro: quem responde é a pessoa (playbook: concorde, mude o ângulo, devolva com pergunta)
-const FORA = rules("any", [["contains", "?"], ["contains", "quanto"], ["contains", "preco"], ["contains", "valor"], ["contains", "custa"], ["contains", "ja tenho"], ["contains", "ja temos"], ["contains", "agencia"], ["contains", "ja tentei"], ["contains", "ja fiz anuncio"], ["contains", "ja faco"], ["contains", "golpe"], ["contains", "quem e voce"], ["contains", "quem fala"], ["contains", "do que se trata"], ["contains", "como conseguiu"]]);
+const FORA = rules("any", [["contains", "?"], ["contains", "quanto"], ["contains", "preco"], ["contains", "valor"], ["contains", "custa"], ["contains", "ja tenho"], ["contains", "ja temos"], ["contains", "agencia"], ["contains", "ja tentei"], ["contains", "ja fiz anuncio"], ["contains", "ja faco"], ["contains", "golpe"], ["contains", "quem e voce"], ["contains", "quem fala"], ["contains", "do que se trata"], ["contains", "como conseguiu"]], "faz uma pergunta ou objeção: preço, como funciona, quem é você, de onde conseguiu o número, se é golpe, ou diz que já tem agência ou já anuncia");
 
 /**
  * Automação "Farmácias · Prospecção IDX": responde ao disparo.
@@ -78,8 +78,7 @@ export function farmaciasGraph({ campaignId = null, stages = {} } = {}) {
     N("c_nao", "condition", NAO, 520, 300, "Agora não?"),
     N("c_outro", "condition", OUTRO, 780, 300, "É outra pessoa?"),
     N("c_sim", "condition", SIM, 780, 440, "Sou eu / 1?"),
-    N("c_oi", "condition", SAUDACAO, 780, 580, "Só cumprimentou / quem é?"),
-    N("c_oi_ja", "condition", { match: "any", rules: [{ field: "contact_field", key: "farm_explicado", op: "not_empty", value: "" }] }, 1040, 580, "Já explicou antes?"),
+    N("c_oi_ja", "condition", { match: "any", rules: [{ field: "contact_field", key: "farm_explicado", op: "not_empty", value: "" }] }, 1040, 580, "Já perguntou se é o dono?"),
     N("c_auto_ja", "condition", { match: "any", rules: [{ field: "contact_field", key: "farm_resposta_automatica", op: "not_empty", value: "" }] }, 520, 640, "Já veio resposta automática?"),
     N("f_auto", "set_field", { field: "farm_resposta_automatica", value: "sim" }, 780, 760, "Marcar: resposta automática"),
     N("w_auto", "wait_response", { timeout: 40, timeoutUnit: "minutes" }, 1040, 760, "Esperar a pessoa (40 min)"),
@@ -97,8 +96,7 @@ export function farmaciasGraph({ campaignId = null, stages = {} } = {}) {
     E("w_auto2", "c_sair", "replied"), E("w_auto2", "fim", "timeout"),
     E("c_nao", "bye", "yes"), E("c_nao", "c_outro", "no"),
     E("c_outro", "ask_resp", "yes"), E("c_outro", "c_sim", "no"),
-    E("c_sim", "deal_novo", "yes"), E("c_sim", "c_oi", "no"),
-    E("c_oi", "c_oi_ja", "yes"), E("c_oi", "deal_novo", "no"),
+    E("c_sim", "deal_novo", "yes"), E("c_sim", "c_oi_ja", "no"),
     E("c_oi_ja", "deal_novo", "yes"), E("c_oi_ja", "f_oi", "no"),
     E("f_oi", "confirma"),
     E("confirma", "deal_novo", "opt0"), E("confirma", "ask_resp", "opt1"),
@@ -179,7 +177,7 @@ export function farmaciasGraph({ campaignId = null, stages = {} } = {}) {
       options: "Sim, vamos marcar\nPrefiro uma ligação\nAgora não", buttons: true, timeout: 24, timeoutUnit: "hours", footer: "",
     }, OX, 0, "Convite: reunião de 30 min"),
     N("oferta_sair", "condition", SAIR, OX + 260, 300, "Pediu para sair?"),
-    N("oferta_sim", "condition", rules("any", [["starts_with", "sim"], ["equals", "ok"], ["equals", "pode"], ["contains", "vamos marcar"], ["contains", "pode marcar"], ["contains", "pode ser"], ["contains", "bora"], ["contains", "claro"], ["contains", "beleza"], ["contains", "fechado"], ["contains", "combinado"], ["contains", "topo"], ["contains", "quero sim"]]), OX + 520, 300, "Aceitou por texto?"),
+    N("oferta_sim", "condition", rules("any", [["starts_with", "sim"], ["equals", "ok"], ["equals", "pode"], ["contains", "vamos marcar"], ["contains", "pode marcar"], ["contains", "pode ser"], ["contains", "bora"], ["contains", "claro"], ["contains", "beleza"], ["contains", "fechado"], ["contains", "combinado"], ["contains", "topo"], ["contains", "quero sim"]], "aceita marcar a reunião ou a conversa"), OX + 520, 300, "Aceitou por texto?"),
     N("oferta_sem", "task", { title: "Convite sem resposta: {nome}", description: "Respondeu as perguntas mas não respondeu o convite para a reunião de 30 min. Retomar à mão com o resumo das respostas.", taskType: "follow_up", dueInHours: 4 }, OX + 260, 520, "Tarefa: sem resposta"),
   );
   link(E("oferta", "periodo", "opt0"), E("oferta", "ask_lig", "opt1"), E("oferta", "por_escrito", "opt2"),

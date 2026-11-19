@@ -9,6 +9,7 @@ import { farmaciasGraph, OPENER, FOLLOWUPS, CAMPAIGN } from "../../scripts/idx/f
 const stages = { novo: "st-novo", followup: "st-fu", reuniao: "st-reuniao" };
 const graph = farmaciasGraph({ campaignId: "camp-1", stages });
 
+let classifyStub: FlowEffects["classify"] | undefined;
 function sim() {
   const sent: string[] = [], calls: string[] = [], fields: Record<string, string> = {};
   const effects: FlowEffects = {
@@ -24,6 +25,7 @@ function sim() {
     async ai() { return ""; },
     async handoff() { calls.push("handoff"); },
     async optout() { calls.push("optout"); },
+    ...(classifyStub ? { classify: async (c: any) => { calls.push(`ia:${c.options.length}`); return classifyStub!(c); } } : {}),
     log() {},
   };
   const ctx: FlowContext = { now: new Date("2026-11-18T13:00:00Z"), tz: "America/Sao_Paulo", contact: { name: "Drogaria Bom Preço", phone: "5564999990000", tags: [] }, random: () => 0, effects };
@@ -222,4 +224,32 @@ test("recusa no meio das perguntas encerra com educação", async () => {
   for (const msg of ["Não tenho farmácia mais", "número errado", "Vendi a farmácia"]) {
     assert.ok(has((await talk(msg)).calls, "tag:add:farmácia: agora não"), msg);
   }
+});
+
+test("IA do sistema entende respostas escritas do jeito da pessoa", async () => {
+  classifyStub = async ({ question, options, message }) => {
+    const m = message.toLowerCase();
+    if (question.includes("descrição")) {
+      if (question.includes("mensagem automática")) return m.includes("declaro") ? 0 : 1;
+      if (question.includes("confirma que é o dono")) return m.includes("quem cuida aqui sou eu") ? 0 : 1;
+      if (question.includes("não é o dono")) return m.includes("minha mãe") ? 0 : 1;
+      return 1;
+    }
+    if (options.includes("Acho que não aparece") && m.includes("nem aparece")) return 2;
+    if (options.includes("Não, depende dele") && m.includes("depende")) return 2;
+    return -1;
+  };
+  try {
+    const a = await talk("Quem cuida aqui sou eu, fala aí");
+    assert.equal(a.st.node, "q1", "IA reconheceu o dono");
+    const b = await talk("1", "acho que nem aparece viu", "olha, depende muito do cliente");
+    assert.deepEqual([b.fields.google_posicao_percebida, b.fields.recompra], ["Acha que não aparece", "Depende do cliente"]);
+    assert.equal(b.st.node, "oferta");
+    const c = await talk("TemTem Declaro, para os devidos fins, que");
+    assert.equal(c.st.node, "w_auto", "IA reconheceu a mensagem automática");
+    const d = await talk("quem resolve isso é a minha mãe");
+    assert.equal(d.st.node, "ask_resp");
+    const e = await talk("blz");
+    assert.equal(e.st.node, "confirma", "resposta sem sentido: pergunta de novo se é o dono");
+  } finally { classifyStub = undefined; }
 });

@@ -311,6 +311,23 @@ function makeEffects(run: Run, flow: Flow, contact: { info: ContactInfo; row: an
       ].filter(Boolean).join("\n\n");
       return await chatReply(system, history, { maxTokens: 400 });
     },
+    async classify(cfg) {
+      // Entende respostas escritas do jeito da pessoa ("sou eu sim", "quem cuida é meu pai", "manda aí").
+      // Responde só o número da opção; 0 = nenhuma (aí a automação segue pelo caminho "outra resposta").
+      const opts = cfg.options.map((o, i) => `${i + 1}. ${o}`).join("\n");
+      const system = [
+        "Você classifica respostas de WhatsApp em português do Brasil para uma automação de atendimento.",
+        "Leia a pergunta que foi feita, as opções e a resposta do contato. Diga qual opção a pessoa quis dizer, considerando gírias, erros de digitação, emojis e mensagens quebradas em várias linhas.",
+        "Se a resposta não corresponder com clareza a nenhuma opção (pergunta, assunto diferente, mensagem automática), responda 0.",
+        "Responda APENAS com o número, sem nenhum outro texto.",
+      ].join("\n");
+      const user = `Pergunta feita:\n${cfg.question.slice(0, 1500)}\n\nOpções:\n${opts}\n\nResposta do contato:\n${cfg.message.slice(0, 800)}`;
+      try {
+        const out = await chatReply(system, [{ role: "user", content: user }], { maxTokens: 5, timeoutMs: 12000 });
+        const n = Number((out.match(/\d+/) ?? [])[0]);
+        return Number.isInteger(n) && n >= 1 && n <= cfg.options.length ? n - 1 : -1;
+      } catch { return -1; }
+    },
     async handoff(message?: string) {
       if (message) await this.send({ kind: "text", text: message }, "handoff");
       if (run.conversation_id && !run.is_test) await svc.from("whatsapp_conversations").update({ bot_mode: "human" }).eq("id", run.conversation_id);
