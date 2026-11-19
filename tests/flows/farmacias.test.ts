@@ -82,7 +82,7 @@ test("caminho completo: confirma o dono → 2 perguntas → reunião por vídeo"
     { g: r.fields.google_posicao_percebida, rc: r.fields.recompra, per: r.fields.periodo_reuniao, h: r.fields.horario_reuniao },
     { g: "Acha que aparece", rc: "Depende do cliente", per: "Tarde", h: "quinta às 10h" });
   const all = r.sent.join("\n");
-  assert.match(all, /calendly\.com\/idxparasuaempresa/);
+  assert.match(all, /calendly\.com\/samuellopesrv\/30min/);
   assert.match(all, /remédio de uso contínuo/);
   assert.match(all, /8 mil cliques/);
   assert.doesNotMatch(all, /tr[aá]fego|gr[aá]tis|—/i);
