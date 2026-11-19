@@ -23,6 +23,9 @@ for (const e of g.edges) d.setEdge(e.source, e.target, {}, e.id);
 dagre.layout(d);
 const pos = {};
 for (const n of g.nodes) { const p = d.node(n.id); pos[n.id] = { x: Math.round(p.x - p.width / 2), y: Math.round(p.y - p.height / 2) }; }
+// o editor abre no canto (0,0): o gatilho fica lá, à esquerda e no topo da tela
+const t0 = pos.t;
+for (const id of Object.keys(pos)) pos[id] = { x: pos[id].x - t0.x + 40, y: pos[id].y - t0.y + 120 };
 const src = readFileSync(file, "utf8");
 const out = src.replace(/const POSICOES = \{[\s\S]*?\};\n\/\/ \/POSICOES/, `const POSICOES = ${JSON.stringify(pos)};\n// /POSICOES`);
 writeFileSync(file, out);
