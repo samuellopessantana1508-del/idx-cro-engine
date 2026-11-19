@@ -66,18 +66,23 @@ for r in rows:
         phones[p] += 1
 
 near_rank = {plain(c): i for i, c in enumerate(NEAR)}
+# DDDs aceitos, em ordem de prioridade (padrão: sudoeste goiano e Triângulo Mineiro). Ex.: DDDS=64,34,62
+import os
+DDDS = [d.strip() for d in os.environ.get("DDDS", "64,34").split(",") if d.strip()]
 out, seen = [], set()
 for r in rows:
-    if r["uf"] not in ("GO", "MG"):
+    if r["uf"] not in ("GO", "MG", "DF", "MS", "MT"):
         continue
     p = mobile(r["telefone"]) or mobile(r.get("telefone2"))
-    if not p or p[:2] not in ("64", "34") or p in seen or p in EXCLUDE or phones[p] > 1:
+    if not p or p[:2] not in DDDS or p in seen or p in EXCLUDE or phones[p] > 1:
         continue
     nm = plain(r["nome"])
+    if re.search(r"^REDE |MANIPULA|ASSOCIADAS", nm) or re.search(r"(\d)\1{7}", p):
+        continue
     if by_base[r["cnpj"][:8]] >= 3 or CHAINS.search(nm) or by_name[nm] >= 4:
         continue
     city = plain(r["cidade"])
-    prio = near_rank.get(city, 100 if p.startswith("64") else 200)
+    prio = near_rank.get(city, 100 + 100 * DDDS.index(p[:2]))
     seen.add(p)
     out.append((prio, r["cidade"], r["nome"], p, r))
 
