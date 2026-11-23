@@ -1,0 +1,11 @@
+{
+  "name": "idx-plugins",
+  "owner": { "name": "IDX" },
+  "plugins": [
+    {
+      "name": "idx-sdr-squad",
+      "source": "./plugins/idx-sdr-squad",
+      "description": "Esquadrão de SDR com IA para a IDX: prospecta no Google Maps, qualifica, escreve, responde, contorna objeções e agenda reunião, integrado ao CRO."
+    }
+  ]
+}

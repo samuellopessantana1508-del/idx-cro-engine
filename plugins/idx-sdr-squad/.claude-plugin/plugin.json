@@ -1,0 +1,8 @@
+{
+  "name": "idx-sdr-squad",
+  "version": "0.1.0",
+  "description": "Esquadrão de SDR com IA para a IDX: prospecção no Google Maps, qualificação, copy, resposta, objeções e agendamento, integrado ao CRO.",
+  "author": { "name": "IDX" },
+  "license": "UNLICENSED",
+  "keywords": ["sdr", "vendas", "prospecção", "whatsapp", "tráfego pago", "crm"]
+}
