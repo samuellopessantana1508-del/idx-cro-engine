@@ -172,6 +172,7 @@ function BrandCard() {
     if (!file) return;
     if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) { crm.notify("Use uma imagem PNG, JPG ou WEBP."); return; }
     if (file.size > 3 * 1024 * 1024) { crm.notify("A logo precisa ter até 3 MB."); return; }
+    if (file.type === "image/jpeg" && !window.confirm("Isto parece uma foto (JPG). A logo deve ser o símbolo ou o nome da marca; a foto do profissional vai em cada formulário, em Conteúdo > Foto do profissional. Usar mesmo assim como logo?")) { if (input.current) input.current.value = ""; return; }
     setBusy(true);
     try { const up = await crmApi.uploadFlowMedia(crm.tenantId, file); setLogo(up.url); await save({ logo_url: up.url }); }
     catch (e) { crm.notify(errorText(e)); }
@@ -184,7 +185,7 @@ function BrandCard() {
       </div>
       <div className="fa-brand-text">
         <strong>Logo de {crm.tenantName}</strong>
-        <span className="crm-muted">Aparece no topo de todos os formulários. PNG com fundo transparente fica melhor.</span>
+        <span className="crm-muted">Símbolo ou nome da marca (PNG com fundo transparente fica melhor). Aparece no topo de todos os formulários. A foto do profissional vai dentro de cada formulário.</span>
       </div>
       <label className="fa-color" title="Cor principal da marca">
         <input type="color" value={color} onChange={(e) => setColor(e.target.value)} onBlur={() => save({ brand_color: color })} />
@@ -414,8 +415,10 @@ function ContentTab({ draft, setC, goTo }: { draft: Draft; setC: (fn: (c: FormCo
       <Section title="Topo e marca">
         <Field label="Nome que aparece" hint="Ex.: nome do profissional ou da empresa."><T value={c.header.name} onChange={(v) => header({ name: v })} /></Field>
         <Field label="Linha de baixo" hint="Registro profissional, cidade, especialidade."><T value={c.header.subtitle} onChange={(v) => header({ subtitle: v })} placeholder="CRM-GO 00000 · Rio Verde · GO" /></Field>
-        {draft.style === "card" && <ImageField label="Foto (rosto do profissional ou da equipe)" value={c.header.avatar_url} onChange={(v) => header({ avatar_url: v })} />}
+        {draft.style === "card" && <ImageField label="Foto do profissional (fica redonda no meio da capa)" value={c.header.avatar_url} onChange={(v) => header({ avatar_url: v })} />}
         <ImageField label="Logo só deste formulário (opcional, senão usa a da empresa)" value={c.header.logo_url} onChange={(v) => header({ logo_url: v })} />
+        <label className="fa-req"><input type="checkbox" checked={!!c.header.logo_white} onChange={(e) => header({ logo_white: e.target.checked })} /> Mostrar a logo em branco sobre a cor principal</label>
+        <p className="crm-muted fa-small">Logo é o símbolo ou o nome da marca, de preferência PNG com fundo transparente. Foto de pessoa vai no campo "Foto do profissional".</p>
       </Section>
 
       <Section title="Abertura" right={<button type="button" className="crm-link" onClick={() => goTo({ kind: "intro" })}>ver</button>}>

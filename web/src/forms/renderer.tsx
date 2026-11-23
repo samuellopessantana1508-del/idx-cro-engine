@@ -234,6 +234,7 @@ export function FormRenderer({ form, preview, startAt, onTrack, onSubmit }: Prop
 
   // ----------------------------------------------------------------- estilo "Cartão"
   const avatar = c.header.avatar_url;
+  const lw = c.header.logo_white ? " white" : "";
   const TopBar = (
     <div className="ff-top">
       <div className="ff-top-in">
@@ -241,7 +242,7 @@ export function FormRenderer({ form, preview, startAt, onTrack, onSubmit }: Prop
           {avatar && <img className="ff-avatar sm" src={avatar} alt="" />}
           <div><strong>{c.header.name || form.brand.name}</strong>{c.header.subtitle && <small>{c.header.subtitle}</small>}</div>
         </div>
-        {logo && <img className="ff-top-logo" src={logo} alt="" />}
+        {logo && <img className={`ff-top-logo${lw}`} src={logo} alt="" />}
       </div>
     </div>
   );
@@ -263,12 +264,18 @@ export function FormRenderer({ form, preview, startAt, onTrack, onSubmit }: Prop
       )}
       <main className="ff-c-main" key={phase.kind === "q" ? `q${phase.i}` : phase.kind}>
         {phase.kind === "intro" && shell(<>
-            <div className="ff-cover">
+            <div className={`ff-cover${avatar ? " has-avatar" : ""}`}>
+              {logo ? <img className={`ff-cover-mark${lw}`} src={logo} alt="" aria-hidden /> : <i className="ff-cover-ring" aria-hidden />}
               {c.intro.eyebrow && <p className="ff-eyebrow">{c.intro.eyebrow}</p>}
-              {logo && <img className="ff-cover-logo" src={logo} alt="" />}
+              {logo && <img className={`ff-cover-logo${lw}`} src={logo} alt="" />}
             </div>
             <div className="ff-intro">
-              {avatar && <img className="ff-avatar lg" src={avatar} alt="" />}
+              {avatar && (
+                <div className="ff-avatar-wrap">
+                  <span className="ff-halo" aria-hidden /><span className="ff-halo2" aria-hidden />
+                  <img className="ff-avatar lg" src={avatar} alt={c.header.name || form.brand.name} />
+                </div>
+              )}
               <p className="ff-name">{c.header.name || form.brand.name}</p>
               {c.header.subtitle && <p className="ff-sub">{c.header.subtitle}</p>}
               {c.intro.badge && <span className="ff-badge"><Star size={12} /> {c.intro.badge}</span>}
@@ -301,7 +308,7 @@ export function FormRenderer({ form, preview, startAt, onTrack, onSubmit }: Prop
       {(c.disclaimer || logo) && (
         <footer className="ff-c-foot">
           <div className="ff-c-foot-in">
-            {logo && <img src={logo} alt="" />}
+            {logo && <img className={lw.trim()} src={logo} alt="" />}
             {c.disclaimer && <div className="ff-aviso"><strong>Aviso</strong><p>{c.disclaimer}</p></div>}
             <small>{c.header.name || form.brand.name}{c.header.subtitle ? ` · ${c.header.subtitle}` : ""}</small>
           </div>

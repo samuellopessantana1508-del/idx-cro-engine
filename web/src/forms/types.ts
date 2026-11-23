@@ -15,7 +15,7 @@ export type FormQuestion = {
 };
 
 export type FormContent = {
-  header: { name: string; subtitle?: string; avatar_url?: string; logo_url?: string };
+  header: { name: string; subtitle?: string; avatar_url?: string; logo_url?: string; /** pinta a logo de branco (logo escura sobre a cor principal) */ logo_white?: boolean };
   intro: {
     eyebrow?: string;
     badge?: string;
