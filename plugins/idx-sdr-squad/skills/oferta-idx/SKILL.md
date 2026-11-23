@@ -37,7 +37,7 @@ Não é para: quer resultado sem investir em mídia; ninguém responde o WhatsAp
 - Regra para os agentes: **não passar preço por mensagem fria**. Se o lead perguntar, responder que o investimento depende do raio e da região e é mostrado na reunião de 30 minutos, a menos que Samuel preencha uma faixa aqui.
 
 ## Prova (só o que for real e autorizado)
-- Afirmação da apresentação: "método construído sobre mais de 10 mil buscas reais de clientes de farmácia". Origem e como foi medido: `PREENCHER`. **Até confirmar, os agentes não citam esse número.**
+- Origem confirmada por Samuel: o método foi **validado em uma rede de farmácias**, e as "mais de 10 mil buscas reais de clientes de farmácia" vêm dessa base. Citar assim: "método validado em uma rede de farmácias, construído sobre mais de 10 mil buscas reais". **Não nomear a rede** sem autorização. Ser honesto sobre o limite: é validação em rede, não promessa de resultado para uma farmácia de bairro. Resultados numéricos da rede: `PREENCHER` (só citar com autorização).
 - "Site avaliado em R$ 15 mil": base da avaliação `PREENCHER`. Citar só como "valor de mercado estimado" depois de confirmar.
 - Casos de farmácia com resultado e autorização: `PREENCHER`. Sem caso, a prova é o Diagnóstico de Praça da própria farmácia do lead.
 
