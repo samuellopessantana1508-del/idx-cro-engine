@@ -186,7 +186,7 @@ declare
   v_email text := case when (p_contact ->> 'email') ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then lower(left(p_contact ->> 'email', 200)) end;
   v_need_phone boolean; v_need_email boolean;
   v_ts uuid; v_contact uuid; v_deal uuid; v_stage public.crm_stages; v_owner uuid;
-  v_tags text[]; v_q jsonb; v_lines text := ''; v_answers jsonb := '{}'::jsonb; v_title text;
+  v_tags text[]; v_q jsonb; v_lines text := ''; v_answers jsonb := '{}'::jsonb; v_by_id jsonb := '{}'::jsonb; v_title text;
   v_ref text;
 begin
   select * into f from public.crm_forms where slug = lower(trim(p_slug)) and status = 'published';
@@ -207,6 +207,7 @@ begin
   for v_q in select * from jsonb_array_elements(coalesce(f.content -> 'questions', '[]'::jsonb)) loop
     if coalesce(p_answers ->> (v_q ->> 'id'), '') <> '' then
       v_answers := v_answers || jsonb_build_object(left(v_q ->> 'title', 200), left(p_answers ->> (v_q ->> 'id'), 1000));
+      v_by_id := v_by_id || jsonb_build_object(v_q ->> 'id', left(p_answers ->> (v_q ->> 'id'), 1000));
       v_lines := v_lines || '• ' || left(v_q ->> 'title', 200) || E'\n  ' || left(p_answers ->> (v_q ->> 'id'), 1000) || E'\n';
     end if;
   end loop;
@@ -310,7 +311,7 @@ begin
           where u is not null) x;
 
   update public.crm_form_sessions set completed_at = now(), updated_at = now(), name = v_name, phone = v_phone, email = v_email,
-    answers = answers || coalesce(v_answers, '{}'::jsonb), contact_id = v_contact, deal_id = v_deal, tracking_session_id = v_ts,
+    answers = answers || v_by_id, contact_id = v_contact, deal_id = v_deal, tracking_session_id = v_ts,
     events = events || jsonb_build_array(jsonb_build_object('t', to_char(clock_timestamp() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'e', 'submit')),
     event_count = event_count + 1
   where id = ss.id;

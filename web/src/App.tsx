@@ -50,6 +50,7 @@ import {
   Send as SendIcon,
   Bot as BotIcon,
   Workflow as WorkflowIcon,
+  ClipboardList,
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
 import { CrmWorkspace, crmViewTitles } from "./crm/workspace";
@@ -2967,6 +2968,7 @@ export function App() {
               <NavButton icon={<Repeat />} label="Cadências" active={crmIs("cadences")} onClick={() => goToCrm({ name: "cadences" })} />
               <NavButton icon={<SendIcon />} label="Disparos" active={crmIs("dispatch")} onClick={() => goToCrm({ name: "dispatch" })} />
               <NavButton icon={<WorkflowIcon />} label="Automações WhatsApp" active={crmIs("flows")} onClick={() => goToCrm({ name: "flows" })} />
+              <NavButton icon={<ClipboardList />} label="Formulários" active={crmIs("forms")} onClick={() => goToCrm({ name: "forms" })} />
               <NavButton icon={<BotIcon />} label="Claude e IA (MCP)" active={crmIs("mcp")} onClick={() => goToCrm({ name: "mcp" })} />
               <NavButton icon={<Flag />} label="Metas" active={crmIs("goals")} onClick={() => goToCrm({ name: "goals" })} />
               <div className="nav-group-label">Atendimento</div>
@@ -2988,6 +2990,7 @@ export function App() {
             <NavButton icon={<Repeat />} label="Cadências" active={crmIs("cadences")} onClick={() => goToCrm({ name: "cadences" })} />
               <NavButton icon={<SendIcon />} label="Disparos" active={crmIs("dispatch")} onClick={() => goToCrm({ name: "dispatch" })} />
               <NavButton icon={<WorkflowIcon />} label="Automações WhatsApp" active={crmIs("flows")} onClick={() => goToCrm({ name: "flows" })} />
+              <NavButton icon={<ClipboardList />} label="Formulários" active={crmIs("forms")} onClick={() => goToCrm({ name: "forms" })} />
               <NavButton icon={<BotIcon />} label="Claude e IA (MCP)" active={crmIs("mcp")} onClick={() => goToCrm({ name: "mcp" })} />
             <NavButton icon={<Package />} label="Produtos e serviços" active={crmIs("products")} onClick={() => goToCrm({ name: "products" })} />
             <div className="nav-group-label">Relacionamento</div>
@@ -5394,6 +5397,7 @@ export function App() {
           <button type="button" onClick={() => goToCrm({ name: "cadences" })} className={crmIs("cadences") ? "active" : ""}><Repeat size={17} /> Cadências</button>
           <button type="button" onClick={() => goToCrm({ name: "dispatch" })} className={crmIs("dispatch") ? "active" : ""}><SendIcon size={17} /> Disparos</button>
           <button type="button" onClick={() => goToCrm({ name: "flows" })} className={crmIs("flows") ? "active" : ""}><WorkflowIcon size={17} /> Automações WhatsApp</button>
+          <button type="button" onClick={() => goToCrm({ name: "forms" })} className={crmIs("forms") ? "active" : ""}><ClipboardList size={17} /> Formulários</button>
           <button type="button" onClick={() => goToCrm({ name: "mcp" })} className={crmIs("mcp") ? "active" : ""}><BotIcon size={17} /> Claude e IA</button>
           <button type="button" onClick={() => goToCrm({ name: "goals" })} className={crmIs("goals") ? "active" : ""}><Flag size={17} /> Metas</button>
           <button type="button" onClick={() => goToSection("leads")} className={active === "leads" ? "active" : ""}><MessageCircle size={17} /> Atendimentos</button>
@@ -5410,6 +5414,7 @@ export function App() {
           <button type="button" onClick={() => goToCrm({ name: "cadences" })} className={crmIs("cadences") ? "active" : ""}><Repeat size={17} /> Cadências</button>
           <button type="button" onClick={() => goToCrm({ name: "dispatch" })} className={crmIs("dispatch") ? "active" : ""}><SendIcon size={17} /> Disparos</button>
           <button type="button" onClick={() => goToCrm({ name: "flows" })} className={crmIs("flows") ? "active" : ""}><WorkflowIcon size={17} /> Automações WhatsApp</button>
+          <button type="button" onClick={() => goToCrm({ name: "forms" })} className={crmIs("forms") ? "active" : ""}><ClipboardList size={17} /> Formulários</button>
           <button type="button" onClick={() => goToCrm({ name: "mcp" })} className={crmIs("mcp") ? "active" : ""}><BotIcon size={17} /> Claude e IA</button>
           <button type="button" onClick={() => goToCrm({ name: "goals" })} className={crmIs("goals") ? "active" : ""}><Flag size={17} /> Metas</button>
           <button type="button" onClick={() => goToCrm({ name: "rfv" })} className={crmIs("rfv") ? "active" : ""}><HeartPulse size={17} /> Clientes e RFV</button>

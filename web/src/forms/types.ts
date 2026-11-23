@@ -125,7 +125,7 @@ export function templateContent(style: FormStyle, brandName: string): FormConten
     };
   }
   return {
-    header: { name: brandName, subtitle: "Rio Verde · GO" },
+    header: { name: brandName, subtitle: "" },
     intro: {
       eyebrow: "Questionário de orientação",
       badge: "Avaliação",

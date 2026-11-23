@@ -406,6 +406,9 @@ export type CrmSettings = {
   icp: Record<string, unknown>;
   scoring: { mql_threshold: number; rules: ScoringRule[] };
   lifecycle_definitions: Record<string, string>;
+  /** logo da empresa (formulários, menu) */
+  logo_url?: string | null;
+  brand_color?: string | null;
 };
 
 export type ScoringRule = { label: string; field: string; op: "exists" | "eq" | "in" | "contains" | "gte"; value?: string | string[] | number; points: number };
@@ -459,6 +462,7 @@ export type CrmView =
   | { name: "goals" }
   | { name: "dispatch" }
   | { name: "flows" }
+  | { name: "forms" }
   | { name: "mcp" };
 
 export type DialOutcome = "talked" | "meeting" | "callback" | "no_answer" | "not_interested" | "invalid";

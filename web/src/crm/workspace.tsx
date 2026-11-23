@@ -22,6 +22,7 @@ import { GoalsView } from "./goals";
 import { DispatchView } from "./dispatch";
 import { McpView } from "./mcp";
 const FlowsView = lazy(() => import("./flows").then((m) => ({ default: m.FlowsView })));
+const FormsView = lazy(() => import("../forms/admin").then((m) => ({ default: m.FormsView })));
 import { AssistantModal, type AssistantContext } from "./assistant";
 import type { AssistantPlan } from "./types";
 
@@ -44,6 +45,7 @@ export const crmViewTitles: Record<CrmView["name"], string> = {
   goals: "Metas",
   dispatch: "Disparos de WhatsApp e e-mail",
   flows: "Automações de WhatsApp",
+  forms: "Formulários",
   mcp: "Conectar ao Claude (MCP)",
 };
 
@@ -197,6 +199,7 @@ function ViewSwitch({ view }: { view: CrmView }) {
     case "goals": return <GoalsView />;
     case "dispatch": return <DispatchView />;
     case "flows": return <Suspense fallback={<div className="crm-page"><p className="crm-muted">Carregando automações…</p></div>}><FlowsView /></Suspense>;
+    case "forms": return <Suspense fallback={<div className="crm-page"><p className="crm-muted">Carregando formulários…</p></div>}><FormsView /></Suspense>;
     case "mcp": return <McpView />;
     default: return null;
   }
