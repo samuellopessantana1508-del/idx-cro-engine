@@ -18,7 +18,7 @@ import "./forms.css";
 import "./admin.css";
 
 const PUBLIC_BASE = typeof window !== "undefined" ? window.location.origin : "https://croengine.pro";
-const publicUrl = (slug: string) => `${PUBLIC_BASE}/f/${slug}`;
+const publicUrl = (slug: string) => `${PUBLIC_BASE}/f/?${slug}`;
 const STYLE_LABEL: Record<FormStyle, string> = { card: "Cartão", steps: "Uma pergunta por tela" };
 
 function readParam() { return new URLSearchParams(window.location.search).get("form"); }
@@ -90,7 +90,7 @@ function FormList({ onOpen }: { onOpen: (id: string) => void }) {
                     <strong>{r.name}</strong>
                     <span className={`fa-status ${r.status}`}>{r.status === "published" ? "No ar" : "Rascunho"}</span>
                   </div>
-                  <span className="crm-muted">{STYLE_LABEL[r.style]} · /f/{r.slug} · {r.last_lead_at ? `último contato ${relative(r.last_lead_at)}` : `editado ${relative(r.updated_at)}`}</span>
+                  <span className="crm-muted">{STYLE_LABEL[r.style]} · /f/?{r.slug} · {r.last_lead_at ? `último contato ${relative(r.last_lead_at)}` : `editado ${relative(r.updated_at)}`}</span>
                 </div>
                 <div className="fa-nums">
                   <div><strong>{num(r.views)}</strong><small>visitas</small></div>
@@ -305,7 +305,7 @@ function FormEditor({ formId, onBack, onDuplicated }: { formId: string; onBack: 
       </div>
 
       {dirty && row.status === "published" && <div className="fa-live-note">Você está mexendo num formulário que está no ar. O cliente só vê as mudanças quando você clicar em <b>Salvar e atualizar no ar</b>.</div>}
-      {row.status !== "published" && <div className="fa-live-note draft">Rascunho: o link <b>/f/{row.slug}</b> só abre para o cliente depois de <b>Publicar</b>.</div>}
+      {row.status !== "published" && <div className="fa-live-note draft">Rascunho: o link <b>/f/?{row.slug}</b> só abre para o cliente depois de <b>Publicar</b>.</div>}
       <div className="fa-body">
         <aside className="fa-side">
           <div className="fa-tabs" role="tablist">
@@ -334,7 +334,7 @@ function FormEditor({ formId, onBack, onDuplicated }: { formId: string; onBack: 
             </div>
           </div>
           <div className={`fa-pv-frame ${device}`}>
-            <div className="fa-pv-url"><Globe size={12} /> {PUBLIC_BASE.replace(/^https?:\/\//, "")}/f/{slugify(draft.slug) || "…"}</div>
+            <div className="fa-pv-url"><Globe size={12} /> {PUBLIC_BASE.replace(/^https?:\/\//, "")}/f/?{slugify(draft.slug) || "…"}</div>
             <div className="fa-pv-scroll">
               <FormRenderer key={`${screenKey}-${draft.style}`} form={preview} preview startAt={shownPhase} />
             </div>
@@ -596,7 +596,7 @@ function LookTab({ draft, set, setC, onReset }: { draft: Draft; set: (p: Partial
       </Section>
       <Section title="Endereço">
         <Field label="Link do formulário" hint="Só letras minúsculas, números e hífen. Mudar o endereço quebra links que já foram divulgados.">
-          <div className="fa-slug"><span>/f/</span><input className="crm-input" value={draft.slug} onChange={(e) => set({ slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-") })} /></div>
+          <div className="fa-slug"><span>/f/?</span><input className="crm-input" value={draft.slug} onChange={(e) => set({ slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-") })} /></div>
         </Field>
       </Section>
       <Section title="Recomeçar" open={false}>
@@ -656,7 +656,7 @@ function CrmTab({ draft, set }: { draft: Draft; set: (p: Partial<Draft>) => void
         </div>
       </Section>
       <Section title="Rastreamento de anúncios">
-        <p className="crm-muted fa-small">O formulário já guarda sozinho utm_source, utm_campaign, utm_content, fbclid e gclid do link do anúncio. Use os mesmos parâmetros dos seus anúncios no link.</p>
+        <p className="crm-muted fa-small">O formulário já guarda sozinho utm_source, utm_campaign, utm_content, fbclid e gclid do link do anúncio. No anúncio, use o link copiado e acrescente os parâmetros com &, por exemplo: …/f/?seu-formulario&utm_source=instagram&utm_campaign=lipo.</p>
         <Field label="Pixel da Meta (opcional)" hint="Só o número. Dispara PageView ao abrir e Lead ao enviar.">
           <input className="crm-input" inputMode="numeric" value={s.pixel_id ?? ""} placeholder="123456789012345" onChange={(e) => upd({ pixel_id: e.target.value.replace(/\D/g, "").slice(0, 20) })} />
         </Field>
