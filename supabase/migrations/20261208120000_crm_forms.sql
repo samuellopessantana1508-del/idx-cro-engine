@@ -308,7 +308,12 @@ begin
          'Formulário · ' || coalesce(v_phone, v_email), 'info', 'contact', v_contact
     from (select distinct u from unnest(array[
             case when (f.settings ->> 'owner_id') ~ '^[0-9a-f-]{36}$' then (f.settings ->> 'owner_id')::uuid end, v_owner, f.created_by]) u
-          where u is not null) x;
+          where u is not null
+          union
+          -- ninguém definido: avisa os donos e administradores da empresa
+          select tu.user_id from public.tenant_users tu
+           where tu.tenant_id = f.tenant_id and tu.status = 'active' and tu.user_id is not null and tu.role in ('owner', 'admin')
+             and (f.settings ->> 'owner_id') is null and v_owner is null and f.created_by is null) x;
 
   update public.crm_form_sessions set completed_at = now(), updated_at = now(), name = v_name, phone = v_phone, email = v_email,
     answers = answers || v_by_id, contact_id = v_contact, deal_id = v_deal, tracking_session_id = v_ts,

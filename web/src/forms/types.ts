@@ -37,8 +37,89 @@ export type FormContent = {
   };
   done: { title: string; text?: string; button_label?: string; button_url?: string };
   disclaimer?: string;
-  theme: { color: string; accent: string };
+  theme: {
+    color: string;
+    accent: string;
+    /** fundo da página (vazio = padrão do estilo) */
+    bg?: string;
+    /** fontes (chave de FONTS; vazio = padrão do estilo) */
+    title_font?: string;
+    body_font?: string;
+    /** cantos: vazio = padrão do estilo */
+    radius?: "" | "square" | "soft" | "round";
+  };
 };
+
+/** Fontes do Google oferecidas no editor. */
+export const FONTS: Record<string, { label: string; family: string; css: string; serif?: boolean }> = {
+  inter: { label: "Inter", family: "Inter", css: "Inter:wght@400;500;600;700" },
+  fraunces: { label: "Fraunces", family: "Fraunces", css: "Fraunces:opsz,wght@9..144,500;9..144,600", serif: true },
+  playfair: { label: "Playfair Display", family: "Playfair Display", css: "Playfair+Display:wght@500;600;700", serif: true },
+  lora: { label: "Lora", family: "Lora", css: "Lora:wght@500;600;700", serif: true },
+  dmserif: { label: "DM Serif Display", family: "DM Serif Display", css: "DM+Serif+Display", serif: true },
+  poppins: { label: "Poppins", family: "Poppins", css: "Poppins:wght@400;500;600;700" },
+  montserrat: { label: "Montserrat", family: "Montserrat", css: "Montserrat:wght@400;500;600;700" },
+  nunito: { label: "Nunito", family: "Nunito", css: "Nunito:wght@400;600;700;800" },
+  dmsans: { label: "DM Sans", family: "DM Sans", css: "DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700" },
+  outfit: { label: "Outfit", family: "Outfit", css: "Outfit:wght@400;500;600;700" },
+};
+
+const RADIUS = {
+  square: { btn: "3px", box: "3px", card: "6px" },
+  soft: { btn: "10px", box: "10px", card: "18px" },
+  round: { btn: "999px", box: "18px", card: "30px" },
+} as const;
+
+/** cor de texto legível sobre um fundo (#rrggbb) */
+export function onColor(hex: string | undefined): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex ?? "");
+  if (!m) return "#fff";
+  const n = parseInt(m[1], 16);
+  const lin = (v: number) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  const L = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+  return L > 0.45 ? "#0f172a" : "#fff";
+}
+
+/** variáveis CSS do tema (cores, fontes, cantos) */
+export function themeVars(t: FormContent["theme"]): Record<string, string> {
+  const color = t.color || "#0E3850";
+  const accent = t.accent || color;
+  const v: Record<string, string> = { "--fc": color, "--fa": accent, "--fon": onColor(color), "--fona": onColor(accent) };
+  if (t.bg && /^#[0-9a-f]{6}$/i.test(t.bg)) v["--fbg"] = t.bg;
+  const tf = t.title_font && FONTS[t.title_font];
+  const bf = t.body_font && FONTS[t.body_font];
+  if (tf) v["--fft"] = `"${tf.family}", ${tf.serif ? "Georgia, serif" : "system-ui, sans-serif"}`;
+  if (bf) v["--ffb"] = `"${bf.family}", ${bf.serif ? "Georgia, serif" : "system-ui, sans-serif"}`;
+  const r = t.radius && RADIUS[t.radius];
+  if (r) { v["--fr-btn"] = r.btn; v["--fr-box"] = r.box; v["--fr-card"] = r.card; }
+  return v;
+}
+
+/** carrega no navegador as fontes escolhidas que ainda não estão na página */
+export function ensureFonts(t: FormContent["theme"]) {
+  if (typeof document === "undefined") return;
+  for (const k of ["inter", "fraunces", t.title_font, t.body_font]) {
+    const f = k && FONTS[k];
+    if (!f) continue;
+    const id = `ff-font-${k}`;
+    if (document.getElementById(id)) continue;
+    const l = document.createElement("link");
+    l.id = id; l.rel = "stylesheet"; l.href = `https://fonts.googleapis.com/css2?family=${f.css}&display=swap`;
+    document.head.appendChild(l);
+  }
+}
+
+/** paletas prontas para começar rápido */
+export const PALETTES: { name: string; color: string; accent: string; bg?: string }[] = [
+  { name: "Azul petróleo", color: "#0E3850", accent: "#0E3850" },
+  { name: "Preto e laranja", color: "#111111", accent: "#F97316" },
+  { name: "Verde saúde", color: "#065F46", accent: "#10B981", bg: "#F0FDF4" },
+  { name: "Vinho", color: "#7F1D1D", accent: "#B45309", bg: "#FFFBF5" },
+  { name: "Roxo", color: "#3B0764", accent: "#9333EA", bg: "#FAF5FF" },
+  { name: "Rosa estética", color: "#831843", accent: "#DB2777", bg: "#FFF1F5" },
+  { name: "Dourado", color: "#1C1917", accent: "#B8860B", bg: "#FAF7F0" },
+  { name: "Azul confiança", color: "#1E3A8A", accent: "#2563EB" },
+];
 
 export type FormSettings = {
   stage_id?: string | null;

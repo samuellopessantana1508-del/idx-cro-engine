@@ -52,7 +52,19 @@ export function PublicFormPage({ slug }: { slug: string }) {
       if (f.brand?.color && !f.content.theme.color) f.content.theme.color = f.brand.color;
       setForm(f);
       setState("ready");
-      document.title = f.name;
+      // o nome interno do formulário não aparece para o cliente
+      const plain = (t?: string) => (t ?? "").replace(/\*\*/g, "").trim();
+      document.title = [plain(f.content.header.name) || f.brand?.name, plain(f.content.intro.eyebrow) || plain(f.content.intro.badge)].filter(Boolean).join(" · ") || "Formulário";
+      const icon = f.content.header.logo_url || f.brand?.logo_url || f.content.header.avatar_url;
+      if (icon) {
+        document.querySelectorAll('link[rel~="icon"]').forEach((l) => l.remove());
+        const l = document.createElement("link"); l.rel = "icon"; l.href = icon; document.head.appendChild(l);
+      }
+      const desc = plain(f.content.intro.subtitle) || plain(f.content.intro.title);
+      let m = document.querySelector('meta[name="description"]') as HTMLMetaElement | null;
+      if (!m) { m = document.createElement("meta"); m.name = "description"; document.head.appendChild(m); }
+      m.content = desc.slice(0, 160);
+      document.querySelector('meta[name="theme-color"]')?.setAttribute("content", f.content.theme.color || "#ffffff");
       if (f.pixel_id) loadPixel(f.pixel_id);
       const key = `ff:${slug}`;
       const saved = sessionStorage.getItem(key);

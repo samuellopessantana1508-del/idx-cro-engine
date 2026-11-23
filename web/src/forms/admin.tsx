@@ -11,7 +11,7 @@ import { Confirm, Empty, Field, Modal, Segmented, Skeleton } from "../crm/ui";
 import * as api from "./api";
 import { FormRenderer, OPTION_ICONS, type Phase } from "./renderer";
 import {
-  newOption, newQuestion, normalizeContent, slugify, templateContent,
+  FONTS, PALETTES, newOption, newQuestion, normalizeContent, slugify, templateContent,
   type FormContent, type FormListRow, type FormQuestion, type FormRow, type FormSession, type FormSettings, type FormStyle, type PublicForm, type QuestionType,
 } from "./types";
 import "./forms.css";
@@ -32,7 +32,7 @@ export function FormsView() {
   const [openId, setOpenId] = useState<string | null>(readParam);
   const open = (id: string | null) => { writeParam(id); setOpenId(id); };
   useEffect(() => () => writeParam(null), []);
-  if (openId) return <FormEditor key={openId} formId={openId} onBack={() => open(null)} />;
+  if (openId) return <FormEditor key={openId} formId={openId} onBack={() => open(null)} onDuplicated={open} />;
   return <FormList onOpen={open} />;
 }
 
@@ -203,7 +203,7 @@ function BrandCard() {
 type Tab = "content" | "look" | "crm" | "answers";
 type Draft = { name: string; slug: string; style: FormStyle; content: FormContent; settings: FormSettings };
 
-function FormEditor({ formId, onBack }: { formId: string; onBack: () => void }) {
+function FormEditor({ formId, onBack, onDuplicated }: { formId: string; onBack: () => void; onDuplicated: (id: string) => void }) {
   const crm = useCrm();
   const [row, setRow] = useState<FormRow | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -251,6 +251,16 @@ function FormEditor({ formId, onBack }: { formId: string; onBack: () => void }) 
     finally { setBusy(false); }
   };
 
+  const duplicate = async () => {
+    if (!draft) return;
+    try {
+      const slug = `${slugify(draft.slug).slice(0, 52)}-${Math.random().toString(36).slice(2, 6)}`;
+      const f = await api.formSave(crm.tenantId, null, { ...draft, name: `${draft.name} (cópia)`, slug });
+      crm.notify("Cópia criada como rascunho.");
+      onDuplicated(f.id);
+    } catch (e) { crm.notify(errorText(e)); }
+  };
+
   // atalhos de teclado: Ctrl+S salva
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); if (dirty && editable) save(); } };
@@ -285,13 +295,17 @@ function FormEditor({ formId, onBack }: { formId: string; onBack: () => void }) 
             <button type="button" className="crm-btn ghost" onClick={() => copy(publicUrl(row.slug), crm.notify)}><Copy size={15} /> Copiar link</button>
             <a className="crm-icon-btn" title="Abrir o formulário" href={publicUrl(row.slug)} target="_blank" rel="noreferrer"><ExternalLink size={16} /></a>
           </>}
-          {editable && <button type="button" className="crm-btn ghost" disabled={!dirty || busy} onClick={save}>{dirty ? "Salvar" : "Salvo"}</button>}
+          {editable && <button type="button" className={`crm-btn ${dirty && row.status === "published" ? "primary" : "ghost"}`} disabled={!dirty || busy} onClick={async () => { if (await save()) crm.notify(row.status === "published" ? "Alterações publicadas: o link já mostra a versão nova." : "Rascunho salvo."); }}>
+            {!dirty ? "Salvo" : row.status === "published" ? "Salvar e atualizar no ar" : "Salvar rascunho"}
+          </button>}
           {editable && (row.status === "published"
             ? <button type="button" className="crm-btn ghost" disabled={busy} onClick={() => setStatus("draft")}>Tirar do ar</button>
             : <button type="button" className="crm-btn primary" disabled={busy} onClick={() => setStatus("published")}><Globe size={15} /> Publicar</button>)}
         </div>
       </div>
 
+      {dirty && row.status === "published" && <div className="fa-live-note">Você está mexendo num formulário que está no ar. O cliente só vê as mudanças quando você clicar em <b>Salvar e atualizar no ar</b>.</div>}
+      {row.status !== "published" && <div className="fa-live-note draft">Rascunho: o link <b>/f/{row.slug}</b> só abre para o cliente depois de <b>Publicar</b>.</div>}
       <div className="fa-body">
         <aside className="fa-side">
           <div className="fa-tabs" role="tablist">
@@ -301,7 +315,7 @@ function FormEditor({ formId, onBack }: { formId: string; onBack: () => void }) 
           </div>
           <fieldset className="fa-side-scroll" disabled={!editable && tab !== "answers"}>
             {tab === "content" && <ContentTab draft={draft} setC={setC} goTo={setScreen} />}
-            {tab === "look" && <LookTab draft={draft} set={set} setC={setC} />}
+            {tab === "look" && <LookTab draft={draft} set={set} setC={setC} onReset={() => { if (window.confirm("Trocar todo o conteúdo pelo modelo inicial?")) { set({ content: templateContent(draft.style, crm.tenantName) }); setScreen({ kind: "intro" }); } }} />}
             {tab === "crm" && <CrmTab draft={draft} set={set} />}
             {tab === "answers" && <AnswersTab form={row} />}
           </fieldset>
@@ -331,6 +345,7 @@ function FormEditor({ formId, onBack }: { formId: string; onBack: () => void }) 
 
       {editable && (
         <div className="fa-danger">
+          <button type="button" className="crm-link" onClick={duplicate}><Copy size={13} /> Duplicar formulário</button>
           <button type="button" className="crm-link danger" onClick={() => setArchive(true)}><Trash2 size={13} /> Arquivar formulário</button>
         </div>
       )}
@@ -530,8 +545,15 @@ function QuestionEditor({ q, i, total, style, onChange, onMove, onRemove, onFocu
   );
 }
 
-function LookTab({ draft, set, setC }: { draft: Draft; set: (p: Partial<Draft>) => void; setC: (fn: (c: FormContent) => FormContent) => void }) {
+function LookTab({ draft, set, setC, onReset }: { draft: Draft; set: (p: Partial<Draft>) => void; setC: (fn: (c: FormContent) => FormContent) => void; onReset: () => void }) {
+  const th = draft.content.theme;
   const theme = (p: Partial<FormContent["theme"]>) => setC((x) => ({ ...x, theme: { ...x.theme, ...p } }));
+  const fontSelect = (value: string | undefined, onChange: (v: string) => void, def: string) => (
+    <select className="crm-input" value={value ?? ""} onChange={(e) => onChange(e.target.value)}>
+      <option value="">Padrão do estilo ({def})</option>
+      {Object.entries(FONTS).map(([k, f]) => <option key={k} value={k} style={{ fontFamily: f.family }}>{f.label}{f.serif ? " (com serifa)" : ""}</option>)}
+    </select>
+  );
   return (
     <>
       <Section title="Estilo">
@@ -548,15 +570,38 @@ function LookTab({ draft, set, setC }: { draft: Draft; set: (p: Partial<Draft>) 
         <p className="crm-muted fa-small">Trocar o estilo mantém os textos e as perguntas.</p>
       </Section>
       <Section title="Cores">
-        <div className="fa-colors">
-          <label className="fa-color big"><input type="color" value={draft.content.theme.color} onChange={(e) => theme({ color: e.target.value })} /><span><strong>Cor principal</strong><small>{draft.style === "card" ? "Topo, rodapé e botões" : "Títulos"}</small></span></label>
-          <label className="fa-color big"><input type="color" value={draft.content.theme.accent} onChange={(e) => theme({ accent: e.target.value })} /><span><strong>Cor de destaque</strong><small>{draft.style === "card" ? "Seleção e selo" : "Botão e opções"}</small></span></label>
+        <div className="fa-palettes">
+          {PALETTES.map((p) => (
+            <button key={p.name} type="button" title={p.name} className={th.color.toLowerCase() === p.color.toLowerCase() && th.accent.toLowerCase() === p.accent.toLowerCase() ? "on" : ""}
+              onClick={() => theme({ color: p.color, accent: p.accent, bg: p.bg ?? "" })}>
+              <i style={{ background: p.color }} /><i style={{ background: p.accent }} /><i style={{ background: p.bg ?? (draft.style === "card" ? "#f4f6f8" : "#fff") }} />
+            </button>
+          ))}
         </div>
+        <div className="fa-colors">
+          <label className="fa-color big"><input type="color" value={th.color} onChange={(e) => theme({ color: e.target.value })} /><span><strong>Cor principal</strong><small>{draft.style === "card" ? "Topo, capa, rodapé e botões" : "Detalhes e textos de destaque"}</small></span></label>
+          <label className="fa-color big"><input type="color" value={th.accent} onChange={(e) => theme({ accent: e.target.value })} /><span><strong>Cor de destaque</strong><small>{draft.style === "card" ? "Botão final" : "Botão, opções e barra"}</small></span></label>
+          <label className="fa-color big"><input type="color" value={th.bg || (draft.style === "card" ? "#f4f6f8" : "#ffffff")} onChange={(e) => theme({ bg: e.target.value })} />
+            <span><strong>Fundo da página</strong><small>{th.bg ? <button type="button" className="crm-link" onClick={(e) => { e.preventDefault(); theme({ bg: "" }); }}>voltar ao padrão</button> : "Padrão do estilo"}</small></span></label>
+        </div>
+        <p className="crm-muted fa-small">O texto sobre cada cor fica claro ou escuro sozinho para continuar legível.</p>
+      </Section>
+      <Section title="Fontes">
+        <Field label="Títulos e perguntas">{fontSelect(th.title_font, (v) => theme({ title_font: v }), draft.style === "card" ? "Fraunces" : "Inter")}</Field>
+        <Field label="Textos, opções e botões">{fontSelect(th.body_font, (v) => theme({ body_font: v }), "Inter")}</Field>
+      </Section>
+      <Section title="Cantos">
+        <Segmented size="sm" value={(th.radius || "") as "" | "square" | "soft" | "round"} onChange={(v) => theme({ radius: v })}
+          options={[{ value: "", label: "Padrão" }, { value: "square", label: "Retos" }, { value: "soft", label: "Suaves" }, { value: "round", label: "Redondos" }]} />
       </Section>
       <Section title="Endereço">
         <Field label="Link do formulário" hint="Só letras minúsculas, números e hífen. Mudar o endereço quebra links que já foram divulgados.">
           <div className="fa-slug"><span>/f/</span><input className="crm-input" value={draft.slug} onChange={(e) => set({ slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-") })} /></div>
         </Field>
+      </Section>
+      <Section title="Recomeçar" open={false}>
+        <p className="crm-muted fa-small">Troca textos, perguntas e cores pelo modelo inicial do estilo {STYLE_LABEL[draft.style]}. Dá para desfazer saindo sem salvar.</p>
+        <button type="button" className="crm-btn ghost sm" onClick={onReset}>Voltar ao modelo</button>
       </Section>
     </>
   );
@@ -706,7 +751,7 @@ function SessionRow({ s, qs, open, onToggle }: { s: FormSession; qs: FormQuestio
           <strong>{s.name || (done ? "Sem nome" : "Visitante")}</strong>
           <small>{done ? (s.phone || s.email || "") : `parou em ${s.max_step === 0 ? "abertura" : s.max_step > qs.length ? "dados de contato" : `pergunta ${s.max_step}`} · ${answered} resposta(s)`}</small>
         </span>
-        <span className="fa-ses-meta"><small>{origin(s)}</small><small>{s.device === "mobile" ? "Celular" : s.device === "desktop" ? "Computador" : s.device ?? ""} · {relative(s.created_at)}</small></span>
+        <span className="fa-ses-meta"><small>{origin(s)}</small><small>{s.device ? s.device.charAt(0).toUpperCase() + s.device.slice(1) : ""} · {relative(s.created_at)}</small></span>
       </button>
       {open && (
         <div className="fa-ses-body">

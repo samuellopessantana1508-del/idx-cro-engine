@@ -4,7 +4,7 @@ import {
   Activity, ArrowLeft, ArrowRight, Calendar, Check, ChevronRight, CircleHelp, Clock, Compass, Heart, Home, MessageCircle,
   Scale, ShieldCheck, Sparkles, Star, Target, ThumbsUp, TrendingUp, User, Users, Wallet, Zap,
 } from "lucide-react";
-import type { FormContent, FormQuestion, PublicForm } from "./types";
+import { ensureFonts, themeVars, type FormContent, type FormQuestion, type PublicForm } from "./types";
 
 export const OPTION_ICONS: Record<string, typeof Star> = {
   target: Target, sparkles: Sparkles, activity: Activity, compass: Compass, calendar: Calendar, clock: Clock, help: CircleHelp,
@@ -109,10 +109,8 @@ export function FormRenderer({ form, preview, startAt, onTrack, onSubmit }: Prop
     } finally { setBusy(false); }
   };
 
-  const vars = {
-    "--fc": c.theme.color || "#0E3850",
-    "--fa": c.theme.accent || c.theme.color || "#0E3850",
-  } as CSSProperties;
+  const vars = themeVars(c.theme) as CSSProperties;
+  useEffect(() => { ensureFonts(c.theme); }, [c.theme.title_font, c.theme.body_font]); // eslint-disable-line react-hooks/exhaustive-deps
   const logo = c.header.logo_url || form.brand.logo_url || "";
   const doneUrl = (c.done.button_url || "").trim();
 
