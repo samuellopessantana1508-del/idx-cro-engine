@@ -13,7 +13,7 @@ Esquadrão de SDR com IA para a IDX, construído sobre padrões abertos e valida
 | `sdr-analista` | Mede o funil e recomenda experimentos |
 
 ## Skills (conhecimento)
-`playbook-vendas-idx` · `oferta-idx` · `copy-whatsapp-frio` · `objecoes-trafego-local` · `persuasao-etica` · `sinais-de-compra-local` · `compliance-lgpd-whatsapp`
+`playbook-vendas-idx` · `oferta-idx` · `copy-whatsapp-frio` · `objecoes-trafego-local` · `persuasao-etica` · `sinais-de-compra-local` · `compliance-lgpd-whatsapp` · `farmacia-cheia`
 
 ## Comandos
 `/sdr-campanha <nicho> <cidade> [qtd]` · `/sdr-responder <lead ou texto>` · `/sdr-funil`
