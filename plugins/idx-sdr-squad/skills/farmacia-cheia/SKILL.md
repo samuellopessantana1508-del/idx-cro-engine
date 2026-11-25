@@ -66,3 +66,11 @@ Escassez permitida: **1 por região é regra do programa**, então "a região ai
 
 ## Proibido neste nicho
 Prometer número de clientes ou vendas. Citar os "10 mil buscas" ou o "R$ 15 mil" antes de confirmar a origem. Dizer "região livre" sem conferir. Citar concorrente real do lead de forma depreciativa.
+
+## Playbook Comercial Farmácias (método oficial da IDX)
+Base: Linha Reta (Belfort, sem a mentira), Cialdini, Voss, SPIN, Gap Selling e Sandler. Venda é transferência de certeza em três frentes: no programa, no Samuel e na IDX. Objeção é certeza baixa em uma delas: descubra qual e suba.
+- **WhatsApp D0 (manual):** "Oi! Aqui é o Samuel, da IDX, de Rio Verde. Pesquisei "farmácia" em [cidade] no Google, como se fosse cliente. A [farmácia] apareceu em [N]º lugar, e dá para ver quem está levando os pedidos do bairro [bairro]. Posso te mandar o print do que apareceu?" Sem link, PDF ou preço.
+- **Sem resposta:** D2 áudio de 1 minuto; D5 prova social (rede de Goiás, 8 mil cliques a cerca de R$ 1,50); D9 presentes + uma farmácia por região (só se livre); D14 retirada educada.
+- **Ligação (objetivo: a reunião):** munição de 3 min ("farmácia com entrega em [cidade]", quem aparece primeiro) → balconista com pedido de ajuda + porquê → 4 segundos → auditoria de acusação + pergunta do não → gancho com fato real → situação → problema → implicação (1 pedido/dia ≈ R$ 2.100/mês) → necessidade → faturamento → investimento com venda reversa → escassez real → presentes → agenda com dois horários e compromisso.
+- **Reunião:** contrato inicial (três saídas, nunca "talvez"), diagnóstico, implicação ao vivo, Método 3P, prova, pilha de valor (R$ 5.500 → R$ 1.500), garantia de implantação, fechamento e looping (no máximo três).
+- **Regra que não se quebra:** toda arma só com fato verdadeiro.

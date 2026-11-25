@@ -30,14 +30,16 @@ Promessa: clientes novos todos os dias no WhatsApp da farmácia. Método 3P:
 É para: fatura a partir de **R$ 100 mil por mês**; quer depender menos do movimento da porta; tem WhatsApp ativo e alguém para atender; faz ou quer fazer entrega no bairro; quer saber quanto cada cliente novo custou.
 Não é para: quer resultado sem investir em mídia; ninguém responde o WhatsApp no expediente; quer anunciar promoção de medicamento a qualquer custo; espera milagre na primeira semana; não quer acompanhar os números.
 
-## Preço e contrato (NÃO constam na apresentação; o PDF diz que o investimento é mostrado na reunião)
-- Mensalidade: `PREENCHER`. Referência interna de meta: ~R$ 1.500/mês (confirmar antes de citar).
-- Verba de mídia: `PREENCHER` (quem paga e quanto mínimo).
-- Prazo do contrato e multa: `PREENCHER`.
-- Regra para os agentes: **não passar preço por mensagem fria**. Se o lead perguntar, responder que o investimento depende do raio e da região e é mostrado na reunião de 30 minutos, a menos que Samuel preencha uma faixa aqui.
+## Preço e investimento (fonte: Playbook Comercial Farmácias IDX)
+- Assessoria: a partir de R$ 1.500/mês. Mídia: pelo menos R$ 35/dia (cerca de R$ 1.000/mês), paga pelo cartão da farmácia direto ao Google e à Meta.
+- Valor dos itens separados (contraste): cerca de R$ 5.500/mês. Sem desconto, nunca.
+- Perfil: faturamento a partir de R$ 100 mil/mês; entre R$ 50 e 100 mil ainda conversa; abaixo de R$ 50 mil, não recomendar e oferecer só o Remédio Contínuo.
+- Na abordagem fria (WhatsApp) não falar preço. Na ligação com o dono, o investimento entra com venda reversa ("isso não é para toda farmácia").
+- Prazo de contrato e multa: `PREENCHER`.
 
 ## Prova (só o que for real e autorizado)
-- Origem confirmada por Samuel: o método foi **validado em uma rede de farmácias**, e as "mais de 10 mil buscas reais de clientes de farmácia" vêm dessa base. Citar assim: "método validado em uma rede de farmácias, construído sobre mais de 10 mil buscas reais". **Não nomear a rede** sem autorização. Ser honesto sobre o limite: é validação em rede, não promessa de resultado para uma farmácia de bairro. Resultados numéricos da rede: `PREENCHER` (só citar com autorização).
+- Origem confirmada por Samuel: o método foi **validado em uma rede de farmácias**, e as "mais de 10 mil buscas reais de clientes de farmácia" vêm dessa base. Citar assim: "método validado em uma rede de farmácias, construído sobre mais de 10 mil buscas reais". **Não nomear a rede** sem autorização. Ser honesto sobre o limite: é validação em rede, não promessa de resultado para uma farmácia de bairro. Números da rede (Playbook): 8.150 cliques no Google, custo médio de R$ 1,54, quase 10% de CTR. São cliques, não vendas. Citar de forma anônima e só com autorização confirmada do cliente.
+- Fora do setor: autoescola com 796 contatos em 30 dias.
 - "Site avaliado em R$ 15 mil": base da avaliação `PREENCHER`. Citar só como "valor de mercado estimado" depois de confirmar.
 - Casos de farmácia com resultado e autorização: `PREENCHER`. Sem caso, a prova é o Diagnóstico de Praça da própria farmácia do lead.
 
